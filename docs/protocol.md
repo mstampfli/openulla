@@ -377,6 +377,55 @@ Mode values [fw rkof 0x1be190]: 0 ordinary ACL, 1 ULLA on, 2 lite mode on.
 Result values [fw rkof 0x1be5bc]: 0 success, 1 error, 2 failed to establish, 3 setup rejected
 by peer, 4 supervision timeout error.
 
+### 6.1 Which bands are allowed: command 0xFF79
+
+The bands a device will use are carried as a **one-byte mask**, and the mask is built from an
+8-entry byte table, one entry per band, where **bit N is set exactly when entry N is not
+0xFF** [fw rkof 0x97fa4; entries 0-3 via 0x1b351c, entries 4-7 read at +4..+7]. A slot holding
+0xFF means that band is unavailable.
+
+The host side sends the mask to its own controller as vendor command **0xFF79**, one parameter
+byte [fw rkof 0x24b04, command id 0x379 through the queued sender 0x23a60]. Every caller
+immediately sends the same byte again as id **0x37A** [fw rkof 0x249e0], so the two always
+travel as a pair. The controller's handler is found through the same binary-searched command
+table as 0xFE50 [fw acib dispatcher 0x18964, keys 0xf1928, handlers 0xf1230, 446 entries
+compared under the mask 0x3FFF]: 0xFF79 resolves to the handler at acib 0x193f4, 0xFF7A to
+0x19528, 0xFF7C to 0x19704, 0xFFBD to 0x1926c. A caution for anyone repeating the lookup:
+because the comparison is masked, a hit must be checked against the full key. 0xFF75, for
+instance, is absent, and the search lands on the unrelated key 0x7F75.
+
+The handler reads the mask at the parameter offset and gates it on a feature bit [fw acib
+0x19430]. With the bit clear it completes with the standard code 0x0C. With the bit set, **a
+mask of 0 is refused and any mask with bit 3 set is refused**, both with 0x11. Otherwise it
+posts an internal event and then walks every active link, comparing that link's own band byte
+against the new mask, and the in-use mask against its complement [fw acib 0x1947a..0x1949e].
+
+The mask is also recomputed on demand: a feature-image module named `drvcomm` [fw rkof vtable
+0x1fb8c0, name at 0x1fb8de] takes a message whose body is exactly 8 bytes [fw rkof handler
+0xc37ec], derives the mask from it and sends both commands.
+
+### 6.2 Allowed bands on the air
+
+A peer's mask arrives in an **extended link-manager PDU whose body is two bytes, the extended
+opcode and the mask** [fw acib: length gate at 0x3b558, dispatch at 0x3bc04 on the record's
+extended-opcode byte, index 22]. The extended opcode is therefore **0x17**. The receive parser
+is ordinary LMP: opcode is the first byte shifted right by one, the transaction id is its low
+bit, and the extended opcode is the following byte, taken only for opcodes 0x7B and above [fw
+acib 0x3af66, 0x3af6a, 0x3afa4, 0x3af9c..0x3afb4].
+
+What arrives is not adopted blindly. The received mask is ANDed with the device's own
+allowed-band byte and ignored if the two do not intersect; only then is it stored as that
+link's band byte [fw acib 0x45360, called only from 0x29af2 inside the PDU handler 0x29ab4].
+
+**[open] Which escape opcode owns that table.** The firmware keeps two extended dispatchers
+[fw acib 0x3b3b8 with table 0x3b3bc, and 0x3bc10 with table 0x3bc14], matching the two escape
+spaces 0x7B and 0x7F that it treats separately elsewhere. The main opcode table sends both
+escapes to a reject stub, so the dispatchers are reached by a path not yet traced. The escape
+is one of the two and this document will not say which until that is read.
+
+**[open] What each bit means.** The mapping from the 8 mask bits to radio bands is not
+established. The only hint in the firmware is that the controller refuses bit 3.
+
 ## 7. The audio layer, and what is not known
 
 Once the mode change succeeds the radio carries the audio. The parts that are established:
