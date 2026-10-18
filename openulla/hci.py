@@ -39,6 +39,13 @@ H4_EVENT = 0x04
 EVENT_VENDOR = 0xFF
 
 OPCODE_ULLA_SETUP = 0xFE50
+OPCODE_ULLA_SECOND = 0xFE51  # handle, a zero byte, then the manager's mode field
+# The constants the earbud's own manager puts in 0xFE50's parameters [fw rkof 0x272c0], with
+# the flags byte chosen by one comparison on its stored mode field [fw rkof 0x271c4 onwards].
+MANAGER_EXTRA_FLAGS = 1
+MANAGER_CONFIG_WORD = 0x0096
+MANAGER_FLAGS_MODE_ONE = 0x04
+MANAGER_FLAGS_OTHERWISE = 0x0F
 OPCODE_BAND_GATE = 0xFF77
 OPCODE_READ_LINK_BAND = 0xFF78
 OPCODE_ALLOWED_BANDS = 0xFF79
@@ -125,6 +132,32 @@ class UllaSetup:
 
     def command(self) -> bytes:
         return command(OPCODE_ULLA_SETUP, self.to_bytes())
+
+
+def manager_setup(handle: int, mode_field: int) -> UllaSetup:
+    """0xFE50 with the parameters the earbud's own manager uses. [fw rkof 0x272c0, 0x271c4]
+
+    `mode_field` is the byte the manager keeps and passes on: it is the last parameter here
+    and the last byte of the sibling start-session request. The controller takes zero in that
+    parameter as the transition path and anything else as another procedure
+    [fw acib 0x1daa2], and what the other values select is not established.
+    """
+    return UllaSetup(
+        handle=handle,
+        extra_flags=MANAGER_EXTRA_FLAGS,
+        config_word=MANAGER_CONFIG_WORD,
+        flags=MANAGER_FLAGS_MODE_ONE if mode_field == 1 else MANAGER_FLAGS_OTHERWISE,
+        procedure=mode_field,
+    )
+
+
+def ulla_second_command(handle: int, mode_field: int) -> bytes:
+    """0xFE51: the handle, a zero byte and the same mode field. [fw rkof 0x27234]"""
+    if not 0 <= handle <= 0x0EFF:
+        raise ProtocolError("a connection handle is twelve bits")
+    if not 0 <= mode_field <= 0xFF:
+        raise ProtocolError("the mode field is one byte")
+    return command(OPCODE_ULLA_SECOND, handle.to_bytes(2, "little") + bytes((0, mode_field)))
 
 
 def band_gate(enable: bool) -> bytes:

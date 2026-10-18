@@ -87,3 +87,38 @@ def test_an_event_whose_length_disagrees_with_itself_is_refused():
         hci.ModeChangeEvent.from_bytes(bytes.fromhex("ff 05 09 0a 0b 00 01"))
     with pytest.raises(ProtocolError):
         hci.ModeChangeEvent.from_bytes(bytes.fromhex("3e 07 00 0a 0b 00 01 00 ff"))
+
+
+def test_the_setup_parameters_the_earbuds_own_manager_uses():
+    """Constants, not inventions: protocol.md 6.0."""
+    ulla = hci.manager_setup(0x000B, 1)
+    assert ulla.to_bytes() == bytes.fromhex("0b 00 01 96 00 04 01")
+    assert ulla.command() == bytes.fromhex("50 fe 07 0b 00 01 96 00 04 01")
+    for field in (0, 2, 0xFF):
+        other = hci.manager_setup(0x000B, field)
+        assert other.flags == hci.MANAGER_FLAGS_OTHERWISE
+        assert other.procedure == field
+        assert other.config_word == hci.MANAGER_CONFIG_WORD == 0x96
+        assert other.extra_flags == hci.MANAGER_EXTRA_FLAGS == 1
+
+
+def pdu_from(setup):
+    """The setup PDU a controller would emit for those command parameters."""
+    from openulla import lmp
+    from openulla.controller import Initiator
+
+    return lmp.SetupRequest.from_bytes(Initiator().setup_request(setup))
+
+
+def test_the_flag_bits_that_reach_the_pdu_follow_from_those_parameters():
+    pdu = pdu_from(hci.manager_setup(0x000B, 1))
+    assert pdu.flags == 0  # 4 keeps only bit 2, which the PDU does not carry
+    assert pdu.extra_flags == 1
+    assert pdu.config_word == 0x0096
+    assert pdu_from(hci.manager_setup(0x000B, 0)).flags == 0b1011
+
+
+def test_the_second_ulla_command_is_the_handle_a_zero_and_the_mode_field():
+    assert hci.ulla_second_command(0x000B, 2) == bytes.fromhex("51 fe 04 0b 00 00 02")
+    with pytest.raises(ProtocolError):
+        hci.ulla_second_command(0x000B, 0x100)

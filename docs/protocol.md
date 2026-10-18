@@ -450,9 +450,9 @@ separate. The two messages this document decodes are 0x7B/0x17 (section 6.2) and
 Which of them this build **sends** is a different list, found by scanning every call of the
 send builder for the constants it passes [fw acib 0x3ad7c, the extended opcode in its third
 argument]: in the 0x7B space 0x01, 0x0A to 0x0F, 0x17, 0x18, 0x1B, 0x1C, 0x24, 0x26, 0x27 and
-0x28; in the 0x7F space 0x03, 0x04, 0x0C, 0x0D, 0x10, 0x11, 0x15, 0x16, 0x17, 0x19, 0x21,
-0x22, 0x23 and 0x26. Three senders compute their extended opcode at runtime, so that list is a
-floor, not a ceiling.
+0x28; in the 0x7F space 0x03, 0x04, 0x0B, 0x0C, 0x0D, 0x10, 0x11, 0x15, 0x16, 0x17, 0x19,
+0x21, 0x22, 0x23 and 0x26. Three senders compute their extended opcode at runtime and one
+function sends two different messages on two paths, so that list is a floor, not a ceiling.
 
 **Two of those are messages the earbuds send and will not accept.** 0x7B/0x24, sent with an
 empty payload, is one of the twelve on the reject stub, and 0x7B/0x28, sent with a 26-byte
@@ -499,6 +499,34 @@ shape with five parameters and event id 0x0A09 [fw acib 0x11d74]; what it report
 Mode values [fw rkof 0x1be190]: 0 ordinary ACL, 1 ULLA on, 2 lite mode on.
 Result values [fw rkof 0x1be5bc]: 0 success, 1 error, 2 failed to establish, 3 setup rejected
 by peer, 4 supervision timeout error.
+
+### 6.0 What a source actually puts in those seven bytes
+
+The earbud's own session manager contains the source side of this command, and it fills the
+parameters with constants, so an implementation does not have to invent them. The manager's
+command queue dispatches on one field, and the entry that sends this command builds
+[fw rkof 0x272c0, sent at 0x272e4 through the queued sender 0x23a60 with the command id 0x250
+and the length 7]:
+
+| offset | size | value the manager uses |
+|---|---|---|
+| 0 | 2 | the connection handle it recorded for the peer |
+| 2 | 1 | 1 |
+| 3 | 2 | 0x0096 |
+| 5 | 1 | 4 when its stored mode field is 1, otherwise 0xF |
+| 6 | 1 | that stored mode field |
+
+The flags byte follows from one comparison [fw rkof 0x271c4 onwards]: field equal to 1 takes
+the branch that sets 4, field zero takes the one that sets 0xF, and any other value logs and
+also takes 0xF. Split as the handler splits it, that means the setup PDU's flag byte is 0 with
+bit 2 set elsewhere for a field of 1, and 0b11 with bit 3 also set for 0 or anything else.
+
+The same field is the last byte of the sibling start-session request of section 4
+[fw rkof 0x27466], and a second command, **0xFE51**, carries it too: handle, a zero byte, then
+that field, four parameter bytes in all [fw rkof 0x27234]. What the other values of the last
+parameter select is open; the controller treats zero as the transition path and everything
+else as another procedure [fw acib 0x1daa2], so an implementation driving its own controller
+sends zero there.
 
 ### 6.1 Which bands are allowed: command 0xFF79
 

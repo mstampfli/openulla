@@ -120,10 +120,10 @@ $ python3 tools/ulla_demo.py
 
 Steps 1 to 3 are bytes a Linux laptop has really exchanged with real earbuds.
 From step 4 on, the simulator stands in for a Bluetooth controller, because
-those commands and PDUs have to come from one. `python3 -m pytest` runs 87
-tests that check the layouts against the measured frames and the firmware's own
-tables, including the band plan's four internal identities and the receiver that
-recomputes a count instead of trusting it. [docs/implementation.md](docs/implementation.md)
+those commands and PDUs have to come from one. `python3 -m pytest` runs the
+suite that checks the layouts against the measured frames and the firmware's
+own tables, including the band plan's four internal identities and the receiver
+that recomputes a count instead of trusting it. [docs/implementation.md](docs/implementation.md)
 says what the simulator does, what it refuses to invent, and why the last step
 cannot be done from a commodity host.
 
@@ -288,7 +288,7 @@ link keys and other people's device addresses.
 - `openulla/`: the implementation. Pure Python, no dependencies, every constant
   citing the firmware address or the measurement that proves it. See
   [docs/implementation.md](docs/implementation.md).
-- `tests/`: 87 tests over the layouts, the state machine, the band plan and a
+- `tests/`: the suite over the layouts, the state machine, the band plan and a
   whole simulated negotiation. `python3 -m pytest`.
 - `docs/implementation.md`: what the code covers, what the simulator refuses to
   invent, and why the last step needs a controller that does not exist yet.
