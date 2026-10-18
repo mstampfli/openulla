@@ -111,6 +111,15 @@ dispatches on it [fw rkof 0x6cf48, table at 0x6cf4c]. The ULLA ones:
 | 0x43 | 1 + 4 + 4 bytes | configure statistics [fw rkof 0x6d2e0] |
 | 0x17 | see 2.6 | wrapper used in both directions |
 
+For scale, and because it matters when a host is deciding what to answer: that table covers
+opcodes 1 to 0x64, of which **61 have a handler of their own and 39 share one path that
+ignores them** [fw rkof table 0x6cf4c, the shared target 0x6d218]. Sending and accepting are
+not the same set. Of the ten opcodes these earbuds were measured sending unsolicited
+([measurements.md](measurements.md) section 2), 0x09, 0x4E, 0x53 and 0x63 do have inbound
+handlers, 0x17 is the wrapper and is taken before the table [fw rkof 0x6cefa], and 0x02, 0x1D,
+0x2B, 0x55 and the status reply 0x37 have none, so an implementation should not expect to be
+able to send back everything it receives.
+
 ### 2.5 The status reply
 
 A start command is answered with opcode 0x37 and a 6-byte body [fw rkof 0x6e9cc]:
