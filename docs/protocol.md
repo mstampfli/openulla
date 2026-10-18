@@ -515,12 +515,31 @@ each of the eight slots against a per-band byte of its own state [fw rkof 0x97f2
 mask that goes out is the intersection of what the region allows with what the device is
 configured for.
 
-There is also a **second band PDU on the air: escape 0x7B, extended opcode 0x1C**. The same
-module and the same feature gate as 6.2 walks the band indexes, skipping 3 and any band whose
-range pair is zero, packs up to five (index, first, length) triples and sends them [fw acib
-0x29964, the constants at 0x299d4]. So one PDU announces which bands are allowed and the other
-announces the channel range within each. The receive side of 0x1C is index 27 of the same
-table at 0x3bc14 and has not been read yet.
+### 6.5 The second band PDU: escape 0x7B, extended opcode 0x1C
+
+Where 0x17 says which bands are allowed, 0x1C says which channels within them. Body:
+
+| offset | size | meaning |
+|---|---|---|
+| 0 | 1 | extended opcode, 0x1C |
+| 1 | 1 | number of triples that follow |
+| 2 | 3 each | one triple per band: band index, first channel, length |
+
+The sender walks the band indexes behind the same feature gate as 6.2, skips index 3 and any
+band whose range pair is zero, and packs **at most five** triples [fw acib 0x29964, escape and
+extended opcode as literals at 0x299d4]. The receiver takes the triples from the body,
+**recomputes the count as (body length - 2) / 3 rather than trusting the count byte**, and
+refuses a count above five [fw acib 0x3bfc2 for the copy and the division, 0x29b38 with the
+bound at 0x29b62]. It then stores each pair into a per-link array of eight two-byte entries,
+indexed by the band, at the link's offset 0x49F [fw acib 0x29b8c..0x29b9a].
+
+The same (index, first, length) shape is what command 0xFF8E takes from the host, and the
+range it validates against is the band's channel count from section 6.3, so all three places
+agree on what a range means.
+
+For the record, the receive dispatch table of the 0x7B space has 39 entries [fw acib 0x3bc14],
+of which extended opcodes 0x03 to 0x09, 0x12, 0x13, 0x1D, 0x1E and 0x24 all land on one
+reject stub, so they are not implemented in this build.
 
 ## 7. The audio layer, and what is not known
 
