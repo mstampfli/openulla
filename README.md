@@ -9,6 +9,47 @@ Independent research. Not affiliated with or endorsed by Apple. No Apple
 firmware or other Apple-owned binaries are redistributed here; the tools fetch
 public material from Apple's and the FCC's own servers.
 
+## The short version
+
+Seven bytes from a Linux laptop, over an ordinary Bluetooth channel, with no
+Apple authentication of any kind, and the earbuds start setting up their
+private audio link:
+
+```
+$ python3 tools/aap_probe.py --device AA:BB:CC:DD:EE:FF --seq start
+connecting to AA:BB:CC:DD:EE:FF PSM 0x1001
+connected
+-> open service 4 versions 1,2: 00 00 04 00 01 00 02 00 00 00 00 00 00 00 00 00
+  open <- type 1 (open-reply) service 4 status 0x00 pad 0x00 versions 1,3
+-> step 1: start ULLA session, mode 0: 04 00 04 00 36 00 00
+  step1 <- type 4 (data) service 4 opcode 0x0037 payload 00 00 00 00
+```
+
+That last line is the earbuds reporting success. Their session machine has
+moved three states and is now waiting for the radio handshake.
+
+(The transcript is abridged: the real tool also prints the raw bytes of every
+frame, and the earbuds volunteer a stream of their own status frames in
+between.)
+
+Where the layers sit:
+
+```
+  host (phone, headset, computer)
+    |  Apple accessory protocol, service 4, L2CAP PSM 0x1001   <- recovered, and it works
+  earbud session manager                                       <- recovered, 17 states
+    |  service 0x10, to the other earbud                       <- recovered, 14 messages
+  other earbud
+  ---
+  earbud session manager -> its own controller, HCI vendor commands   <- recovered
+  controller <-> controller, link-manager PDUs on the same ACL link   <- recovered
+  then the radio changes mode and carries audio                       <- NOT recovered
+```
+
+The full field-by-field reference is [docs/protocol.md](docs/protocol.md); the
+measurements behind the transcript are in
+[docs/measurements.md](docs/measurements.md).
+
 ## Why this exists
 
 Spite, mostly.
@@ -70,6 +111,51 @@ whose registers are undocumented, the codec is not named anywhere in the DSP
 image, and whether the audio payload is encrypted is a hardware question the
 firmware cannot answer. Details in [docs/ulla.md](docs/ulla.md#7-open).
 Nothing anywhere in this repository is filled in by guesswork.
+
+**This is probably not Vision-Pro-only hardware, and that matters for what
+comes next.** Two facts from the material already in this repository:
+
+- Apple's own test reports declare the HDR4 and HDR8 modes in the **ordinary
+  2.4 GHz Bluetooth band** as well as in the 5 GHz bands, and measured them
+  there, at 2.30 MHz and 4.52 MHz bandwidth.
+- The firmware carries a **lite mode** as a first-class citizen: its own mode
+  value, its own receive client in the audio DSP, and its own failure reason.
+
+What those two do **not** establish, and nobody should claim they do: that the
+lite mode uses the 2.4 GHz band, that any non-Vision-Pro device drives either
+mode, or that a commodity controller could form the HDR modulations. Those are
+open questions, and they are the cheap ones to answer.
+
+## How you can help
+
+In rough order of how little hardware it needs:
+
+1. **If you own an Apple host and these earbuds**, check whether the host
+   already uses this link. Run `tools/aap_probe.py --device <earbuds>` while
+   the Apple device is connected and playing: a start command that is
+   *refused* means the earbuds' session machine is not idle. With an Apple host
+   connected and playing, and the same command succeeding once that host is
+   disconnected, that would be the first evidence that a device other than a
+   Vision Pro drives ULLA. Run both halves; one alone proves nothing. Costs
+   nothing but your time.
+2. **If you can capture HCI on an Apple host**, the controller's vendor command
+   and its progress event are documented in
+   [docs/protocol.md](docs/protocol.md) section 6, including the mode, result
+   and reason bytes. If an Apple host drives this link, those appear in a
+   host-side capture.
+3. **If you have a controller whose firmware you can patch**
+   (InternalBlue-class tooling on a supported chip), the link-manager exchange
+   is documented field by field in section 5 and needs no key or challenge of
+   any kind. Emitting the setup PDU and reporting what the earbuds answer would
+   tell us whether the mode change can be driven from non-Apple hardware at
+   all. Whether current chips are supported by such tooling is unverified.
+4. **If you have a wideband software radio**, the air format is the big unknown.
+   The link hops 79 channels at Bluetooth timing, so capturing the whole band
+   and un-hopping in software is the realistic approach rather than chasing the
+   hops.
+
+Please scrub captures before sharing them: a real Bluetooth trace can contain
+link keys and other people's device addresses.
 
 ## Repository layout
 
