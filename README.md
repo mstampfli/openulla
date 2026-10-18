@@ -11,6 +11,13 @@ chip in the USB-C model uses the 5 GHz band and that this is what enables the
 feature; Apple's FCC filings show what that radio actually is, a narrowband
 radio in the 5 GHz and, since 2024, 6 GHz bands.
 
+**The radio is not exclusive to the Vision Pro.** A current MacBook's own FCC
+test report declares the same two Apple modes, HDR4 and HDR8, in the same two
+5 GHz bands, on two independently usable radio cores, and recent iPhones declare
+a narrowband radio in those bands as well. Whether any of their software ever
+drives this link is a different question and is still open. Sources in
+[docs/ulla.md](docs/ulla.md) section 2.4.
+
 This repository documents that protocol and works toward speaking it from
 hardware you already own. The purpose is interoperability: letting other hosts
 talk to these earbuds, including the thing that started it, the fact that any
