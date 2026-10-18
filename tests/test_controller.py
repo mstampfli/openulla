@@ -92,3 +92,17 @@ def test_band_ranges_are_stored_per_band_by_the_responder():
     responder = Responder()
     responder.receive(lmp.BandRanges((lmp.BandRange(5, 29, 6), lmp.BandRange(7, 41, 7))).to_bytes())
     assert responder.band_ranges == {5: (29, 6), 7: (41, 7)}
+
+
+def test_the_responder_answers_a_feature_request_with_its_own_word():
+    responder = Responder(features=0x000000E0)
+    reply = lmp.parse(responder.receive(lmp.Features(0x00000060).to_bytes()))
+    assert reply == lmp.Features(0x000000E0, reply=True)
+    assert responder.peer_features == 0x00000060
+    assert lmp.agreed(responder.features, responder.peer_features, lmp.FEATURE_BIT_BANDS)
+
+
+def test_a_feature_reply_is_kept_and_not_answered():
+    responder = Responder()
+    assert responder.receive(lmp.Features(0x11223344, reply=True).to_bytes()) == b""
+    assert responder.peer_features == 0x11223344

@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla import bands, sim  # noqa: E402
+from openulla import bands, lmp, sim  # noqa: E402
 from openulla.controller import AcceptChecks, Responder  # noqa: E402
 from openulla.hci import UllaSetup  # noqa: E402
 from openulla.session import Event  # noqa: E402
@@ -42,6 +42,8 @@ def main():
                     help="make the peer controller refuse at one of its four checks")
     ap.add_argument("--bands", default="1,2,5,6,7",
                     help="band indexes this source allows (default 1,2,5,6,7)")
+    ap.add_argument("--features", type=lambda s: int(s, 0), default=0x60,
+                    help="the feature word this source advertises (default 0x60: bits 5 and 6)")
     args = ap.parse_args()
 
     link = sim.connect()
@@ -77,11 +79,24 @@ def main():
     show("HCI 0xFE50, start the transition", commands.start_transition(config_word=0x0100, flags=0x03))
 
     print("5. controller to controller, on the existing ACL link")
-    responder = Responder(checks=REJECTIONS[args.reject])
+    responder = Responder(checks=REJECTIONS[args.reject], features=args.features)
+    before = len(link.pdus)
+    reply = link.exchange(lmp.Features(args.features).to_bytes(), responder)
+    for direction, pdu in link.pdus[before:]:
+        show(f"LMP {direction}, the feature exchange", pdu)
+    peer_word = lmp.Features.from_bytes(reply).word
+    print(f"     the peer answers 0x{peer_word:08x}; band messages need bit "
+          f"{lmp.FEATURE_BIT_BANDS} on both sides: "
+          f"{lmp.agreed(args.features, peer_word, lmp.FEATURE_BIT_BANDS)}")
+    before = len(link.pdus)
+    link.exchange(lmp.AllowedBands(mask).to_bytes(), responder)
+    for direction, pdu in link.pdus[before:]:
+        show(f"LMP {direction}, the allowed-band mask", pdu)
     setup = UllaSetup(handle=args.handle, extra_flags=0, config_word=0x0100, flags=0x03)
+    before = len(link.pdus)
     event = link.controller_setup(setup, responder=responder)
-    for direction, pdu in link.pdus:
-        show(f"LMP {direction}", pdu)
+    for direction, pdu in link.pdus[before:]:
+        show(f"LMP {direction}, the setup", pdu)
     show("vendor event 0xFF to the host", event.to_bytes())
     print(f"     {event.describe()}")
 

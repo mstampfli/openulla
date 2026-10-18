@@ -34,9 +34,16 @@ OPCODE_ULLA_CONFIG = 0x74
 ESCAPE_FIRST = 0x7B  # the opcode from which an extended opcode byte follows
 ESCAPE_7B = 0x7B
 ESCAPE_7F = 0x7F
+EXT_FEATURE_REQUEST = 0x0A  # in the 0x7B space: one word, the sender's feature bits
+EXT_FEATURE_REPLY = 0x0B
 EXT_ALLOWED_BANDS = 0x17  # in the 0x7B space; 0x17 also exists behind 0x7F, unrelated
 EXT_BAND_RANGES = 0x1C
 MAX_BAND_RANGES = 5
+# Bits of the feature word, by what they gate. Both are tested against the AND of the two
+# ends' words, so a peer that never answers the exchange gates everything off.
+FEATURE_BIT_BANDS = 5  # the band command family and the band PDUs [fw acib 0x29916]
+FEATURE_BIT_MODE_PROCEDURE = 6  # 0xFE50's non-zero path [fw acib 0x1db5e]
+FEATURE_REDUCED_LOW_BYTE = 0xA9  # what a quirked link advertises [fw acib 0x2942c, 0x294a8]
 
 
 def header(opcode: int, tid: int) -> int:
@@ -206,6 +213,73 @@ class NotAccepted:
 
 
 @dataclass(frozen=True)
+class Features:
+    """Escape 0x7B, extended opcodes 0x0A and 0x0B: one four-byte feature word each way.
+
+    The request carries the sender's own word; the receiver stores it against the link and
+    answers with its own [fw acib 0x3c0a8 storing the body word, then 0x29470 which keeps it
+    at the link's +0x47 and sends the reply; the builder for both is acib 0x3abc8].
+
+    Everything else is gated on the AND of the two words, so an implementation that does not
+    answer this is never sent a band PDU and never gets the mode procedure. See `agreed`.
+    """
+
+    word: int
+    reply: bool = False
+    tid: int = 0
+
+    LENGTH = 6  # header, extended opcode, four bytes
+
+    @property
+    def ext_opcode(self) -> int:
+        return EXT_FEATURE_REPLY if self.reply else EXT_FEATURE_REQUEST
+
+    def to_bytes(self) -> bytes:
+        if not 0 <= self.word <= 0xFFFFFFFF:
+            raise ProtocolError("the feature word is four bytes")
+        return (
+            bytes((header(ESCAPE_7B, self.tid), self.ext_opcode))
+            + self.word.to_bytes(4, "little")
+        )
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "Features":
+        head = parse_header(data)
+        if head.opcode != ESCAPE_7B or head.ext_opcode not in (
+            EXT_FEATURE_REQUEST,
+            EXT_FEATURE_REPLY,
+        ):
+            raise ProtocolError("not the feature exchange")
+        if len(data) != cls.LENGTH:
+            raise ProtocolError(f"the feature exchange is {cls.LENGTH} bytes, got {len(data)}")
+        return cls(
+            word=int.from_bytes(data[2:6], "little"),
+            reply=head.ext_opcode == EXT_FEATURE_REPLY,
+            tid=head.tid,
+        )
+
+
+def agreed(own: int, peer: int, bit: int, byte: int = 0) -> bool:
+    """Whether one feature bit is usable on a link: both words must carry it.
+
+    The firmware ANDs the two words a byte at a time and tests one bit of the result
+    [fw acib 0x29916 for bit 5 of byte 0, 0x1db5e for bit 6 of byte 0 or of byte 3].
+    """
+    if not 0 <= bit <= 7 or not 0 <= byte <= 3:
+        raise ProtocolError("a feature bit is one of eight, in one of four bytes")
+    own_byte = (own >> (8 * byte)) & 0xFF
+    peer_byte = (peer >> (8 * byte)) & 0xFF
+    return bool(own_byte & peer_byte & (1 << bit))
+
+
+def mode_procedure_agreed(own: int, peer: int) -> bool:
+    """The gate on 0xFE50's non-zero path: bit 6 of byte 0, or of byte 3. [fw acib 0x1db5e]"""
+    return agreed(own, peer, FEATURE_BIT_MODE_PROCEDURE) or agreed(
+        own, peer, FEATURE_BIT_MODE_PROCEDURE, byte=3
+    )
+
+
+@dataclass(frozen=True)
 class AllowedBands:
     """Escape 0x7B, extended opcode 0x17: the sender's own allowed-band mask.
 
@@ -321,6 +395,11 @@ def parse(data: bytes) -> object:
         return Accepted.from_bytes(data)
     if head.opcode == OPCODE_NOT_ACCEPTED:
         return NotAccepted.from_bytes(data)
+    if head.opcode == ESCAPE_7B and head.ext_opcode in (
+        EXT_FEATURE_REQUEST,
+        EXT_FEATURE_REPLY,
+    ):
+        return Features.from_bytes(data)
     if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_ALLOWED_BANDS:
         return AllowedBands.from_bytes(data)
     if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_BAND_RANGES:

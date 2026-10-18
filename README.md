@@ -107,8 +107,12 @@ $ python3 tools/ulla_demo.py
      that mask names bands (1, 2, 5, 6, 7)
   HCI 0xFE50, start the transition   50 fe 07 0b 00 00 00 01 03 00
 5. controller to controller, on the existing ACL link
-  LMP source -> sink                 e6 00 00 00 00 00 01 03 00
-  LMP sink -> source                 06 73
+  LMP source -> sink, the feature exchange f6 0a 60 00 00 00
+  LMP sink -> source, the feature exchange f6 0b 60 00 00 00
+     the peer answers 0x00000060; band messages need bit 5 on both sides: True
+  LMP source -> sink, the allowed-band mask f6 17 e6
+  LMP source -> sink, the setup      e6 00 00 00 00 00 01 03 00
+  LMP sink -> source, the setup      06 73
   vendor event 0xFF to the host      ff 07 00 0a 0b 00 01 00 ff
      handle 0x000b ULLA_ON SUCCESS NOT_APPLICABLE
 6. the DSP's side, and the session is open

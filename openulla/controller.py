@@ -71,12 +71,21 @@ class Responder:
     forwarded: bytes | None = None
     link_band: int | None = None
     band_ranges: dict[int, tuple[int, int]] = field(default_factory=dict)
+    features: int = 0  # what this end advertises
+    peer_features: int | None = None  # what the other end sent, kept per link
 
     def receive(self, pdu: bytes) -> bytes:
         """Answer one PDU: the accepted or not-accepted reply, or b"" when there is none."""
         parsed = lmp.parse(pdu)
         if isinstance(parsed, lmp.SetupRequest):
             return self._setup(parsed)
+        if isinstance(parsed, lmp.Features):
+            # The peer's word is kept against the link, and a request is answered with ours
+            # [fw acib 0x3c0a8 then 0x29470].
+            self.peer_features = parsed.word
+            if parsed.reply:
+                return b""
+            return lmp.Features(self.features, reply=True, tid=parsed.tid).to_bytes()
         if isinstance(parsed, lmp.Configuration):
             return b""  # stored without checks [fw acib 0x6352c]
         if isinstance(parsed, lmp.AllowedBands):

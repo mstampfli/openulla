@@ -102,6 +102,16 @@ def decode_lmp(data):
     elif isinstance(parsed, lmp.NotAccepted):
         lines += [f"  not accepted, for opcode 0x{parsed.rejected_opcode:02x}, "
                   f"reason {reason_name(parsed.reason)} (0x{parsed.reason:02x})"]
+    elif isinstance(parsed, lmp.Features):
+        kind = "reply" if parsed.reply else "request"
+        lines += [
+            f"  the feature exchange, {kind}: word 0x{parsed.word:08x}",
+            f"    bit {lmp.FEATURE_BIT_BANDS} (the band family) is "
+            + ("set" if parsed.word & (1 << lmp.FEATURE_BIT_BANDS) else "clear"),
+            f"    bit {lmp.FEATURE_BIT_MODE_PROCEDURE} (the mode procedure) is "
+            + ("set" if parsed.word & (1 << lmp.FEATURE_BIT_MODE_PROCEDURE) else "clear"),
+            "    a feature is usable only where both ends' words carry its bit",
+        ]
     elif isinstance(parsed, lmp.AllowedBands):
         lines += [f"  allowed-band mask 0x{parsed.mask:02x}"]
         lines += [f"    band {line}" for line in describe_bands(parsed.mask)]

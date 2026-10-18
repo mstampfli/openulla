@@ -121,3 +121,38 @@ def test_the_two_the_earbud_sends_but_refuses():
 def test_an_opcode_that_is_not_an_escape_has_no_space():
     with pytest.raises(ProtocolError):
         lmp.implemented(0x73, 1)
+
+
+def test_the_feature_exchange_carries_one_word_each_way():
+    request = lmp.Features(0x000000E0)
+    assert request.to_bytes() == bytes.fromhex("f6 0a e0 00 00 00")
+    assert lmp.Features.from_bytes(request.to_bytes()) == request
+    reply = lmp.Features(0x12345678, reply=True, tid=1)
+    assert reply.to_bytes() == bytes.fromhex("f7 0b 78 56 34 12")
+    assert lmp.parse(reply.to_bytes()) == reply
+    assert lmp.Features(0, reply=True).ext_opcode == lmp.EXT_FEATURE_REPLY
+    with pytest.raises(ProtocolError):
+        lmp.Features.from_bytes(bytes.fromhex("f6 0a e0 00 00"))
+
+
+def test_a_feature_is_usable_only_when_both_ends_carry_it():
+    bands_bit = 1 << lmp.FEATURE_BIT_BANDS
+    assert lmp.agreed(bands_bit, bands_bit, lmp.FEATURE_BIT_BANDS)
+    assert not lmp.agreed(bands_bit, 0, lmp.FEATURE_BIT_BANDS)
+    assert not lmp.agreed(0, bands_bit, lmp.FEATURE_BIT_BANDS)
+    assert not lmp.agreed(bands_bit, bands_bit, lmp.FEATURE_BIT_MODE_PROCEDURE)
+    with pytest.raises(ProtocolError):
+        lmp.agreed(1, 1, 8)
+
+
+def test_the_mode_procedure_gate_takes_either_of_its_two_bytes():
+    bit = 1 << lmp.FEATURE_BIT_MODE_PROCEDURE
+    assert lmp.mode_procedure_agreed(bit, bit)
+    assert lmp.mode_procedure_agreed(bit << 24, bit << 24)
+    assert not lmp.mode_procedure_agreed(bit, bit << 24)
+    assert not lmp.mode_procedure_agreed(0, 0xFFFFFFFF)
+
+
+def test_a_quirked_link_keeps_the_band_bit_in_what_it_advertises():
+    assert lmp.FEATURE_REDUCED_LOW_BYTE & (1 << lmp.FEATURE_BIT_BANDS)
+    assert not lmp.FEATURE_REDUCED_LOW_BYTE & (1 << lmp.FEATURE_BIT_MODE_PROCEDURE)

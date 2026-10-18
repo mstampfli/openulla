@@ -81,6 +81,15 @@ class Link:
 
     # -- the controller-to-controller exchange ------------------------------------------
 
+    def exchange(self, pdu: bytes, responder: Responder | None = None) -> bytes:
+        """Send one link-manager PDU to the peer controller and record both directions."""
+        peer = responder or self.sink.responder
+        self.pdus.append(("source -> sink", pdu))
+        reply = peer.receive(pdu)
+        if reply:
+            self.pdus.append(("sink -> source", reply))
+        return reply
+
     def controller_setup(self, setup: UllaSetup, responder: Responder | None = None) -> ModeChangeEvent:
         """Run the link-manager exchange and return the event the host would see.
 

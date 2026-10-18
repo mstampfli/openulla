@@ -510,6 +510,37 @@ Two rows are the messages this document decodes in full, and this table is how t
 checked: 0x7B/0x17's one byte is the allowed-band mask of section 6.2, and 0x7B/0x1C's 3N
 bytes are the band ranges of section 6.5, whose count the length carries.
 
+### 5.8 The feature exchange, which gates everything else
+
+Two of the messages above are a request and its reply, and together they are what decides
+whether any of the rest is ever sent.
+
+**0x7B/0x0A** carries one word: the sender's own feature word, loaded from the device's feature
+cell [fw acib 0x29410 and 0x2948a load 0x10003290; the body is the word at the block's +0x10,
+builder acib 0x3abc8]. **0x7B/0x0B** is the same message the other way round. The receiving
+side stores the word it was given against the link and answers with its own
+[fw acib 0x3c0a8 stores the body word in its block, then 0x29470 copies it to the link's
+offset 0x47 and sends the reply].
+
+That per-link copy is the "per-link byte" the gates in section 6.2 refer to. Every ULLA
+feature in this firmware is gated on **the AND of the two words**, a byte at a time:
+
+| feature | bit | bytes ANDed |
+|---|---|---|
+| the band command family and the band PDUs | 5 | the device's own byte and the link's 0x47 [fw acib 0x29916] |
+| 0xFE50's non-zero path, the mode procedure | 6 | the same pair, or the two bytes three further on, 0x10003293 against the link's 0x4A [fw acib 0x1db5e] |
+
+So the device's feature word lives at 0x10003290 to 0x10003293 and the peer's at the link's
+0x47 to 0x4A, and **an implementation that never answers the exchange has every feature gated
+off**, because the AND reads its word as zero. Answering it is the first thing a source has to
+do.
+
+One quirk, for anyone comparing against a capture: when a per-link identity check matches (a
+halfword of 0xF, a byte of at most 10, and a ten-byte comparison at the link's 0x4E), the low
+byte of the word the earbud advertises is reduced to its bits 0, 3, 5 and 7
+[fw acib 0x3684e deciding it, 0x2942c and 0x294a8 applying the mask 0xA9]. Bit 5, the band
+family, survives that reduction. What the other bits of the word mean is open.
+
 ## 6. Controller interface: HCI vendor commands
 
 The source's host starts the whole thing with vendor command **0xFE50** [fw acib table at
@@ -533,9 +564,10 @@ bit 2 is used elsewhere [fw acib 0x1dace..0x1db0a].
 **With it non-zero**, a different procedure runs [fw acib 0x1daa6], and parameter 5 is not a
 bitmask but a small value: **5 or above is refused with 0x12**, and 4 is the one value that
 takes a shorter route [fw acib 0x1db7e, 0x1db92]. That path is gated on a different feature
-bit from the band family's: bit 6 of the device's feature byte ANDed with a per-link byte, or
-else bit 6 of the byte three further on ANDed with another, refusing with 0x0C
-[fw acib 0x1db5e..0x1db7c; the band family uses bit 5 of the same byte, section 6.2]. On
+bit from the band family's: bit 6 of the device's feature byte ANDed with the peer's, or else
+bit 6 of the byte three further on ANDed with the peer's, refusing with 0x0C
+[fw acib 0x1db5e..0x1db7c; the band family uses bit 5 of the same pair, and section 5.8 says
+where the peer's word comes from]. On
 success it allocates a request, stores parameter 5 in it with four constants and the handle,
 and hands it to the radio layer [fw acib 0x1dba4..0x1dbd8].
 
@@ -649,8 +681,9 @@ The transmit side proves the pairing. The controller loads its own allowed-band 
 it with the escape opcode and the extended opcode as literal constants [fw acib 0x2992a:
 device state 0x10002d68, own mask at +0x1b2, extended opcode 0x17, length 1, escape opcode
 0x7B, then the send builder 0x3ad7c]. The same feature bit that gates the command of section
-6.1 gates this send as well [fw acib 0x29916, byte at 0x10003290, bit 5, ANDed with a per-link
-byte].
+6.1 gates this send as well [fw acib 0x29916, byte at 0x10003290, bit 5, ANDed with the byte
+at the link's 0x47, which is the peer's feature word from the exchange of section 5.8]. So a
+peer that has not answered that exchange is never sent this PDU.
 
 The receive side matches: the parser is ordinary LMP, with the opcode in the first byte shifted
 right by one, the transaction id in its low bit, and the extended opcode in the following byte,
