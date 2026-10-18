@@ -1,87 +1,88 @@
+#!/usr/bin/env python3
 """Probe Apple's accessory protocol (AAP) service 4 on an AirPods L2CAP channel.
 
-Every constant below cites the AirPods firmware (build 9A348, rkof payload, offsets into
-rkof.bin) that proves it. Nothing here is guessed.
+Every frame layout, opcode and class this sends lives in `openulla/aap.py`, beside the
+firmware address that proves it; this tool is the part that leaves the machine. Read-only by
+default: it opens the service and prints what comes back. Commands are sent with --seq, a
+comma list run in order on one channel, or with the --start-session shorthand:
 
-  PSM 0x1001                   rkof 0x40e78: 0x5c1e4(0x1001, handler)
-  frame [u16 type][u16 service] rkof 0x4052c: two little-endian u16 reads (0x625d2 with the
-                                le flag set, 0x625f4..0x62606)
-  type 0 open / 1 reply / 4 data rkof 0x405f6: tbb over type 0..4
-  service id 4                  rkof 0x8af9e: u16 4 in the registration params
-  open body, 16 bytes total     rkof 0x4073a..0x4078a: u16, u16, then 8 bytes; the handler
-                                rejects len <= 0xf (rkof 0x40600)
-  service 4 payload [u16 opcode] rkof 0x6cef4 -> 0x308e0
-  opcode 0x36 = start ULLA session, one mode byte
-                                rkof switch table 0x6cf4c case 0x36 -> 0x6d602, byte read
-                                0x308c8, then 0x27a58 posts ULLA_MGR_EVT_SESSION_START_REQ
-
-Read-only by default: it opens the service and prints what comes back. Commands are sent with
---seq, a comma list run in order on one channel, or with the --start-session shorthand:
-
-  start[:MODE]  ask the earbud to start a ULLA session with this host (changes its state)
+  start[:MODE]       ask the earbud to start a ULLA session with this host (changes its state)
   subscribe[:CLASS]  subscribe to a report class, by default the ULLA one
-  stop          ask it to stop the session
+  stream-start       ask it to start the audio stream
+  stream-stop        ask it to stop the audio stream
+  stop               ask it to stop the session
 
 Closing the channel resets the earbud's session state.
+
+--simulate runs the same sequence against openulla.sink, which answers the way the earbud
+answers wherever that is proven, so the byte stream can be read without hardware. The
+earbud's own internal events are not invented there, so a start command is answered by
+silence rather than by the status reply a real pair sends once its app and its sibling have
+got there; tools/ulla_demo.py is the one that walks a whole session, by feeding those events
+in explicitly. See docs/implementation.md.
 """
 import argparse
+import os
 import re
 import socket
-import struct
 import sys
 import time
 
-PSM = 0x1001
-SERVICE_AAP = 4
-TYPE_OPEN, TYPE_OPEN_REPLY, TYPE_DATA = 0, 1, 4
-OPCODE_START_SESSION = 0x36
-# rkof switch table 0x6cf4c case 0x3c -> 0x6d396: reads four bytes, then 0x27ac8 posts
-# ULLA_MGR_EVT_SESSION_STOP_REQ_FROM_PEER.
-OPCODE_STOP_SESSION = 0x3C
-# Opcode 0x17 is the wrapper used in both directions (rkof 0x6cefa handles it before the
-# opcode switch; rkof 0x6e198 builds it). Body: [u32 class][u16 len][len bytes] when the
-# session's negotiated version pair is above 0x10001 (rkof 0x6cf1a), which is the case for the
-# open we send. The class is dispatched at rkof 0x6d07e; class 0x00200000 reaches 0x6d116 ->
-# 0x27f60, which registers the report workers for notification ids 0xe910 and 0xe911
-# (0x27f6e..0x27f7e), tells the other earbud over UTP (0x27f9a) and sends its own controller
-# HCI OCF 0x375 (0x27fb0). 0x27f60 never reads the body, so any length works; four bytes are
-# sent so the firmware's allocate-and-read path gets a non-zero length.
-OPCODE_WRAPPER = 0x17
-CLASS_ULLA_REPORTS = 0x00200000
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from openulla import aap  # noqa: E402
+from openulla.errors import ProtocolError  # noqa: E402
+from openulla.sim import DEFAULT_PEER, SinkTransport  # noqa: E402
+from openulla.sink import Sink  # noqa: E402
+from openulla.transport import L2capTransport  # noqa: E402
+
 MAC_RE = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
-
-
-def frame(ftype, service, body=b""):
-    return struct.pack("<HH", ftype, service) + body
-
-
-def open_request(service, ver_a, ver_b):
-    """16-byte open request: header, two version words, eight bytes."""
-    return frame(TYPE_OPEN, service, struct.pack("<HH", ver_a, ver_b) + bytes(8))
+NAMES = {
+    aap.FrameType.OPEN: "open",
+    aap.FrameType.OPEN_REPLY: "open-reply",
+    aap.FrameType.CONTROL_2: "type2",
+    aap.FrameType.CONTROL_3: "type3",
+    aap.FrameType.DATA: "data",
+}
 
 
 def describe(data):
-    if len(data) < 4:
+    if len(data) < aap.HEADER_LENGTH:
         return "short frame %s" % data.hex(" ")
-    ftype, service = struct.unpack_from("<HH", data, 0)
-    names = {TYPE_OPEN: "open", TYPE_OPEN_REPLY: "open-reply", 2: "type2", 3: "type3",
-             TYPE_DATA: "data"}
-    out = "type %d (%s) service %d" % (ftype, names.get(ftype, "?"), service)
-    body = data[4:]
-    if ftype == TYPE_OPEN_REPLY and len(body) >= 6:
-        # rkof 0x40884 + 0x3f778: status, pad, then the accessory's version words.
-        status, pad, v1, v2 = struct.unpack_from("<BBHH", body, 0)
+    frame = aap.parse_frame(data)
+    out = "type %d (%s) service %d" % (frame.ftype, NAMES.get(frame.ftype, "?"), frame.service)
+    if frame.ftype == aap.FrameType.OPEN_REPLY and len(frame.body) >= 6:
+        reply = aap.OpenReply.from_bytes(frame.body.ljust(aap.OPEN_REPLY_BODY_LENGTH, b"\0"))
         out += " status 0x%02x pad 0x%02x versions %d,%d rest %s" % (
-            status, pad, v1, v2, body[6:].hex(" "))
-    elif ftype == TYPE_DATA and len(body) >= 2:
-        out += " opcode 0x%04x payload %s" % (struct.unpack_from("<H", body, 0)[0],
-                                              body[2:].hex(" "))
+            reply.status, frame.body[1], reply.major, reply.minor, frame.body[6:].hex(" "))
+    elif frame.ftype == aap.FrameType.DATA and len(frame.body) >= 2:
+        opcode, payload = aap.parse_payload(frame.body)
+        out += " opcode 0x%04x payload %s" % (opcode, payload.hex(" "))
     else:
-        out += " body %s" % body.hex(" ")
+        out += " body %s" % frame.body.hex(" ")
     return out
 
 
-def drain(sock, seconds, label):
+def step_frame(step, version_pair):
+    """One command frame from a --seq word, or a SystemExit for a word we do not know."""
+    name, _, arg = step.partition(":")
+    if name == "start":
+        mode = int(arg, 0) if arg else 0
+        return aap.start_session(mode), "start ULLA session, mode %d" % mode
+    if name == "subscribe":
+        cls = int(arg, 0) if arg else aap.CLASS_ULLA_REPORTS
+        frame = aap.subscribe_reports(cls, aap.class_width(version_pair))
+        return frame, "subscribe to report class 0x%06x" % cls
+    if name == "stream-start":
+        return aap.start_stream(), "start the audio stream"
+    if name == "stream-stop":
+        return aap.stop_stream(), "stop the audio stream"
+    if name == "stop":
+        return aap.stop_session(int(arg, 0) if arg else 0), "stop ULLA session"
+    raise SystemExit("unknown step %r" % step)
+
+
+def drain(transport, seconds, label):
     """Print every frame that arrives within the window."""
     end = time.monotonic() + seconds
     got = 0
@@ -89,13 +90,15 @@ def drain(sock, seconds, label):
         left = end - time.monotonic()
         if left <= 0:
             break
-        sock.settimeout(left)
         try:
-            data = sock.recv(1024)
-        except socket.timeout:
+            data = transport.recv(left)
+        except (socket.timeout, TimeoutError):
             break
         except OSError as exc:
             print("  %s: recv failed: %s" % (label, exc))
+            break
+        except ProtocolError as exc:
+            print("  %s: %s" % (label, exc))
             break
         if not data:
             print("  %s: channel closed by the earbud" % label)
@@ -110,7 +113,9 @@ def drain(sock, seconds, label):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--device", required=True, help="AirPods address, AA:BB:CC:DD:EE:FF")
+    ap.add_argument("--device", help="AirPods address, AA:BB:CC:DD:EE:FF")
+    ap.add_argument("--simulate", action="store_true",
+                    help="run against openulla.sink instead of a real device")
     ap.add_argument("--version", default="1,2",
                     help="version words in the open request (default 1,2)")
     ap.add_argument("--wait", type=float, default=2.0, help="seconds to listen after each send")
@@ -119,56 +124,51 @@ def main():
     ap.add_argument("--mode", type=lambda s: int(s, 0), default=0,
                     help="mode byte for --start-session (default 0)")
     ap.add_argument("--seq", help="comma list of commands to send in one channel: "
-                                  "start, start:MODE, subscribe, subscribe:CLASS or stop")
+                                  "start, start:MODE, subscribe, subscribe:CLASS, "
+                                  "stream-start, stream-stop or stop")
     args = ap.parse_args()
-    if not hasattr(socket, "AF_BLUETOOTH"):
-        raise SystemExit("this Python has no Bluetooth sockets (socket.AF_BLUETOOTH); "
-                         "aap_probe.py needs Linux with BlueZ")
-    if not re.match(MAC_RE, args.device):
-        raise SystemExit("not a Bluetooth address: %r" % args.device)
+    if not args.simulate:
+        if not args.device:
+            raise SystemExit("--device is required unless --simulate is given")
+        if not hasattr(socket, "AF_BLUETOOTH"):
+            raise SystemExit("this Python has no Bluetooth sockets (socket.AF_BLUETOOTH); "
+                             "aap_probe.py needs Linux with BlueZ")
+        if not re.match(MAC_RE, args.device):
+            raise SystemExit("not a Bluetooth address: %r" % args.device)
     ver_a, ver_b = (int(x, 0) for x in args.version.split(","))
+    # The simulator answers inside the send, so the only wait it needs is enough for the
+    # drain loop to take what is already queued.
+    wait = 0.05 if args.simulate else args.wait
 
-    sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
-    print("connecting to %s PSM 0x%04x" % (args.device, PSM))
-    try:
-        sock.connect((args.device, PSM))
-    except OSError as exc:
-        raise SystemExit("connect failed: %s" % exc)
-    print("connected")
+    if args.simulate:
+        transport = SinkTransport(Sink(), DEFAULT_PEER)
+        print("simulating a session against openulla.sink, PSM 0x%04x" % aap.PSM)
+    else:
+        print("connecting to %s PSM 0x%04x" % (args.device, aap.PSM))
+        try:
+            transport = L2capTransport.connect(args.device)
+        except OSError as exc:
+            raise SystemExit("connect failed: %s" % exc)
+        print("connected")
 
-    req = open_request(SERVICE_AAP, ver_a, ver_b)
-    print("-> open service %d versions %d,%d: %s" % (SERVICE_AAP, ver_a, ver_b, req.hex(" ")))
-    sock.send(req)
-    drain(sock, args.wait, "open")
+    req = aap.open_request(aap.SERVICE_ULLA, ver_a, ver_b)
+    print("-> open service %d versions %d,%d: %s" % (aap.SERVICE_ULLA, ver_a, ver_b, req.hex(" ")))
+    transport.send(req)
+    drain(transport, wait, "open")
 
     steps = []
     if args.start_session:
         steps.append("start:%d" % args.mode)
     if args.seq:
         steps += [s.strip() for s in args.seq.split(",") if s.strip()]
+    version_pair = (ver_a << 16) | ver_b
     for n, step in enumerate(steps, 1):
-        name, _, arg = step.partition(":")
-        if name == "start":
-            mode = int(arg, 0) if arg else 0
-            cmd = frame(TYPE_DATA, SERVICE_AAP,
-                        struct.pack("<HB", OPCODE_START_SESSION, mode))
-            label = "start ULLA session, mode %d" % mode
-        elif name == "subscribe":
-            cls = int(arg, 0) if arg else CLASS_ULLA_REPORTS
-            body = struct.pack("<IH", cls, 4) + bytes(4)
-            cmd = frame(TYPE_DATA, SERVICE_AAP, struct.pack("<H", OPCODE_WRAPPER) + body)
-            label = "subscribe to report class 0x%06x" % cls
-        elif name == "stop":
-            cmd = frame(TYPE_DATA, SERVICE_AAP,
-                        struct.pack("<HI", OPCODE_STOP_SESSION, int(arg, 0) if arg else 0))
-            label = "stop ULLA session"
-        else:
-            raise SystemExit("unknown step %r" % step)
+        cmd, label = step_frame(step, version_pair)
         print("-> step %d: %s: %s" % (n, label, cmd.hex(" ")))
-        sock.send(cmd)
-        drain(sock, max(args.wait, 4.0), "step%d" % n)
+        transport.send(cmd)
+        drain(transport, wait if args.simulate else max(wait, 4.0), "step%d" % n)
 
-    sock.close()
+    transport.close()
     print("closed")
     return 0
 
