@@ -285,6 +285,27 @@ class BandRanges:
         return cls(ranges=triples, tid=head.tid, count_byte=body[1])
 
 
+# Which extended opcodes each escape space implements in build 9A348, and which share the
+# reject stub with the out-of-range case. Read from the two dispatch tables
+# [fw acib 0x3bc14 for 0x7B, 39 entries; 0x3b3bc for 0x7F, 34 entries]. An implementation can
+# use these to know what an earbud of this build will answer at all; see protocol.md 5.6.
+ESCAPE_7B_EXT = range(1, 0x28)
+ESCAPE_7B_REFUSED = frozenset({0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x12, 0x13, 0x1D, 0x1E, 0x24})
+ESCAPE_7B_IMPLEMENTED = frozenset(ESCAPE_7B_EXT) - ESCAPE_7B_REFUSED
+ESCAPE_7F_EXT = range(1, 0x23)
+ESCAPE_7F_REFUSED = frozenset({0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x12, 0x13, 0x14})
+ESCAPE_7F_IMPLEMENTED = frozenset(ESCAPE_7F_EXT) - ESCAPE_7F_REFUSED
+
+
+def implemented(escape: int, ext_opcode: int) -> bool:
+    """Would an earbud of this build dispatch this extended PDU, rather than refuse it?"""
+    if escape == ESCAPE_7B:
+        return ext_opcode in ESCAPE_7B_IMPLEMENTED
+    if escape == ESCAPE_7F:
+        return ext_opcode in ESCAPE_7F_IMPLEMENTED
+    raise ProtocolError(f"0x{escape:02x} is not an escape opcode with a dispatch table")
+
+
 def parse(data: bytes) -> object:
     """Parse any of the PDUs this module knows, by opcode."""
     head = parse_header(data)

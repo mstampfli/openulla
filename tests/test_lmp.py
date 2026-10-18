@@ -90,3 +90,28 @@ def test_more_than_five_triples_are_refused_by_length():
 def test_an_unknown_opcode_is_reported_rather_than_guessed():
     with pytest.raises(ProtocolError):
         lmp.parse(bytes((0x20, 0x00)))
+
+
+def test_the_escape_spaces_know_what_this_build_implements():
+    """The two sets partition each space's extended opcodes. [protocol.md 5.6]"""
+    assert lmp.ESCAPE_7B_IMPLEMENTED | lmp.ESCAPE_7B_REFUSED == set(lmp.ESCAPE_7B_EXT)
+    assert not lmp.ESCAPE_7B_IMPLEMENTED & lmp.ESCAPE_7B_REFUSED
+    assert len(lmp.ESCAPE_7B_REFUSED) == 12 and len(lmp.ESCAPE_7B_IMPLEMENTED) == 27
+    assert lmp.ESCAPE_7F_IMPLEMENTED | lmp.ESCAPE_7F_REFUSED == set(lmp.ESCAPE_7F_EXT)
+    assert len(lmp.ESCAPE_7F_REFUSED) == 8 and len(lmp.ESCAPE_7F_IMPLEMENTED) == 26
+
+
+def test_the_two_messages_we_encode_are_ones_the_earbud_dispatches():
+    assert lmp.implemented(lmp.ESCAPE_7B, lmp.EXT_ALLOWED_BANDS)
+    assert lmp.implemented(lmp.ESCAPE_7B, lmp.EXT_BAND_RANGES)
+
+
+def test_the_two_the_earbud_sends_but_refuses():
+    assert not lmp.implemented(lmp.ESCAPE_7B, 0x24)  # on the reject stub
+    assert 0x28 not in lmp.ESCAPE_7B_EXT  # past the end of the table altogether
+    assert not lmp.implemented(lmp.ESCAPE_7B, 0x28)
+
+
+def test_an_opcode_that_is_not_an_escape_has_no_space():
+    with pytest.raises(ProtocolError):
+        lmp.implemented(0x73, 1)

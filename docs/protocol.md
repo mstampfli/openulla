@@ -681,8 +681,14 @@ Once the mode change succeeds the radio carries the audio. The parts that are es
 - The earbud's DSP firmware contains the ULLA receive clients, a normal one and a lite one,
   and an encode node that selects behaviour by a version byte, 0x10 for 1.0 and 0x11 for 1.1
   [fw sbd1 0x9d334; the DSP image is AArch64].
+- That version is a field of the node, at its offset 0x2bc, and it is exposed on the node's
+  property interface: property id 0x259 reads it, and id 0x25a copies out a 56-byte block
+  assembled from ten other fields of the same node [fw sbd1 0x9d0dc the getter's switch,
+  0x9d0fc..0x9d14c the copy]. Every access to the version field in the image is a read, so it
+  arrives from outside the DSP.
 - It handles frames and subframes per version, with a dedicated routine for version 1.1
-  [fw sbd1 0x9e070, 0xb21d4].
+  [fw sbd1 0x9e070, 0xb21d4], and the per-frame path branches on the same version before
+  looking at a per-link mask and a frame counter [fw sbd1 0x9e4f8].
 - In the controller, the audio stream module programs up to four DMA transfers per buffer from
   a packed descriptor: a buffer count, a length with a 1 KB boundary rule, and per-buffer
   flags [fw acib 0xdabcc].
@@ -691,7 +697,15 @@ Once the mode change succeeds the radio carries the audio. The parts that are es
 configured through registers; the PHY image contains no symbols or strings, and the register
 semantics are not public. It is not recoverable from the firmware alone.
 
-**[open] The codec.** The DSP image names no audio codec anywhere relevant to this path.
+**[open] The codec, the sample rate, the frame size and the bit depth, with a reason.** None
+of them is a constant in the DSP image, and that was checked rather than assumed: no
+sample-rate value (48000, 44100, 96000, 32000, 24000, 16000, 8000) appears as an immediate or
+as a data word anywhere in the audio-node region of that image; the DSP's own log texts
+resolve to addresses outside the payload, in the separately shipped text table; and the DSP
+data payloads that ship beside the code are filter coefficients, RIFF blobs and a manifest of
+per-blob hashes, not a graph description that names formats. So the audio format is
+configuration the node is handed at runtime, which makes it a measurement question, not a
+reading question. The DSP image names no audio codec anywhere relevant to this path either.
 
 **[open] Whether the audio payload is encrypted.** The setup adds no encryption of its own and
 establishes no key material (section 5.4), but whether the radio keeps applying the ordinary

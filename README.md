@@ -120,7 +120,7 @@ $ python3 tools/ulla_demo.py
 
 Steps 1 to 3 are bytes a Linux laptop has really exchanged with real earbuds.
 From step 4 on, the simulator stands in for a Bluetooth controller, because
-those commands and PDUs have to come from one. `python3 -m pytest` runs 83
+those commands and PDUs have to come from one. `python3 -m pytest` runs 87
 tests that check the layouts against the measured frames and the firmware's own
 tables, including the band plan's four internal identities and the receiver that
 recomputes a count instead of trusting it. [docs/implementation.md](docs/implementation.md)
@@ -288,7 +288,7 @@ link keys and other people's device addresses.
 - `openulla/`: the implementation. Pure Python, no dependencies, every constant
   citing the firmware address or the measurement that proves it. See
   [docs/implementation.md](docs/implementation.md).
-- `tests/`: 83 tests over the layouts, the state machine, the band plan and a
+- `tests/`: 87 tests over the layouts, the state machine, the band plan and a
   whole simulated negotiation. `python3 -m pytest`.
 - `docs/implementation.md`: what the code covers, what the simulator refuses to
   invent, and why the last step needs a controller that does not exist yet.
@@ -312,6 +312,9 @@ link keys and other people's device addresses.
   tuning map payload.
 - `tools/ulla_strings.sh`: pulls the ULLA, UTP and HDR identifiers out of a
   firmware image.
+- `tools/ulla_decode.py`: decodes one frame, PDU, vendor command or vendor
+  event from hex, naming its fields and, for the band messages, which bands a
+  mask means. Useful when reading a capture or a log.
 - `tools/verify_claims.py`: re-derives what the docs and the code claim from a
   firmware image on your own machine, one line per claim: the session manager's
   whole transition table, the band plan, the command table with every handler

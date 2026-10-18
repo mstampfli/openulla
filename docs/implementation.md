@@ -29,9 +29,28 @@ fill it in; it says so, and the tests say so too.
 ## Running it
 
 ```sh
-python3 -m pytest                  # 83 tests, no hardware, no dependencies
+python3 -m pytest                  # 87 tests, no hardware, no dependencies
 python3 tools/ulla_demo.py         # the whole setup, every byte, against the simulator
 python3 tools/ulla_demo.py --reject busy    # and the same with the peer refusing
+python3 tools/ulla_decode.py f6 17 e6       # decode one frame, PDU, command or event
+```
+
+The decoder is the other way to use the library: give it hex and it names the fields, says
+whether an earbud of this build would dispatch or refuse an extended PDU, and turns an
+allowed-band mask into the bands and frequencies it means.
+
+```
+$ python3 tools/ulla_decode.py f6 17 e6
+3 bytes: f6 17 e6
+
+LMP PDU: opcode 0x7b, transaction id 0, extended opcode 0x17
+  an earbud of build 9A348 has this one dispatched
+  allowed-band mask 0xe6
+    band 1: 5150-5250 MHz, 5 channels
+    band 2: 5735-5855 MHz, 6 channels
+    band 5: 6045-6165 MHz, 6 channels
+    band 6: 6165-6285 MHz, 6 channels
+    band 7: 6285-6425 MHz, 7 channels
 ```
 
 Against real earbuds, `tools/aap_probe.py` is the one that leaves the machine; everything
