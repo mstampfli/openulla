@@ -406,22 +406,35 @@ The mask is also recomputed on demand: a feature-image module named `drvcomm` [f
 
 ### 6.2 Allowed bands on the air
 
-A peer's mask arrives in an **extended link-manager PDU whose body is two bytes, the extended
-opcode and the mask** [fw acib: length gate at 0x3b558, dispatch at 0x3bc04 on the record's
-extended-opcode byte, index 22]. The extended opcode is therefore **0x17**. The receive parser
-is ordinary LMP: opcode is the first byte shifted right by one, the transaction id is its low
-bit, and the extended opcode is the following byte, taken only for opcodes 0x7B and above [fw
-acib 0x3af66, 0x3af6a, 0x3afa4, 0x3af9c..0x3afb4].
+A peer's mask travels in an **extended link-manager PDU: escape opcode 0x7B, extended opcode
+0x17, one payload byte**, the sender's own mask.
+
+The transmit side proves the pairing. The controller loads its own allowed-band byte and sends
+it with the escape opcode and the extended opcode as literal constants [fw acib 0x2992a:
+device state 0x10002d68, own mask at +0x1b2, extended opcode 0x17, length 1, escape opcode
+0x7B, then the send builder 0x3ad7c]. The same feature bit that gates the command of section
+6.1 gates this send as well [fw acib 0x29916, byte at 0x10003290, bit 5, ANDed with a per-link
+byte].
+
+The receive side matches: the parser is ordinary LMP, with the opcode in the first byte shifted
+right by one, the transaction id in its low bit, and the extended opcode in the following byte,
+taken only for opcodes 0x7B and above [fw acib 0x3af66, 0x3af6a, 0x3afa4, 0x3af9c..0x3afb4].
+The body length of 2 is checked [fw acib 0x3b558], the extended opcode selects the handler [fw
+acib dispatch 0x3bc04, table 0x3bc14, index 22], and the payload byte is read as the mask [fw
+acib 0x3d55a, then 0x29ab4].
+
+So both ends announce their mask with the same PDU, and each applies the other's only through
+the intersection described below.
+
+The two escape spaces are numbered independently: extended opcode 0x17 also exists behind
+escape 0x7F as an unrelated message [fw acib 0x262e6]. For two messages this controller emits
+in both spaces, the extended opcodes differ by 0x11 (0x7F/0x1F against 0x7B/0x0E, and 0x7F/0x20
+against 0x7B/0x0F) [fw acib 0x28fa8, 0x2906a, 0x29236], but that is two observations, not a
+rule.
 
 What arrives is not adopted blindly. The received mask is ANDed with the device's own
 allowed-band byte and ignored if the two do not intersect; only then is it stored as that
 link's band byte [fw acib 0x45360, called only from 0x29af2 inside the PDU handler 0x29ab4].
-
-**[open] Which escape opcode owns that table.** The firmware keeps two extended dispatchers
-[fw acib 0x3b3b8 with table 0x3b3bc, and 0x3bc10 with table 0x3bc14], matching the two escape
-spaces 0x7B and 0x7F that it treats separately elsewhere. The main opcode table sends both
-escapes to a reject stub, so the dispatchers are reached by a path not yet traced. The escape
-is one of the two and this document will not say which until that is read.
 
 **[open] What each bit means.** The mapping from the 8 mask bits to radio bands is not
 established. The only hint in the firmware is that the controller refuses bit 3.
