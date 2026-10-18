@@ -240,6 +240,30 @@ DSP, 24 stream stop response from DSP, 25 stream ready from DSP, 26 stream host 
 31 got data path configs, 32..34 snoop mode update/enabled/disabled, 35 local flow off done,
 36 peer abort request, 37 peer abort response, 38 disconnect, 39 abort.
 
+Three of those come from outside the manager, and the manager's own init handler registers the
+callbacks that raise them, by id [fw rkof 0x27620 calling 0x1accae with six ids]:
+
+- **29 and 30 are the same thing, told apart by one byte.** The vendor mode-change event of
+  section 6 is registered as id 0x0A00, and its handler keeps the event's mode byte in the
+  manager and then posts **29 when that byte is non-zero and 30 when it is zero**
+  [fw rkof 0x2774c, whose tail at 0x27802..0x27810 stores the mode and chooses between 0x1D
+  and 0x1E]. So "ULLA link up" and "ULLA link down" are one event from the controller, read by
+  its mode: mode 1 or 2 is up, mode 0 is back to ordinary ACL. That handler is also where the
+  mode, result and reason names of section 6 come from.
+- **27 comes from a completion matching the session's own handle**: the callback for id 0x382
+  compares its argument against the handle the manager stored when the session started and
+  posts 27 only if they are the same [fw rkof 0x27710..0x27722, the handle at manager+0x44
+  stored at 0x2754e].
+- The completion of the command that starts everything is **ignored**: the callback registered
+  for id 0x250, which is 0xFE50's own command id, is a bare return [fw rkof 0x27898]. The
+  outcome arrives as the event, not as the completion.
+
+Which events are raised at all is only partly answerable from the image. Scanning every call
+of the two posting functions for a constant event number finds 2, 8, 9, 11, 12, 13, 17, 21,
+22, 24, 25, 26, 27, 29 and 30 (the one site above), 34, 35, 37, 38 and 39 [fw rkof, calls of
+0x26158 and 0x1adf1c]. A dozen further call sites compute the number instead, so the rest of
+the list is neither confirmed nor excluded by that scan.
+
 ### 3.4 Transitions
 
 Index table [fw rkof 0x1be53c], rows [fw rkof 0x1be23c onwards]. "ok" is the next state when
