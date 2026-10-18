@@ -35,10 +35,14 @@ def describe_bands(mask: int) -> list[str]:
     return out
 
 
+FRAME_TYPE_NAMES = {int(t): t.name.lower() for t in aap.FrameType}
+
+
 def describe_aap(data: bytes) -> list[str]:
     frame = aap.parse_frame(data)
     lines = [
-        f"AAP frame: type {frame.ftype} ({aap.FrameType(frame.ftype).name.lower()}), "
+        f"AAP frame: type {frame.ftype} "
+        f"({FRAME_TYPE_NAMES.get(frame.ftype, 'not a type this protocol uses')}), "
         f"service {frame.service}"
     ]
     if frame.ftype == aap.FrameType.OPEN:

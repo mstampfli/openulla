@@ -67,6 +67,8 @@ def read_btsnoop(blob: bytes) -> Iterator[Packet]:
     """Walk a btsnoop file's records, whichever of the two datalinks it uses."""
     if blob[: len(MAGIC)] != MAGIC:
         raise ProtocolError("not a btsnoop file")
+    if len(blob) < HEADER_LENGTH:
+        raise ProtocolError(f"a btsnoop file is at least {HEADER_LENGTH} bytes")
     version, datalink = struct.unpack_from(">II", blob, len(MAGIC))
     if version != 1:
         raise ProtocolError(f"btsnoop version {version} is not one this reads")
