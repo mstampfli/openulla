@@ -281,6 +281,35 @@ them, which is a cross-check between Apple's regulatory text and Apple's own cod
 contains more of the 6 GHz band than these earbuds are certified for, so the plan is the radio
 family's and the regulatory selection narrows it, which is what the per-band country codes do.
 
+### 4.6 The three A2DP endpoints, including the Apple vendor codec
+
+The sink registers three stream endpoints through one registration function, each with a
+descriptor naming the service category (media codec), the codec type, the length of the
+capability bytes and a pointer to them [fw rkof 0x8a908..0x8a996, registration 0x450ac,
+descriptors at 0x1c14d0, 0x1c14e8, 0x1c1500].
+
+| codec type | capability length | capability bytes |
+|---|---|---|
+| 0x00 SBC | 4 | `3f ff 02 35` |
+| 0x02 AAC | 6 | `c0 01 8c 83 e8 00` |
+| 0xFF vendor | 14 | `4c 00 00 00 01 80` then `00 80 00 8c 00 83 e8 00` |
+
+Each is conditional on a configuration byte: AAC needs bit 1 of it, the vendor endpoint needs
+it to be nonzero at all [fw rkof 0x8a94e, 0x8a982].
+
+The AAC bytes decode as object types MPEG-2 and MPEG-4 AAC LC, 44.1 and 48 kHz, mono and
+stereo, variable bit rate with a 256000 bit/s field, which is what a host sees on the air
+(section 5), so the reading of these records is sound. The vendor capability is therefore
+Apple's vendor id 0x0000004C, vendor codec id 0x8001, and **eight codec-specific bytes**.
+
+What those eight bytes mean is open. Their last three are byte for byte the same variable
+bit rate and 256000 bit/s encoding the AAC record uses, and the pair `00 8c` sits where AAC
+carries its frequency bits and channel modes. If the layout followed AAC's with a wider
+object-type field it would read as 48 kHz only, mono and stereo, capped at 256 kbit/s, but no
+code that parses these bytes has been read, so that is a hypothesis to test and not a finding.
+The test is cheap from any Linux host: read the endpoint's capabilities, then try a
+configuration with altered fields and see which are refused.
+
 ## 5. Measured on a non-Apple host
 
 - The SDP record lists Audio Sink, AVRCP, Handsfree, PnP and two vendor GATT
@@ -288,7 +317,7 @@ family's and the regulatory selection narrows it, which is what the per-band cou
   only (type 0x07, model 0x2027).
 - The standard link-manager feature pages carry no vendor bits.
 - A2DP sink endpoints: SBC, AAC with a 256 kbit/s field, and an Apple vendor
-  codec with id 0x8001.
+  codec with id 0x8001. Its exact advertised capability is in 4.6 above.
 - HFP codec offer: `AT+BAC=1,2,127,255,128,129,130,256`.
 - Link-manager PDUs do not appear in an HCI capture; they never cross the host
   interface.
@@ -329,6 +358,8 @@ Not recovered, and not to be filled in until it is:
   only through a numbered trace mechanism whose text table ships separately.
 - Meaning of HDRp4, HDRp8, and which devices other than the Vision Pro use the
   lite mode.
+- The eight codec-specific bytes of the Apple vendor A2DP capability (4.6). The
+  bytes themselves are recorded; their field layout is not established.
 - The two setup fields whose values come from a runtime hardware read or from
   parameter getters that are stubs in this build (protocol.md sections 5.1,
   5.2). They do not affect acceptance, only the radio configuration.
