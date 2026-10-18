@@ -4,16 +4,11 @@ tools/ulla_sink.py needs real Bluetooth to accept a connection, so the loop that
 and writes answers is tested here against a stand-in channel. What it must do is answer with
 the sink's frames, log what it decodes, and reset the session when the channel closes.
 """
-import pathlib
-import sys
+import ulla_sink  # the tools directory is on the path through conftest.py
 
 from openulla import aap
 from openulla.codes import SessionStatus
 from openulla.session import State
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "tools"))
-
-import ulla_sink
 
 ADDRESS = "11:22:33:44:55:66"
 

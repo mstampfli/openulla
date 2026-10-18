@@ -42,8 +42,7 @@ def test_the_implementation_doc_transcript_is_what_the_demo_prints():
 
 
 def test_the_verifier_sample_names_every_check_it_really_has():
-    sys.path.insert(0, str(ROOT / "tools"))
-    import verify_claims
+    import verify_claims  # the tools directory is on the path through conftest.py
 
     doc = (ROOT / "docs" / "implementation.md").read_text()
     quoted = re.findall(r"^  PASS  (\S.*?)\s{2,}", doc, re.M)
