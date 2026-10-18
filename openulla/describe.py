@@ -97,7 +97,14 @@ def describe_lmp(data: bytes) -> list[str]:
     if head.ext_opcode is not None and head.opcode in (lmp.ESCAPE_7B, lmp.ESCAPE_7F):
         fate = "dispatched" if lmp.implemented(head.opcode, head.ext_opcode) else "refused"
         lines.append(f"  an earbud of build 9A348 has this one {fate}")
-    parsed = lmp.parse(data)
+    try:
+        parsed: object = lmp.parse(data)
+    except ProtocolError:
+        # Worth reporting rather than refusing: a capture of a real link carries messages
+        # this package does not decode, and the header above is already useful.
+        lines.append(f"  body {data[head.body_offset:].hex(' ') or 'empty'}, not one this"
+                     " package decodes; docs/protocol.md 5.6 lists what exists")
+        return lines
     if isinstance(parsed, lmp.SetupRequest):
         lines += [
             "  the ULLA setup request",
