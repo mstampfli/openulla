@@ -12,6 +12,8 @@ What is not known is listed as open, not filled in.
 |---|---|
 | FCC ID BCG-A3047 (AirPods Pro 2 USB-C, left bud) | fccid.io exhibit PDFs, text extracted with pdftotext (`tools/fetch_fcc.sh`, index in `docs/fcc/README.md`) |
 | FCC ID BCGA2117 (Apple Vision Pro) | same |
+| FCC ID BCGA3240 (Apple MacBook Air, model A3240) | its narrowband test report, looked up by hand in a public FCC listing; not covered by `tools/fetch_fcc.sh` |
+| FCC ID BCG-E9198A (Apple smartphone, models A3719/A3720/A3721) | its grant, looked up the same way; not covered by `tools/fetch_fcc.sh` |
 | US 12683269 B2, US 12706371 B2 (Apple) | Google Patents |
 | AirPods firmware 9A348 for A3048 (right bud) | Apple's public asset catalog (mesu.apple.com), fetched with `tools/fetch_firmware.sh`, parsed with `tools/uarp.py` and `tools/ftab.py` |
 | Measurements on a Linux host (Intel AX211, BlueZ 5.82, PipeWire 1.4) | btmon, bluetoothctl, PipeWire |
@@ -78,6 +80,16 @@ HDR4 and HDR8 were also measured in the ordinary 2.4 GHz Bluetooth band
 explained anywhere; measurably they are slightly wider and run at a higher
 duty cycle.
 
+Link setup, quoted from the 6 GHz report: "after establishing communication
+between the EUT and the companion device, NB UNII HDR is used to maintain
+communication and traffic. NB UNII BDR and NB UNII LE are used for
+establishing the initial connection with the companion device." The report
+states transmit power control is triggered by RSSI.
+
+Both devices' reports carry simultaneous-transmission tables listing the 2.4 GHz
+Bluetooth radio (all modes, including HDR and HDRp), 2.4 and 5 GHz WLAN and the
+NB UNII radio as combinations certified to transmit together.
+
 ### 2.4 The same radio modes are in a MacBook
 
 The narrowband test report for FCC ID BCGA3240, an Apple MacBook Air (model
@@ -115,15 +127,10 @@ narrowband UNII with bandwidths of 1 MHz, 2 MHz, 4 MHz and 8 MHz in UNII bands
 than modes, and the same sentence also covers a ranging standard, so it does not
 by itself show that an iPhone implements the HDR modes.
 
-Link setup, quoted from the 6 GHz report: "after establishing communication
-between the EUT and the companion device, NB UNII HDR is used to maintain
-communication and traffic. NB UNII BDR and NB UNII LE are used for
-establishing the initial connection with the companion device." The report
-states transmit power control is triggered by RSSI.
-
-Both devices' reports carry simultaneous-transmission tables listing the 2.4 GHz
-Bluetooth radio (all modes, including HDR and HDRp), 2.4 and 5 GHz WLAN and the
-NB UNII radio as combinations certified to transmit together.
+Neither of these two filings is fetched by `tools/fetch_fcc.sh`, which covers
+only the AirPods and Vision Pro exhibits. To reproduce them, look up FCC IDs
+BCGA3240 and BCG-E9198A in a public FCC listing: the MacBook statements come
+from its narrowband test report, the iPhone sentence from the grant itself.
 
 ## 3. Apple's patents (quoted)
 

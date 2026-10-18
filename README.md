@@ -32,10 +32,11 @@ Independent research. Not affiliated with or endorsed by Apple. No Apple
 firmware or other Apple-owned binaries are redistributed here; the tools fetch
 public material from Apple's and the FCC's own servers.
 
-Sources for the two claims above: Apple's press release for the USB-C AirPods
-Pro 2, and Apple's Ron Huang on the H2's 5 GHz support, as reported by
-MacRumors and quoted by
-[MacStories](https://www.macstories.net/?p=72982).
+Sources for the quoted audio specification and for the statement that the H2
+uses the 5 GHz band: Apple's press release for the USB-C AirPods Pro 2, and
+Apple's Ron Huang as reported by MacRumors and quoted by
+[MacStories](https://www.macstories.net/?p=72982). The Mac and iPhone filings
+are cited in [docs/ulla.md](docs/ulla.md) section 2.4.
 
 ## The short version
 
@@ -161,14 +162,17 @@ open questions, and they are the cheap ones to answer.
 
 In rough order of how little hardware it needs:
 
-1. **If you have a recent Mac, you already have the radio** (see "What is open"),
-   and macOS can capture its own Bluetooth traffic with Apple's PacketLogger.
-   That makes a Mac the best platform for the cheapest open question we cannot
-   answer ourselves: does anything other than a Vision Pro use this link? The
-   controller's vendor command and
-   its progress event are documented in [docs/protocol.md](docs/protocol.md)
-   section 6, including the mode, result and reason bytes, so a host-side
-   capture on a Mac would show them directly if that host drives the link.
+1. **If you have a Mac**, macOS can capture its own Bluetooth traffic with
+   Apple's PacketLogger, which makes it the best platform for the cheapest open
+   question we cannot answer ourselves: does anything other than a Vision Pro
+   use this link? The controller's vendor command and its progress event are
+   documented in [docs/protocol.md](docs/protocol.md) section 6, including the
+   mode, result and reason bytes, so a host-side capture would show them
+   directly if that host drives the link.
+
+   One MacBook Air model's test report shows that machine has the radio modes
+   (see "What is open"). Which other Macs carry them is not established, and a
+   capture answers that for your machine at the same time.
 
    Do **not** try to answer this by asking the earbuds from a second host while
    an Apple device holds them. We measured that: the earbuds evict the second
@@ -177,13 +181,14 @@ In rough order of how little hardware it needs:
    time the asking host is connected, the other one is gone and the session has
    reset, so the test cannot tell its two outcomes apart. See
    [docs/measurements.md](docs/measurements.md) section 8.
-3. **If you have a controller whose firmware you can patch**
+2. **If you have a controller whose firmware you can patch**
    (InternalBlue-class tooling on a supported chip), the link-manager exchange
-   is documented field by field in section 5 and needs no key or challenge of
-   any kind. Emitting the setup PDU and reporting what the earbuds answer would
-   tell us whether the mode change can be driven from non-Apple hardware at
-   all. Whether current chips are supported by such tooling is unverified.
-4. **If you have a wideband software radio**, the air format is the big unknown.
+   is documented field by field in [docs/protocol.md](docs/protocol.md) section
+   5 and needs no key or challenge of any kind. Emitting the setup PDU and
+   reporting what the earbuds answer would tell us whether the mode change can
+   be driven from non-Apple hardware at all. Whether current chips are supported
+   by such tooling is unverified.
+3. **If you have a wideband software radio**, the air format is the big unknown.
    The link hops 79 channels at Bluetooth timing, so capturing the whole band
    and un-hopping in software is the realistic approach rather than chasing the
    hops.
@@ -229,7 +234,7 @@ link keys and other people's device addresses.
 
 ```sh
 tools/fetch_fcc.sh            # FCC exhibits -> fcc/*.pdf and fcc/*.txt (needs curl, pdftotext)
-tools/fetch_firmware.sh       # firmware -> firmware/ (needs curl, unzip)
+tools/fetch_firmware.sh       # firmware -> firmware/ (needs curl, unzip, python3)
 python3 tools/uarp.py firmware/*/AssetData/Firmware.acsw/firmware.uarp list
 python3 tools/tmap_keys.py firmware/*/AssetData/Firmware.acsw/firmware.uarp
 tools/ulla_strings.sh firmware/*/AssetData/Firmware.acsw/firmware.uarp
@@ -241,7 +246,10 @@ python3 tools/aap_probe.py --device AA:BB:CC:DD:EE:FF --seq subscribe,start --wa
 
 `aap_probe.py` needs nothing but a paired device and an ordinary user account.
 It changes the earbuds' session state, which a disconnect of its channel
-resets; see docs/measurements.md section 6 for the one side effect observed.
+resets. Two behaviours worth knowing before you run it are recorded in
+[docs/measurements.md](docs/measurements.md): the link dropping about half a
+minute after the channel closes (section 6), and the earbuds evicting a second
+host (section 8).
 
 ## Contributing
 

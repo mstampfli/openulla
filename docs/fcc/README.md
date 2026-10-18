@@ -16,9 +16,16 @@ their text with `pdftotext -layout`, producing the file names below.
 | BCG-A3047_NB-UNII-5-Test-Report-1-7595478.txt | AirPods | 6 GHz VLP, 2024-08-30 |
 | BCG-A3047_NB-UNII-5-Test-Report-2-7595481.txt | AirPods | 6 GHz VLP, link setup with Vision Pro as companion, TPC |
 | BCG-A3047_Bluetooth-HDR-Test-Report-6764849.txt | AirPods | HDR4 and HDR8 in the 2.4 GHz Bluetooth band |
+| BCG-A3047_Antenna-Gain-Report-7553974.txt | AirPods | antenna gain |
 | BCGA2117_NB-UNII-BDR-Test-Report-6962411.txt | Vision Pro | 5 GHz GFSK mode, device capabilities |
 | BCGA2117_NB-UNII-HDR-Test-Report-6962412.txt | Vision Pro | 5 GHz HDR4 and HDR8 |
 | BCGA2117_NB-UNII-LE-Test-Report-6962414.txt | Vision Pro | 5 GHz LE mode |
 | BCGA2117_NB-UNII-5-Test-Report-1-7587864.txt | Vision Pro | 6 GHz VLP |
 | BCGA2117_NB-UNII-5-Test-Report-2-7587866.txt | Vision Pro | 6 GHz VLP, emission mask method |
 | BCGA2117_NB-UNII-5-Test-Report-3-7587867.txt | Vision Pro | 6 GHz VLP, radiated |
+
+Two further filings are cited in `docs/ulla.md` section 2.4 but are **not**
+fetched by this script, because only their grant or a single report was needed
+and the exhibit paths were looked up by hand: FCC ID **BCGA3240** (an Apple
+MacBook Air, model A3240; its narrowband test report) and FCC ID
+**BCG-E9198A** (an Apple smartphone, models A3719/A3720/A3721; its grant).

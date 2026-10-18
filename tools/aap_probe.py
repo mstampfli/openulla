@@ -15,8 +15,14 @@ rkof.bin) that proves it. Nothing here is guessed.
                                 rkof switch table 0x6cf4c case 0x36 -> 0x6d602, byte read
                                 0x308c8, then 0x27a58 posts ULLA_MGR_EVT_SESSION_START_REQ
 
-Read-only by default: it opens the service and prints what comes back. --start-session also
-sends the ULLA start command, which asks the earbud to begin a session with this host.
+Read-only by default: it opens the service and prints what comes back. Commands are sent with
+--seq, a comma list run in order on one channel, or with the --start-session shorthand:
+
+  start[:MODE]  ask the earbud to start a ULLA session with this host (changes its state)
+  subscribe[:CLASS]  subscribe to a report class, by default the ULLA one
+  stop          ask it to stop the session
+
+Closing the channel resets the earbud's session state.
 """
 import argparse
 import re
@@ -113,7 +119,7 @@ def main():
     ap.add_argument("--mode", type=lambda s: int(s, 0), default=0,
                     help="mode byte for --start-session (default 0)")
     ap.add_argument("--seq", help="comma list of commands to send in one channel: "
-                                  "start, start:MODE or stop")
+                                  "start, start:MODE, subscribe, subscribe:CLASS or stop")
     args = ap.parse_args()
     if not re.match(MAC_RE, args.device):
         raise SystemExit("not a Bluetooth address: %r" % args.device)
