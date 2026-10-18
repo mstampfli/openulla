@@ -157,3 +157,34 @@ a first host is using this link by asking the earbuds, because connecting the se
 evicts the first and resets the session. The test cannot distinguish its two outcomes, which
 is worse than it being merely inconvenient. Capturing HCI on the driving host is the approach
 that can work.
+
+## 9. What our own controller asks for, and what it cannot ask for
+
+Read back out of captures already taken, so no new run was needed. Every connection this host
+makes to the earbuds carries the same packet-type request:
+
+    HCI Command: Create Connection
+      Packet type: 0xcc18
+        DM1 may be used / DH1 may be used / DM3 may be used
+        DH3 may be used / DM5 may be used / DH5 may be used
+
+A second capture shows the link then settling on the enhanced-data-rate packet-type table with
+five-slot packets, and the remote's standard feature pages coming back with nothing vendor
+specific in them. So BlueZ on this Intel controller asks for the whole standard set and
+nothing else; it makes no vendor-specific request of any kind.
+
+The structural point matters more than the particular value. That field is 16 bits, of which
+twelve are defined ACL packet types. BlueZ's own header (`/usr/include/bluetooth/hci.h`) gives
+them as 2-DH1 0x0002, 3-DH1 0x0004, DM1 0x0008, DH1 0x0010, 2-DH3 0x0100, 3-DH3 0x0200,
+DM3 0x0400, DH3 0x0800, 2-DH5 0x1000, 3-DH5 0x2000, DM5 0x4000, DH5 0x8000. The six
+basic-rate bits mean "may be used" and the six enhanced-rate bits mean "may not be used", which
+is how `btmon`'s own decode table words them. 0xcc18 is exactly the six basic-rate bits with
+all six exclusion bits clear: the whole standard set, basic and enhanced rate alike.
+
+The largest packet type that field can name is 3-DH5, at 3 Mbit/s. There is no bit for 4-DH5
+or 8-DH5, so no standard host can ask for Apple's HDR modes over this interface, whatever its
+controller implements. The Bluetooth Core Specification defines the field itself (Volume 4
+Part E, the Create Connection command); the bit values above are quoted from BlueZ, which is
+the stack that produced the measurement. This is consistent with the earbud firmware reaching
+those modes through a vendor command and link-manager PDUs instead (`protocol.md` sections 6
+and 5), and it is why a host-side packet-type request is not a route to this link.

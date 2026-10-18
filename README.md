@@ -16,7 +16,9 @@ test report declares the same two Apple modes, HDR4 and HDR8, in the same two
 5 GHz bands, on two independently usable radio cores, and recent iPhones declare
 a narrowband radio in those bands as well. Whether any of their software ever
 drives this link is a different question and is still open. Sources in
-[docs/ulla.md](docs/ulla.md) section 2.4.
+[docs/ulla.md](docs/ulla.md) section 2.4. HDR4 and HDR8 are modes of the radio,
+not the protocol, and they are much older than this link: see
+[HDR is not ULLA](#hdr-is-not-ulla).
 
 This repository documents that protocol and works toward speaking it from
 hardware you already own. The purpose is interoperability: letting other hosts
@@ -103,6 +105,39 @@ answer is "buy a Vision Pro". So the question became: what is that link,
 and what would it take to speak it from hardware I already own. This
 repository holds what I found and the tools I used, so that the next person
 who refuses to accept it does not have to start from zero.
+
+## HDR is not ULLA
+
+Two different things turn up in the same FCC exhibits and are easy to conflate,
+so for the record.
+
+**HDR4 and HDR8 are packet modes.** Five-slot Bluetooth packets at 4 and
+8 Mbit/s, pi/4 DQPSK, written 4-DH5 and 8-DH5 after Bluetooth's own names for
+its five-slot packets. The 4 and the 8 are Apple's. Bluetooth names only 2 and
+3 Mbit/s variants: the packet-type field a host sends with a connection request
+has twelve defined ACL packet types, one bit each for DM1, DH1, DM3, DH3, DM5
+and DH5, and one exclusion bit for each of the six enhanced-rate types (BlueZ's
+own `hci.h`, 0x0002 through 0x8000). No bit in it could mean 4 or 8 Mbit/s. Our
+Linux host sends 0xcc18, which is exactly the six basic-rate types with
+every exclusion bit clear, so it offers the whole standard set, and the standard
+set has no HDR in it ([docs/measurements.md](docs/measurements.md) section 9).
+
+**And HDR is old.** Apple filed a "Bluetooth HDR Test Report" for an Apple Watch
+dated 2018-09-12 (FCC ID BCG-A1978) and for an iPad dated 2019-03-18 (FCC ID
+BCGA2124), years before the Vision Pro, and the AirPods' own report measures the
+HDR modes in the ordinary 2.4 GHz Bluetooth band as well as in the narrowband
+5 GHz bands. Nothing about HDR is new, and nothing about it is particular to
+this link.
+
+**ULLA is the protocol.** It is the firmware's own name for the feature, and it
+has a session manager, a host command, its own earbud-to-earbud messages and its
+own link-manager PDUs. That is what this repository documents. HDR is a pipe it
+can run over.
+
+So "this device supports HDR4 and HDR8" says the radio can carry those packets.
+It does not say the device speaks ULLA, and nothing here claims it does. What is
+new in this repository is the layer above the radio, not the radio. Sources and
+the exact wording of each filing: [docs/ulla.md](docs/ulla.md) section 2.5.
 
 ## What is known so far
 

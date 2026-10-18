@@ -14,6 +14,7 @@ What is not known is listed as open, not filled in.
 | FCC ID BCGA2117 (Apple Vision Pro) | same |
 | FCC ID BCGA3240 (Apple MacBook Air, model A3240) | its narrowband test report, looked up by hand in a public FCC listing; not covered by `tools/fetch_fcc.sh` |
 | FCC ID BCG-E9198A (Apple smartphone, models A3719/A3720/A3721) | its grant, looked up the same way; not covered by `tools/fetch_fcc.sh` |
+| FCC ID BCG-A1978 (Apple Watch), FCC ID BCGA2124 (Apple iPad) | their public FCC listing indexes only: exhibit titles and dates. The reports themselves were not read, so nothing is claimed about their contents |
 | US 12683269 B2, US 12706371 B2 (Apple) | Google Patents |
 | AirPods firmware 9A348 for A3048 (right bud) | Apple's public asset catalog (mesu.apple.com), fetched with `tools/fetch_firmware.sh`, parsed with `tools/uarp.py` and `tools/ftab.py` |
 | Measurements on a Linux host (Intel AX211, BlueZ 5.82, PipeWire 1.4) | btmon, bluetoothctl, PipeWire |
@@ -131,6 +132,45 @@ Neither of these two filings is fetched by `tools/fetch_fcc.sh`, which covers
 only the AirPods and Vision Pro exhibits. To reproduce them, look up FCC IDs
 BCGA3240 and BCG-E9198A in a public FCC listing: the MacBook statements come
 from its narrowband test report, the iPhone sentence from the grant itself.
+
+### 2.5 HDR is not ULLA, and HDR is not new
+
+Two different things appear in these exhibits: a set of high-rate Bluetooth
+packet modes, and a protocol. They are separate, and the first one is not the
+subject of this report.
+
+HDR4 and HDR8 are packet modes of the radio:
+
+- Apple's reports measure them as five-slot packets at 4 and 8 Mbit/s with
+  pi/4 DQPSK modulation, named 4-DH5 and 8-DH5 in Bluetooth's own packet
+  naming (2.3 and 2.4 above).
+- They are declared in the ordinary 2.4 GHz Bluetooth band as well as in the
+  narrowband 5 GHz bands (2.1 and 2.2 above), so they are not inherently a
+  5 GHz feature.
+- They are not new. The public FCC listing index for FCC ID BCG-A1978, an Apple
+  Watch, carries an exhibit titled "Bluetooth HDR Test Report" dated
+  2018-09-12, and the listing for FCC ID BCGA2124, an iPad, carries one dated
+  2019-03-18. Only those titles and dates were read, from the listing indexes,
+  not the reports. The sole claim made here is therefore the one they support:
+  Apple was filing Bluetooth HDR test reports in 2018 and 2019, years before
+  the Vision Pro.
+- The rates are Apple's own, not the standard's. The packet-type field a host
+  sends with a connection request has twelve defined ACL packet types, the
+  largest being 3-DH5 at 3 Mbit/s, and no bit of it can express 4 or 8 Mbit/s; a
+  standard host cannot ask for an HDR mode over that interface whatever its
+  controller supports. Bit values and the measurement that confirms it are in
+  `measurements.md` section 9. That is consistent with the earbud firmware
+  reaching these modes through a vendor command (`protocol.md` section 6) and
+  link-manager PDUs (`protocol.md` section 5) instead of the standard path.
+
+ULLA is the protocol: the firmware's own name for the feature (4.2 below), with
+a session manager, a host command, earbud-to-earbud messages and link-manager
+PDUs, written up field by field in `protocol.md`. HDR is transport it can use.
+
+The consequence for reading any Apple filing: a device declaring HDR4 and HDR8
+is declaring a radio capability. It is not evidence that the device implements
+ULLA, and no such inference is drawn anywhere in this report. Which devices
+other than the Vision Pro drive this link remains open (section 7).
 
 ## 3. Apple's patents (quoted)
 
