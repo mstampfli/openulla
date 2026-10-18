@@ -5,6 +5,10 @@
 #
 # Usage: tools/fetch_fcc.sh [outdir]   (default: fcc)
 set -eu
+for tool in curl pdftotext; do
+    command -v "$tool" >/dev/null 2>&1 ||
+        { echo "missing $tool (pdftotext is in poppler; on macOS: brew install poppler)" >&2; exit 1; }
+done
 out=${1:-fcc}
 mkdir -p "$out"
 ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'

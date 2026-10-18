@@ -251,6 +251,12 @@ resets. Two behaviours worth knowing before you run it are recorded in
 minute after the channel closes (section 6), and the earbuds evicting a second
 host (section 8).
 
+On macOS (tested on macOS 27.0.1), the firmware and FCC tools run as shown,
+with `pdftotext` from Homebrew's `poppler` package and `strings` from the Xcode
+Command Line Tools. `aap_probe.py`, `bt_link_state.py` and `a2dp_send.py` are
+built on Linux's Bluetooth sockets, BlueZ and PipeWire, so they need a Linux
+host, and on any other system they exit saying so.
+
 ## Contributing
 
 Captures from Apple hosts (PacketLogger, Bluetooth logging profile), notes

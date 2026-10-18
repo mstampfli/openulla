@@ -121,6 +121,9 @@ def main():
     ap.add_argument("--seq", help="comma list of commands to send in one channel: "
                                   "start, start:MODE, subscribe, subscribe:CLASS or stop")
     args = ap.parse_args()
+    if not hasattr(socket, "AF_BLUETOOTH"):
+        raise SystemExit("this Python has no Bluetooth sockets (socket.AF_BLUETOOTH); "
+                         "aap_probe.py needs Linux with BlueZ")
     if not re.match(MAC_RE, args.device):
         raise SystemExit("not a Bluetooth address: %r" % args.device)
     ver_a, ver_b = (int(x, 0) for x in args.version.split(","))
