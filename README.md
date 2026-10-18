@@ -234,6 +234,16 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
 - **No Apple authentication guards any of it.** The earbuds' four acceptance
   checks look at feature flags, link state and roles. There is no key, no
   nonce and no challenge anywhere in the setup.
+- **What does gate it is a feature exchange, not a secret.** Each controller
+  sends the other a four-byte feature word, the receiver keeps the peer's
+  against the link, and every ULLA message is gated on the AND of the two: one
+  bit for the band family, another for the mode procedure. An implementation
+  that never answers it is sent nothing at all, which makes answering it the
+  first thing a source has to do. [docs/protocol.md](docs/protocol.md) 5.8.
+- **The implementation exists**, in `openulla/`, with a simulated earbud, a
+  decoder, a capture reader, an L2CAP sink server and a verifier that
+  re-derives ten groups of claims from a firmware image. See
+  [docs/implementation.md](docs/implementation.md).
 - **A Linux laptop can start a ULLA session and be told it succeeded.** Sending
   seven bytes over an ordinary Bluetooth channel moves the earbuds' session
   machine through three states and returns a success status. Measured, with
@@ -244,11 +254,23 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
 
 ## What is open
 
-The audio layer. The over-the-air packet format is produced by radio hardware
-whose registers are undocumented, the codec is not named anywhere in the DSP
-image, and whether the audio payload is encrypted is a hardware question the
-firmware cannot answer. Details in [docs/ulla.md](docs/ulla.md#7-open).
-Nothing anywhere in this repository is filled in by guesswork.
+The audio layer, and now with a reason rather than a shrug. The over-the-air
+packet format is produced by radio hardware whose registers are undocumented.
+The sample rate, frame size and bit depth are not constants in the DSP image at
+all: no rate value appears in its audio-node region, its log texts ship outside
+the payload, and the data that ships beside the code is filter coefficients and
+a hash manifest, not a graph description. So the format is configuration the DSP
+is handed at runtime, which makes it a measurement question, not a reading one.
+Whether the payload is encrypted is a hardware question the firmware cannot
+answer either. Details in [docs/protocol.md](docs/protocol.md) section 7 and
+[docs/ulla.md](docs/ulla.md#7-open). Nothing anywhere in this repository is
+filled in by guesswork.
+
+What the firmware does say about the messages themselves is now complete in one
+direction and inventoried in the other: both escape spaces are listed message by
+message, with what each carries and who consumes it, and three of them are
+decoded in full. What the rest *mean* is open, and the names that would settle
+it ship in a text table that is not in these payloads.
 
 **This is not Vision-Pro-only hardware.** A current MacBook has the same radio:
 the narrowband test report for an Apple MacBook Air states "Both power modes
