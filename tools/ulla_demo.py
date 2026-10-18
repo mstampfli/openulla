@@ -15,11 +15,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla import bands, lmp, sim  # noqa: E402
-from openulla.controller import AcceptChecks, Responder  # noqa: E402
-from openulla.hci import UllaSetup  # noqa: E402
-from openulla.session import Event  # noqa: E402
-from openulla.source import ControllerCommands  # noqa: E402
+from openulla import bands, lmp, sim
+from openulla.controller import AcceptChecks, Responder
+from openulla.hci import UllaSetup
+from openulla.session import Event
+from openulla.source import ControllerCommands
 
 REJECTIONS = {
     "none": AcceptChecks(),
@@ -76,7 +76,8 @@ def main():
     show(f"HCI 0xFF79, mask 0x{mask:02x}", first)
     show("HCI 0xFF7A, the same mask", second)
     print(f"     that mask names bands {bands.mask_bands(mask)}")
-    show("HCI 0xFE50, start the transition", commands.start_transition(config_word=0x0100, flags=0x03))
+    show("HCI 0xFE50, start the transition",
+         commands.start_transition(config_word=0x0100, flags=0x03))
 
     print("5. controller to controller, on the existing ACL link")
     responder = Responder(checks=REJECTIONS[args.reject], features=args.features)

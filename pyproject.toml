@@ -19,3 +19,29 @@ packages = ["openulla"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# E, F, W: the usual errors. I: import order. B: bugbear. UP: modern syntax. ANN: annotated
+# signatures, which is the point of a library whose job is exact bytes.
+select = ["E", "F", "W", "I", "B", "UP", "ANN", "RUF"]
+ignore = [
+    "ANN401",  # a decoder legitimately returns object from parse()
+    "UP031",   # the tools were written with percent formatting and stay consistent with it
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN"]  # a test's signature is always () -> None
+"tools/*" = ["ANN"]  # the command-line wrappers read better without them
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+# strict alone lets Any flow in from any untyped boundary, and struct.unpack is one: it
+# returns a tuple of Any. openulla/octets.py exists so that no value here has that type, and
+# this setting is what keeps it that way.
+disallow_any_expr = true
+files = ["openulla"]

@@ -23,8 +23,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla import capture  # noqa: E402
-from openulla.errors import ProtocolError  # noqa: E402
+from openulla import capture
+from openulla.errors import ProtocolError
 
 
 def main():
@@ -39,7 +39,7 @@ def main():
     try:
         found = list(capture.walk_file(args.capture, args.cid))
     except ProtocolError as exc:
-        raise SystemExit(f"cannot read this capture: {exc}")
+        raise SystemExit(f"cannot read this capture: {exc}") from exc
 
     for item in found:
         way = "->" if item.packet.outbound else "<-"

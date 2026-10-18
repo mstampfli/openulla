@@ -17,9 +17,9 @@ when it reaches the state that waits for the local audio path [fw rkof 0x271f8].
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Callable, Iterable
 
 HANDLER_OK = 0x1770
 
@@ -105,7 +105,9 @@ class Transition:
         return current if target == State.NO_CHANGE else target
 
 
-def _row(state: State, events: Iterable[Event], ok: State, other: State, handler: int) -> Transition:
+def _row(
+    state: State, events: Iterable[Event], ok: State, other: State, handler: int
+) -> Transition:
     return Transition(state, tuple(events), ok, other, handler)
 
 

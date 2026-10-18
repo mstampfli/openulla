@@ -24,11 +24,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla import aap  # noqa: E402
-from openulla.describe import describe_aap  # noqa: E402
-from openulla.errors import ProtocolError  # noqa: E402
-from openulla.serve import Service  # noqa: E402
-from openulla.sink import Sink  # noqa: E402
+from openulla import aap
+from openulla.describe import describe_aap
+from openulla.errors import ProtocolError
+from openulla.serve import Service
+from openulla.sink import Sink
 
 ANY_ADAPTER = "00:00:00:00:00:00"
 
@@ -72,7 +72,7 @@ def main():
     try:
         listener.bind((args.adapter, args.psm))
     except OSError as exc:
-        raise SystemExit(f"cannot listen on PSM 0x{args.psm:04x}: {exc}")
+        raise SystemExit(f"cannot listen on PSM 0x{args.psm:04x}: {exc}") from exc
     listener.listen(1)
     print(f"listening on PSM 0x{args.psm:04x}, answering as an earbud"
           + ("" if args.advance else ", passively"))

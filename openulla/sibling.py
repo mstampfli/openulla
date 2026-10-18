@@ -11,10 +11,10 @@ Every sender first checks that the sibling transport is in an active mode and co
 """
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass
 from enum import IntEnum
 
+from . import octets
 from .errors import ProtocolError
 
 SERVICE = 0x10
@@ -107,7 +107,10 @@ def parse_start_session_request(data: bytes) -> StartSessionRequest:
 
 def configure_statistics(enable: int, first: int, second: int) -> bytes:
     """Message 13: the host's configure-statistics body, passed through unchanged."""
-    return frame(Message.CONFIGURE_STATISTICS, struct.pack("<BII", enable, first, second))
+    return frame(
+        Message.CONFIGURE_STATISTICS,
+        octets.p8(enable, "the enable byte") + octets.p32(first) + octets.p32(second),
+    )
 
 
 def statistics(report: bytes) -> bytes:

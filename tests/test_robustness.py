@@ -47,7 +47,7 @@ def test_no_parser_raises_anything_but_a_protocol_error():
                 parser(data)
             except ProtocolError:
                 continue
-            except Exception as exc:  # noqa: BLE001 - that is the point of the test
+            except Exception as exc:
                 raise AssertionError(
                     f"{name} raised {type(exc).__name__} on {data.hex(' ') or '(empty)'}: {exc}"
                 ) from exc

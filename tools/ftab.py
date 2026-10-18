@@ -49,7 +49,8 @@ def show(table, depth=0):
         data = table[eoff:eoff + size]
         nested = len(data) > 0x28 and data[0x20:0x28] == MAGIC
         head = data[:8].hex(" ")
-        print(f"{'  ' * depth}{tag:4s} off={eoff:#09x} size={size:9d} {'table' if nested else ''} {head}")
+        kind = "table" if nested else ""
+        print(f"{'  ' * depth}{tag:4s} off={eoff:#09x} size={size:9d} {kind} {head}")
         if nested:
             show(data, depth + 1)
 

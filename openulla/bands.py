@@ -20,8 +20,8 @@ Band 3's record is seven zero bytes, and three places refuse the index outright
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from .errors import ProtocolError
 
@@ -123,7 +123,8 @@ def channel_frequency(index: int, channel: int, correction: int = 0) -> tuple[in
         raise ProtocolError(f"band {index} has no channels")
     if channel not in b.channel_numbers():
         raise ProtocolError(f"channel {channel} is not in band {index}")
-    return (channel - b.first_channel) * b.spacing_mhz + (b.start_mhz - correction), b.channel_bandwidth_mhz
+    frequency = (channel - b.first_channel) * b.spacing_mhz + (b.start_mhz - correction)
+    return frequency, b.channel_bandwidth_mhz
 
 
 def band_of_channel(channel: int) -> int:

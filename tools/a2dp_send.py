@@ -202,7 +202,7 @@ def main():
 
     obj = bus.get_object("org.bluez", path)
     iface = dbus.Interface(obj, TRANSPORT)
-    fd_obj, read_mtu, write_mtu = iface.Acquire()
+    fd_obj, _read_mtu, write_mtu = iface.Acquire()
     fd = fd_obj.take()
     print("acquired: write_mtu %d" % write_mtu)
 

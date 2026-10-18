@@ -204,7 +204,8 @@ def describe_hci_event(data: bytes) -> list[str]:
         ident = int.from_bytes(params[0:2], "little")
         lines.append(f"  vendor event id 0x{ident:04x}")
         if ident == hci.EVENT_ID_MODE_CHANGE:
-            lines.append(f"  the ULLA mode change: {hci.ModeChangeEvent.from_bytes(data).describe()}")
+            event = hci.ModeChangeEvent.from_bytes(data)
+            lines.append(f"  the ULLA mode change: {event.describe()}")
         elif ident == hci.EVENT_ID_SECOND and len(params) == 5:
             handle = int.from_bytes(params[2:4], "little")
             lines.append(

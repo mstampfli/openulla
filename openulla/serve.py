@@ -10,8 +10,8 @@ order is the one docs/protocol.md 3.4 gives.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from . import aap
 from .errors import ProtocolError, Refused

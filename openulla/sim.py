@@ -90,7 +90,9 @@ class Link:
             self.pdus.append(("sink -> source", reply))
         return reply
 
-    def controller_setup(self, setup: UllaSetup, responder: Responder | None = None) -> ModeChangeEvent:
+    def controller_setup(
+        self, setup: UllaSetup, responder: Responder | None = None
+    ) -> ModeChangeEvent:
         """Run the link-manager exchange and return the event the host would see.
 
         On success the earbud's manager is given the link-up event, which is what the real

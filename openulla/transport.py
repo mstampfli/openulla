@@ -30,7 +30,7 @@ class L2capTransport:
         self.sock = sock
 
     @classmethod
-    def connect(cls, address: str, psm: int = PSM) -> "L2capTransport":
+    def connect(cls, address: str, psm: int = PSM) -> L2capTransport:
         if not hasattr(socket, "AF_BLUETOOTH"):
             raise ProtocolError("this Python has no Bluetooth sockets; Linux with BlueZ is needed")
         sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
@@ -54,11 +54,11 @@ class QueueTransport:
     def __init__(self) -> None:
         self.outbox: deque[bytes] = deque()
         self.inbox: deque[bytes] = deque()
-        self.peer: "QueueTransport | None" = None
+        self.peer: QueueTransport | None = None
         self.closed = False
 
     @classmethod
-    def pair(cls) -> tuple["QueueTransport", "QueueTransport"]:
+    def pair(cls) -> tuple[QueueTransport, QueueTransport]:
         a, b = cls(), cls()
         a.peer, b.peer = b, a
         a.outbox = b.inbox

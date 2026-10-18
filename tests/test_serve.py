@@ -1,5 +1,4 @@
 """The sink service: what a source talking to it over a channel actually gets back."""
-import pytest
 
 from openulla import aap, serve
 from openulla.codes import SessionStatus
@@ -79,5 +78,5 @@ def test_the_stream_chain_only_runs_from_the_state_it_belongs_to():
 def test_the_service_needs_no_socket_at_all():
     """The whole thing is frames in, frames out, which is why it can be tested here."""
     s = service()
-    with pytest.raises(AttributeError):
-        s.sink.transport  # there is none
+    assert not hasattr(s.sink, "transport")
+    assert not hasattr(s, "socket")

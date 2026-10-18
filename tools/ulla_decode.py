@@ -20,8 +20,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla.describe import DECODERS  # noqa: E402
-from openulla.errors import ProtocolError  # noqa: E402
+from openulla.describe import DECODERS
+from openulla.errors import ProtocolError
 
 
 def main():
@@ -36,7 +36,7 @@ def main():
     try:
         data = bytes.fromhex("".join(cleaned))
     except ValueError as exc:
-        raise SystemExit(f"not hex: {exc}")
+        raise SystemExit(f"not hex: {exc}") from exc
     if not data:
         raise SystemExit("no bytes given")
     print(f"{len(data)} bytes: {data.hex(' ')}")
@@ -47,7 +47,7 @@ def main():
             fitted.append(DECODERS[kind](data))
         except (ProtocolError, ValueError, IndexError) as exc:
             if args.kind:
-                raise SystemExit(f"not {kind}: {exc}")
+                raise SystemExit(f"not {kind}: {exc}") from exc
     # A short frame parses as several things at once, so when a decoder recognised an actual
     # message, only those are worth printing; the bare headers are noise.
     recognised = [lines for lines in fitted if len(lines) > 1]

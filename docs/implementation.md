@@ -27,10 +27,16 @@ fill it in; it says so, and the tests say so too.
 | `sim.py` | a whole negotiation with no hardware |
 | `transport.py` | a real L2CAP channel, or a pair of queues |
 | `serve.py` | the frames-in, frames-out half of answering a channel as the earbud |
+| `octets.py` | reading and writing this protocol's integers, and the one place that says they are little-endian |
 | `describe.py` | one place for the wording of every decode |
 | `capture.py` | finds this protocol's frames in a btsnoop capture, learning the channel from the L2CAP signalling |
 
 ## Running it
+
+Three gates run on every push, on Python 3.11, 3.12 and 3.13: the suite, `ruff check` and
+`mypy`. The mypy configuration turns on `disallow_any_expr`, not only `strict`, because
+`strict` lets `Any` in from any untyped boundary and `struct.unpack` is one of those; that is
+why `openulla/octets.py` exists and why nothing in the package reads bytes through `struct`.
 
 ```sh
 python3 -m pytest                  # the whole suite, no hardware, no dependencies

@@ -17,7 +17,9 @@ from collections import Counter
 
 
 def payloads(blob):
-    fmt, hlen, total, v0, v1, v2, v3, moff, mlen, phoff, phlen = struct.unpack_from(">11I", blob, 0)
+    (fmt, _hlen, total, v0, v1, v2, v3, _moff, _mlen, phoff, phlen) = struct.unpack_from(
+        ">11I", blob, 0
+    )
     out = []
     off = phoff
     while off < phoff + phlen:
@@ -52,12 +54,14 @@ def main(argv):
     head, items = payloads(blob)
     cmd = argv[2]
     if cmd == "list":
-        print(f"format {head['format']} version {head['version']} length {head['total']} ({len(blob)} bytes in file)")
+        print(f"format {head['format']} version {head['version']} "
+              f"length {head['total']} ({len(blob)} bytes in file)")
         print(f"{'tag':5s} {'version':>28s} {'offset':>10s} {'length':>10s} {'entropy':>7s}  head")
         for p in items:
             data = blob[p["offset"]:p["offset"] + p["length"]]
             head16 = data[:12].hex(" ")
-            print(f"{p['tag']:5s} {p['version']:>28s} {p['offset']:>10} {p['length']:>10} {entropy(data[:200000]):7.2f}  {head16}")
+            print(f"{p['tag']:5s} {p['version']:>28s} {p['offset']:>10} {p['length']:>10} "
+                  f"{entropy(data[:200000]):7.2f}  {head16}")
     elif cmd == "extract" and len(argv) >= 5:
         tag = argv[3]
         for p in items:

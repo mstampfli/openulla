@@ -72,7 +72,7 @@ def bluez_transports(mac):
         mgr = dbus.Interface(bus.get_object("org.bluez", "/"),
                              "org.freedesktop.DBus.ObjectManager")
         objs = mgr.GetManagedObjects()
-    except Exception as exc:  # noqa: BLE001 - report, do not crash
+    except Exception as exc:
         return None, "could not reach BlueZ: %s" % exc
     found = []
     for path, ifaces in objs.items():
@@ -167,9 +167,9 @@ def main():
     elif not links:
         print("  none (device not connected?)")
     else:
-        for l in links:
-            print("  %-5s handle %-4s %s" % (l["kind"], l["handle"],
-                                             "encrypted" if l["encrypted"] else ""))
+        for link in links:
+            print("  %-5s handle %-4s %s" % (link["kind"], link["handle"],
+                                             "encrypted" if link["encrypted"] else ""))
 
     transports, err2 = bluez_transports(mac)
     print("\nBlueZ media transports:")
@@ -187,7 +187,7 @@ def main():
             print(line)
 
     print("\nverdict:")
-    voice = [l for l in (links or []) if l["kind"] in ("SCO", "eSCO")]
+    voice = [link for link in (links or []) if link["kind"] in ("SCO", "eSCO")]
     audio = [t for t in (transports or []) if t["state"] == "active"]
     if links is None:
         print("  cannot judge: no kernel link visibility")

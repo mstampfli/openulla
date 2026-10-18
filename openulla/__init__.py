@@ -46,6 +46,9 @@ from . import (
 from .errors import ProtocolError, Refused
 
 __all__ = [
+    "ProtocolError",
+    "Refused",
+    "__version__",
     "aap",
     "bands",
     "capture",
@@ -60,7 +63,4 @@ __all__ = [
     "sink",
     "source",
     "transport",
-    "ProtocolError",
-    "Refused",
-    "__version__",
 ]

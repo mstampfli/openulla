@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from . import octets
 from .errors import ProtocolError
 
 OPCODE_ACCEPTED = 3
@@ -97,22 +98,16 @@ class SetupRequest:
     LENGTH = 9
 
     def to_bytes(self) -> bytes:
-        if not 0 <= self.radio_value <= 0xFFFFFFFF:
-            raise ProtocolError("radio_value is four bytes")
-        if not 0 <= self.config_word <= 0xFFFF:
-            raise ProtocolError("config_word is two bytes")
-        for name in ("flags", "extra_flags"):
-            if not 0 <= getattr(self, name) <= 0xFF:
-                raise ProtocolError(f"{name} is one byte")
         return (
             bytes((header(OPCODE_ULLA_SETUP, self.tid),))
-            + self.radio_value.to_bytes(4, "little")
-            + self.config_word.to_bytes(2, "little")
-            + bytes((self.flags, self.extra_flags))
+            + octets.p32(self.radio_value, "radio_value")
+            + octets.p16(self.config_word, "config_word")
+            + octets.p8(self.flags, "flags")
+            + octets.p8(self.extra_flags, "extra_flags")
         )
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "SetupRequest":
+    def from_bytes(cls, data: bytes) -> SetupRequest:
         head = parse_header(data)
         if head.opcode != OPCODE_ULLA_SETUP:
             raise ProtocolError(f"opcode 0x{head.opcode:02x} is not the setup request")
@@ -151,7 +146,7 @@ class Configuration:
         )
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "Configuration":
+    def from_bytes(cls, data: bytes) -> Configuration:
         head = parse_header(data)
         if head.opcode != OPCODE_ULLA_CONFIG:
             raise ProtocolError(f"opcode 0x{head.opcode:02x} is not the configuration")
@@ -179,7 +174,7 @@ class Accepted:
         return bytes((header(OPCODE_ACCEPTED, self.tid), self.accepted_opcode))
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "Accepted":
+    def from_bytes(cls, data: bytes) -> Accepted:
         head = parse_header(data)
         if head.opcode != OPCODE_ACCEPTED:
             raise ProtocolError(f"opcode 0x{head.opcode:02x} is not accepted")
@@ -204,7 +199,7 @@ class NotAccepted:
         return bytes((header(OPCODE_NOT_ACCEPTED, self.tid), self.rejected_opcode, self.reason))
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "NotAccepted":
+    def from_bytes(cls, data: bytes) -> NotAccepted:
         head = parse_header(data)
         if head.opcode != OPCODE_NOT_ACCEPTED:
             raise ProtocolError(f"opcode 0x{head.opcode:02x} is not not-accepted")
@@ -244,7 +239,7 @@ class Features:
         )
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "Features":
+    def from_bytes(cls, data: bytes) -> Features:
         head = parse_header(data)
         if head.opcode != ESCAPE_7B or head.ext_opcode not in (
             EXT_FEATURE_REQUEST,
@@ -299,7 +294,7 @@ class AllowedBands:
         return bytes((header(ESCAPE_7B, self.tid), EXT_ALLOWED_BANDS, self.mask))
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "AllowedBands":
+    def from_bytes(cls, data: bytes) -> AllowedBands:
         head = parse_header(data)
         if head.opcode != ESCAPE_7B or head.ext_opcode != EXT_ALLOWED_BANDS:
             raise ProtocolError("not the allowed-bands PDU")
@@ -317,10 +312,11 @@ class BandRange:
     length: int
 
     def to_bytes(self) -> bytes:
-        for name in ("band", "first_channel", "length"):
-            if not 0 <= getattr(self, name) <= 0xFF:
-                raise ProtocolError(f"{name} is one byte")
-        return bytes((self.band, self.first_channel, self.length))
+        return (
+            octets.p8(self.band, "band")
+            + octets.p8(self.first_channel, "first_channel")
+            + octets.p8(self.length, "length")
+        )
 
 
 @dataclass(frozen=True)
@@ -351,7 +347,7 @@ class BandRanges:
         return bytes((header(ESCAPE_7B, self.tid), EXT_BAND_RANGES)) + body
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "BandRanges":
+    def from_bytes(cls, data: bytes) -> BandRanges:
         head = parse_header(data)
         if head.opcode != ESCAPE_7B or head.ext_opcode != EXT_BAND_RANGES:
             raise ProtocolError("not the band-ranges PDU")
@@ -369,7 +365,9 @@ class BandRanges:
 # [fw acib 0x3bc14 for 0x7B, 39 entries; 0x3b3bc for 0x7F, 34 entries]. An implementation can
 # use these to know what an earbud of this build will answer at all; see protocol.md 5.6.
 ESCAPE_7B_EXT = range(1, 0x28)
-ESCAPE_7B_REFUSED = frozenset({0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x12, 0x13, 0x1D, 0x1E, 0x24})
+ESCAPE_7B_REFUSED = frozenset(
+    {0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x12, 0x13, 0x1D, 0x1E, 0x24}
+)
 ESCAPE_7B_IMPLEMENTED = frozenset(ESCAPE_7B_EXT) - ESCAPE_7B_REFUSED
 ESCAPE_7F_EXT = range(1, 0x23)
 ESCAPE_7F_REFUSED = frozenset({0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x12, 0x13, 0x14})

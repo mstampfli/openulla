@@ -21,11 +21,10 @@ project's rules it stays on the machine that made it.
 """
 from __future__ import annotations
 
-import struct
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
-from typing import Iterable, Iterator
 
-from . import aap
+from . import aap, octets
 from .describe import describe_aap, describe_hci_command, describe_hci_event
 from .errors import ProtocolError
 
@@ -69,16 +68,16 @@ def read_btsnoop(blob: bytes) -> Iterator[Packet]:
         raise ProtocolError("not a btsnoop file")
     if len(blob) < HEADER_LENGTH:
         raise ProtocolError(f"a btsnoop file is at least {HEADER_LENGTH} bytes")
-    version, datalink = struct.unpack_from(">II", blob, len(MAGIC))
+    version, datalink = octets.be32(blob, len(MAGIC)), octets.be32(blob, len(MAGIC) + 4)
     if version != 1:
         raise ProtocolError(f"btsnoop version {version} is not one this reads")
     if datalink not in (DATALINK_H4, DATALINK_MONITOR):
         raise ProtocolError(f"datalink {datalink} is not one this reads")
     offset, index = HEADER_LENGTH, 0
     while offset + RECORD_HEADER_LENGTH <= len(blob):
-        _original, included, flags, _drops, timestamp = struct.unpack_from(
-            RECORD_HEADER, blob, offset
-        )
+        included = octets.be32(blob, offset + 4)
+        flags = octets.be32(blob, offset + 8)
+        timestamp = octets.be64(blob, offset + 16)
         payload = blob[offset + RECORD_HEADER_LENGTH : offset + RECORD_HEADER_LENGTH + included]
         offset += RECORD_HEADER_LENGTH + included
         index += 1
@@ -117,7 +116,13 @@ class Reader:
             elif packet.kind == "acl":
                 yield from self._acl(packet)
 
-    def _try(self, packet, label, decoder, data) -> Iterator[Found]:
+    def _try(
+        self,
+        packet: Packet,
+        label: str,
+        decoder: Callable[[bytes], list[str]],
+        data: bytes,
+    ) -> Iterator[Found]:
         try:
             lines = decoder(data)
         except (ProtocolError, ValueError, IndexError):
@@ -128,7 +133,7 @@ class Reader:
     def _acl(self, packet: Packet) -> Iterator[Found]:
         if len(packet.data) < 4:
             return
-        handle_flags, length = struct.unpack_from("<HH", packet.data, 0)
+        handle_flags, length = octets.u16(packet.data, 0), octets.u16(packet.data, 2)
         handle = handle_flags & 0x0FFF
         continuation = (handle_flags >> 12) & 0x3 == 1
         body = packet.data[4 : 4 + length]
@@ -140,7 +145,7 @@ class Reader:
         else:
             if len(body) < 4:
                 return
-            l2cap_length = struct.unpack_from("<H", body, 0)[0]
+            l2cap_length = octets.u16(body, 0)
             self.fragments[handle] = bytearray(body)
             self.expected[handle] = l2cap_length + 4
             buffer = self.fragments[handle]
@@ -151,7 +156,7 @@ class Reader:
         yield from self._l2cap(packet, frame)
 
     def _l2cap(self, packet: Packet, frame: bytes) -> Iterator[Found]:
-        length, cid = struct.unpack_from("<HH", frame, 0)
+        length, cid = octets.u16(frame, 0), octets.u16(frame, 2)
         payload = frame[4 : 4 + length]
         if cid == L2CAP_SIGNALLING_CID:
             self._signalling(payload)
@@ -163,15 +168,17 @@ class Reader:
         """Learn which channel ids carry the AAP service's PSM."""
         offset = 0
         while offset + 4 <= len(payload):
-            code, _id, length = struct.unpack_from("<BBH", payload, offset)
+            code, length = octets.u8(payload, offset), octets.u16(payload, offset + 2)
             body = payload[offset + 4 : offset + 4 + length]
             offset += 4 + length
             if code == L2CAP_CONNECT_REQUEST and len(body) >= 4:
-                psm, scid = struct.unpack_from("<HH", body, 0)
+                psm, scid = octets.u16(body, 0), octets.u16(body, 2)
                 self.pending_psm[scid] = psm
                 self.psm_by_cid[scid] = psm
             elif code == L2CAP_CONNECT_RESPONSE and len(body) >= 6:
-                dcid, scid, result = struct.unpack_from("<HHH", body, 0)
+                dcid = octets.u16(body, 0)
+                scid = octets.u16(body, 2)
+                result = octets.u16(body, 4)
                 if result == 0 and scid in self.pending_psm:
                     self.psm_by_cid[dcid] = self.pending_psm[scid]
 

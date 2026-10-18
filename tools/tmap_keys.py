@@ -1,9 +1,13 @@
-"""List radio-related parameter names in the AirPods RF tuning map (TMAP payload, NSKeyedArchiver plist)."""
-import sys
-import struct
-import plistlib
+"""List radio-related parameter names in the AirPods RF tuning map.
 
-TERMS = ("hdr", "bdr", "le2m", "le1m", "unii", "nb_", "ulla", "5g", "6g", "band", "link_", "tx_power", "cca", "ant", "hop")
+The TMAP payload is an NSKeyedArchiver plist, so its key names are readable directly.
+"""
+import plistlib
+import struct
+import sys
+
+TERMS = ("hdr", "bdr", "le2m", "le1m", "unii", "nb_", "ulla", "5g", "6g", "band",
+         "link_", "tx_power", "cca", "ant", "hop")
 
 b = open(sys.argv[1], "rb").read()
 phoff, phlen = struct.unpack_from(">2I", b, 36)
@@ -16,8 +20,8 @@ while off < phoff + phlen:
     off += plen
 
 tmap = [p for p in payloads if p[0] == "TMAP"][-1]
-_, o, l = tmap
-d = plistlib.loads(b[o:o + l])
+_, offset, length = tmap
+d = plistlib.loads(b[offset:offset + length])
 objs = d["$objects"]
 strs = [x for x in objs if isinstance(x, str)]
 radio = sorted({s for s in strs if any(t in s.lower() for t in TERMS)})

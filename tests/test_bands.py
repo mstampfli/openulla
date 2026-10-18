@@ -4,6 +4,7 @@ import pytest
 from openulla import bands
 from openulla.errors import ProtocolError
 
+
 def test_every_record_is_seven_bytes_and_round_trips():
     """The comparison against the firmware's own bytes is tools/verify_claims.py's job."""
     assert len(bands.BAND_TABLE) == bands.BAND_COUNT

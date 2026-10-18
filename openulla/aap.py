@@ -22,10 +22,10 @@ No authentication appears anywhere in this exchange [measured, and fw rkof 0x406
 """
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass
 from enum import IntEnum
 
+from . import octets
 from .errors import ProtocolError
 
 PSM = 0x1001
@@ -64,7 +64,7 @@ class Opcode(IntEnum):
 
 def frame(ftype: int, service: int, body: bytes = b"") -> bytes:
     """One AAP frame: type, service, body."""
-    return struct.pack("<HH", ftype, service) + body
+    return octets.p16(ftype, "the frame type") + octets.p16(service, "the service id") + body
 
 
 @dataclass(frozen=True)
@@ -77,13 +77,14 @@ class Frame:
 def parse_frame(data: bytes) -> Frame:
     if len(data) < HEADER_LENGTH:
         raise ProtocolError("an AAP frame is at least four bytes")
-    ftype, service = struct.unpack_from("<HH", data, 0)
+    ftype, service = octets.u16(data, 0), octets.u16(data, 2)
     return Frame(ftype, service, data[HEADER_LENGTH:])
 
 
 def open_request(service: int = SERVICE_ULLA, major: int = 1, minor: int = 2) -> bytes:
     """The 16-byte open request. The trailing eight bytes are zero in the request we send."""
-    return frame(FrameType.OPEN, service, struct.pack("<HH", major, minor) + bytes(8))
+    versions = octets.p16(major, "the major version") + octets.p16(minor, "the minor version")
+    return frame(FrameType.OPEN, service, versions + bytes(8))
 
 
 @dataclass(frozen=True)
@@ -96,15 +97,21 @@ class OpenReply:
     reserved: bytes = bytes(8)
 
     def to_bytes(self) -> bytes:
-        return struct.pack("<BBHH", self.status, 0, self.major, self.minor) + self.reserved
+        return (
+            octets.p8(self.status, "the status")
+            + bytes(1)
+            + octets.p16(self.major, "the major version")
+            + octets.p16(self.minor, "the minor version")
+            + self.reserved
+        )
 
     @classmethod
-    def from_bytes(cls, body: bytes) -> "OpenReply":
+    def from_bytes(cls, body: bytes) -> OpenReply:
         if len(body) != OPEN_REPLY_BODY_LENGTH:
             raise ProtocolError(
                 f"the open reply body is {OPEN_REPLY_BODY_LENGTH} bytes, got {len(body)}"
             )
-        status, _pad, major, minor = struct.unpack_from("<BBHH", body, 0)
+        status, major, minor = octets.u8(body, 0), octets.u16(body, 2), octets.u16(body, 4)
         return cls(status=status, major=major, minor=minor, reserved=bytes(body[6:14]))
 
     @property
@@ -119,7 +126,7 @@ def open_reply(major: int, minor: int, status: int = 0) -> bytes:
 
 def payload(opcode: int, body: bytes = b"") -> bytes:
     """A service-4 payload: the two-byte opcode, then its body."""
-    return struct.pack("<H", opcode) + body
+    return octets.p16(opcode, "an opcode") + body
 
 
 def data_frame(opcode: int, body: bytes = b"", service: int = SERVICE_ULLA) -> bytes:
@@ -130,7 +137,7 @@ def data_frame(opcode: int, body: bytes = b"", service: int = SERVICE_ULLA) -> b
 def parse_payload(body: bytes) -> tuple[int, bytes]:
     if len(body) < 2:
         raise ProtocolError("a service-4 payload starts with a two-byte opcode")
-    return struct.unpack_from("<H", body, 0)[0], body[2:]
+    return octets.u16(body, 0), body[2:]
 
 
 def start_session(mode: int = 0) -> bytes:
@@ -152,22 +159,25 @@ def stop_stream() -> bytes:
 
 def stop_session(value: int = 0) -> bytes:
     """0x3C: stop the session. Four body bytes. [fw rkof 0x6d396]"""
-    return data_frame(Opcode.STOP_SESSION, struct.pack("<I", value))
+    return data_frame(Opcode.STOP_SESSION, octets.p32(value, "the stop value"))
 
 
 def abort_response(value: int = 0) -> bytes:
     """0x3F: abort response. Four body bytes. [fw rkof 0x6daaa]"""
-    return data_frame(Opcode.ABORT_RESPONSE, struct.pack("<I", value))
+    return data_frame(Opcode.ABORT_RESPONSE, octets.p32(value, "the abort value"))
 
 
 def configure_statistics(enable: int, first: int, second: int) -> bytes:
     """0x43: configure statistics, one byte and two words. [fw rkof 0x6d2e0]"""
-    return data_frame(Opcode.CONFIGURE_STATISTICS, struct.pack("<BII", enable, first, second))
+    return data_frame(
+        Opcode.CONFIGURE_STATISTICS,
+        octets.p8(enable, "the enable byte") + octets.p32(first) + octets.p32(second),
+    )
 
 
 def status_reply(status: int) -> bytes:
     """0x37 with its four-byte status. [fw rkof 0x6e9cc]"""
-    return data_frame(Opcode.STATUS, struct.pack("<I", status))
+    return data_frame(Opcode.STATUS, octets.p32(status, "the status"))
 
 
 def parse_status(body: bytes) -> int:
@@ -176,7 +186,7 @@ def parse_status(body: bytes) -> int:
         raise ProtocolError(f"opcode 0x{opcode:02x} is not the status reply")
     if len(rest) != 4:
         raise ProtocolError(f"the status reply carries four bytes, got {len(rest)}")
-    return struct.unpack_from("<I", rest, 0)[0]
+    return int.from_bytes(rest, "little")
 
 
 def class_width(version_pair: int) -> int:
@@ -191,7 +201,8 @@ def wrapper(cls_: int, body: bytes = b"", width: int = 4) -> bytes:
     if cls_ >= 1 << (8 * width):
         raise ProtocolError(f"class 0x{cls_:x} does not fit in {width} bytes")
     return data_frame(
-        Opcode.WRAPPER, cls_.to_bytes(width, "little") + struct.pack("<H", len(body)) + body
+        Opcode.WRAPPER,
+        cls_.to_bytes(width, "little") + octets.p16(len(body), "the payload length") + body,
     )
 
 
@@ -208,10 +219,12 @@ def parse_wrapper(body: bytes, width: int = 4) -> Wrapper:
     if len(rest) < width + 2:
         raise ProtocolError("the wrapper needs a class and a length")
     cls_ = int.from_bytes(rest[:width], "little")
-    length = struct.unpack_from("<H", rest, width)[0]
+    length = octets.u16(rest, width)
     payload_bytes = rest[width + 2 :]
     if len(payload_bytes) != length:
-        raise ProtocolError(f"the wrapper says {length} payload bytes, carries {len(payload_bytes)}")
+        raise ProtocolError(
+            f"the wrapper says {length} payload bytes, carries {len(payload_bytes)}"
+        )
     return Wrapper(cls_, payload_bytes)
 
 

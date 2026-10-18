@@ -30,11 +30,11 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla import aap  # noqa: E402
-from openulla.errors import ProtocolError  # noqa: E402
-from openulla.sim import DEFAULT_PEER, SinkTransport  # noqa: E402
-from openulla.sink import Sink  # noqa: E402
-from openulla.transport import L2capTransport  # noqa: E402
+from openulla import aap
+from openulla.errors import ProtocolError
+from openulla.sim import DEFAULT_PEER, SinkTransport
+from openulla.sink import Sink
+from openulla.transport import L2capTransport
 
 MAC_RE = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
 NAMES = {
@@ -92,7 +92,7 @@ def drain(transport, seconds, label):
             break
         try:
             data = transport.recv(left)
-        except (socket.timeout, TimeoutError):
+        except TimeoutError:
             break
         except OSError as exc:
             print("  %s: recv failed: %s" % (label, exc))
@@ -148,7 +148,7 @@ def main():
         try:
             transport = L2capTransport.connect(args.device)
         except OSError as exc:
-            raise SystemExit("connect failed: %s" % exc)
+            raise SystemExit("connect failed: %s" % exc) from exc
         print("connected")
 
     req = aap.open_request(aap.SERVICE_ULLA, ver_a, ver_b)

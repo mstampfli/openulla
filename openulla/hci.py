@@ -26,10 +26,10 @@ band index must be 0..7 (8 meaning none), a country code must be 0..7 or exactly
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
-from . import bands
+from . import bands, octets
 from .codes import HciError, Mode, Result
 from .errors import ProtocolError
 
@@ -123,20 +123,16 @@ class UllaSetup:
     def to_bytes(self) -> bytes:
         if not 0 <= self.handle <= 0x0EFF:
             raise ProtocolError("a connection handle is twelve bits")
-        for name in ("extra_flags", "flags", "mode"):
-            if not 0 <= getattr(self, name) <= 0xFF:
-                raise ProtocolError(f"{name} is one byte")
-        if not 0 <= self.config_word <= 0xFFFF:
-            raise ProtocolError("config_word is two bytes")
         return (
-            self.handle.to_bytes(2, "little")
-            + bytes((self.extra_flags,))
-            + self.config_word.to_bytes(2, "little")
-            + bytes((self.flags, self.mode))
+            octets.p16(self.handle, "the connection handle")
+            + octets.p8(self.extra_flags, "extra_flags")
+            + octets.p16(self.config_word, "config_word")
+            + octets.p8(self.flags, "flags")
+            + octets.p8(self.mode, "mode")
         )
 
     @classmethod
-    def from_bytes(cls, params: bytes) -> "UllaSetup":
+    def from_bytes(cls, params: bytes) -> UllaSetup:
         if len(params) != cls.LENGTH:
             raise ProtocolError(f"0xFE50 takes {cls.LENGTH} parameter bytes, got {len(params)}")
         return cls(
@@ -272,7 +268,7 @@ class ModeChangeEvent:
         return bytes((EVENT_VENDOR, len(params))) + params
 
     @classmethod
-    def from_bytes(cls, packet: bytes) -> "ModeChangeEvent":
+    def from_bytes(cls, packet: bytes) -> ModeChangeEvent:
         if len(packet) < 2 or packet[0] != EVENT_VENDOR:
             raise ProtocolError("not a vendor event")
         params = packet[2:]

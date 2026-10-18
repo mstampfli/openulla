@@ -27,8 +27,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla import bands, hci, lmp  # noqa: E402
-from openulla.codes import (  # noqa: E402
+from openulla import bands, hci, lmp
+from openulla.codes import (
     FIRMWARE_NAMES,
     REASON_FIRMWARE_NAMES,
     RESULT_FIRMWARE_NAMES,
@@ -36,7 +36,7 @@ from openulla.codes import (  # noqa: E402
     RejectReason,
     Result,
 )
-from openulla.session import TRANSITIONS  # noqa: E402
+from openulla.session import TRANSITIONS
 
 # acib, the Bluetooth controller image
 BAND_TABLE = 0xF52E8
