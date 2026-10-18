@@ -1,0 +1,27 @@
+# The implementation's own checks. No hardware, no dependencies, no network.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install pytest
+      - run: python -m pytest -q
+      - name: the simulated setup still negotiates
+        run: |
+          python tools/ulla_demo.py
+          python tools/ulla_demo.py --reject busy
+          python tools/aap_probe.py --simulate --seq start,subscribe,stop
+          python tools/ulla_decode.py f6 17 e6
