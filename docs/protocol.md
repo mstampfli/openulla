@@ -436,8 +436,91 @@ What arrives is not adopted blindly. The received mask is ANDed with the device'
 allowed-band byte and ignored if the two do not intersect; only then is it stored as that
 link's band byte [fw acib 0x45360, called only from 0x29af2 inside the PDU handler 0x29ab4].
 
-**[open] What each bit means.** The mapping from the 8 mask bits to radio bands is not
-established. The only hint in the firmware is that the controller refuses bit 3.
+What each bit means is section 6.3.
+
+### 6.3 What each band bit means
+
+The bit positions of the mask are a band index, 0 to 7, and the same index space is used by
+five commands. 0xFF7C takes it as a plain index to set a link's current band, testing it
+against the device's own mask by shifting the mask right by the index [fw acib 0x19832] and
+storing it at the link's band-index byte, with 8 meaning none [fw acib 0x197f4, 0x1984c].
+0xFF78 reads it back, turning a band byte into an index with a count-leading-zeros and a
+subtraction from 31 [fw acib 0x193a0]. 0xFFB3, which the firmware's own test command
+`set_test_band_and_range` sends [fw rkof 0x668b6, command id 0x3B3, three bytes], rejects
+index 3 before doing anything else [fw acib 0x18d10] and then indexes a band table. 0xFF8E
+takes up to eight (index, first channel, length) triples and validates each against the same
+table [fw acib 0x19f9c].
+
+That table is a constant in the controller image: **8 records of 7 bytes** at acib 0xf52e8,
+indexed by the band index [fw acib 0x407ec, the record stride computed as index*8 - index].
+Its fields are a start frequency in MHz (2 bytes), a band width in MHz, a channel count, a
+channel bandwidth in MHz, a channel spacing in MHz, and the band's first channel number in a
+single global numbering. The one function that uses it as a plan computes a channel's
+frequency as `(channel - first) * spacing + (start - correction)`, where the correction comes
+from a RAM twin of the table, and returns the channel bandwidth alongside [fw acib 0x407dc,
+its only caller 0x40abc, RAM table 0x10000640 with 6-byte records whose +2 is the usable
+channel count].
+
+Decoded, that is the whole band plan:
+
+| bit | start | width | channels | channel bw | spacing | first channel | span | band |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 2401 | 82 | 13 | 22 | 5 | 0 | 2401-2483 | 2.4 GHz ISM |
+| 1 | 5150 | 100 | 5 | 20 | 20 | 13 | 5150-5250 | U-NII-1 |
+| 2 | 5735 | 120 | 6 | 20 | 20 | 18 | 5735-5855 | U-NII-3 |
+| 3 | all bytes zero | | | | | | | refused everywhere |
+| 4 | 5945 | 100 | 5 | 20 | 20 | 24 | 5945-6045 | U-NII-5, lowest quarter |
+| 5 | 6045 | 120 | 6 | 20 | 20 | 29 | 6045-6165 | U-NII-5 |
+| 6 | 6165 | 120 | 6 | 20 | 20 | 35 | 6165-6285 | U-NII-5 |
+| 7 | 6285 | 140 | 7 | 20 | 20 | 41 | 6285-6425 | U-NII-5, highest quarter |
+
+All frequencies in MHz. Four internal checks hold, each of which a wrong field assignment
+would break: `width = (channels - 1) * spacing + channel bandwidth` in all seven defined
+records; each 6 GHz band's start plus its width is the next band's start, with the last
+ending at 6425, the U-NII-5 upper edge; the first-channel numbers form one contiguous
+numbering, 0, 13, 18, (none), 24, 29, 35, 41, each the previous band's first plus its channel
+count, ending at 47 for 48 channels in all; and the spans contain the extents Apple's own FCC
+exhibits report for these earbuds, 5157-5245 in band 1 and 6108-6420 inside bands 5 to 7.
+Band 4 lies entirely outside what these earbuds are granted, so the table is the radio
+family's plan and the regulatory selection narrows it, which is what the country-code commands
+of section 6.4 are for.
+
+**Band 3 is empty**, which is why every path refuses it: its record is seven zero bytes, and
+three separate places reject or skip the index [fw acib 0x18d10, the 0xFF79 gate, and the walk
+at 0x2999c]. The gap between band 2's top and band 4's start is where U-NII-4 lies, so the
+slot looks reserved for it, but the record is empty and nothing further is claimed.
+
+**Band 0 is a fallback.** A link's usable mask is the intersection of the two devices' masks,
+and the firmware then clears bit 0 unless the intersection is exactly that bit, in two places
+[fw acib 0x47014, 0x4702e]. So the 2.4 GHz band is used only when it is the only band both
+ends allow.
+
+### 6.4 The rest of the band command family
+
+| Command | Parameters | Handler, and what it checks |
+|---|---|---|
+| 0xFF77 | 1 byte | the switch for the whole family: sets or clears bit 5 of the feature byte that gates every band command [fw acib 0x192dc] |
+| 0xFF78 | 2 bytes, a handle | returns a link's current band as an index [fw acib 0x19324] |
+| 0xFF7C | handle and 1 byte | sets a link's band, index 0-7 or 8 for none; 0x11 if out of range, 0x0C if the gate is clear [fw acib 0x19704] |
+| 0xFF8E | count, then 3 bytes each | per-band channel ranges; each index must be below 8, each range inside that band's channel count [fw acib 0x19f9c] |
+| 0xFF92 | count 1-8, then that many bytes | one country code per band: **each entry is either below 8 or exactly 0xFF**; 0x11 otherwise [fw acib 0x1e074] |
+| 0xFD31 | 1 byte | one country code for the device, **0 to 7**; 0x12 otherwise [fw acib 0x1e0de] |
+| 0xFFB3 | 3 bytes | test band and range; index 3 refused, the range checked against the band's channel count [fw acib 0x18d04] |
+
+0xFF92 is what the earbud's own side sends when it recomputes the table [fw rkof 0x248f8,
+command id 0x392, eight bytes], and it closes the loop on the mask: a country code is 0 to 7,
+there is one per band, and 0xFF means that band is unavailable, which is exactly the
+convention the mask builder of section 6.1 reads. Before building the mask, the earbud clamps
+each of the eight slots against a per-band byte of its own state [fw rkof 0x97f20], so the
+mask that goes out is the intersection of what the region allows with what the device is
+configured for.
+
+There is also a **second band PDU on the air: escape 0x7B, extended opcode 0x1C**. The same
+module and the same feature gate as 6.2 walks the band indexes, skipping 3 and any band whose
+range pair is zero, packs up to five (index, first, length) triples and sends them [fw acib
+0x29964, the constants at 0x299d4]. So one PDU announces which bands are allowed and the other
+announces the channel range within each. The receive side of 0x1C is index 27 of the same
+table at 0x3bc14 and has not been read yet.
 
 ## 7. The audio layer, and what is not known
 

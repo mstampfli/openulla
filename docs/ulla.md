@@ -265,6 +265,22 @@ Read from the Ghidra decompile and checked by hand. Addresses are offsets into
   whether a violation is reported. There is no encryption bit. Opcode 0x73
   has attribute 0.
 
+### 4.5 The radio's own band plan
+
+A constant table in `acib`, eight records of seven bytes at 0xf52e8, holds the band plan that
+the controller's band commands index: per band a start frequency in MHz, a width, a channel
+count, a channel bandwidth, a channel spacing and the band's first channel in one global
+numbering. Decoded it is the 2.4 GHz ISM band, U-NII-1, U-NII-3, an empty slot, and U-NII-5
+split into four. The record index is the bit position in the allowed-bands mask, so the mask
+bits are named by it. The full table, the internal checks that confirm the field assignment
+and the rest of the band command family are in `protocol.md` sections 6.3 and 6.4.
+
+Two things about it belong here rather than there. The firmware's plan contains exactly the
+bands Apple's exhibits report for this product (2.1 to 2.3 above), arrived at independently of
+them, which is a cross-check between Apple's regulatory text and Apple's own code. And it
+contains more of the 6 GHz band than these earbuds are certified for, so the plan is the radio
+family's and the regulatory selection narrows it, which is what the per-band country codes do.
+
 ## 5. Measured on a non-Apple host
 
 - The SDP record lists Audio Sink, AVRCP, Handsfree, PnP and two vendor GATT

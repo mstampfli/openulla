@@ -154,6 +154,12 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
   variants, both in the NB UNII bands and in the 2.4 GHz Bluetooth band.
 - The firmware names the feature ULLA, versions 1.0 and 1.1, with a ULLA Lite
   mode.
+- **The radio's band plan is in the firmware**, eight slots indexed by the bits of
+  the allowed-bands mask: 2.4 GHz ISM, U-NII-1, U-NII-3, an empty slot the
+  firmware refuses, and U-NII-5 split into four. Each slot carries its start
+  frequency, width, channel count, channel bandwidth and spacing, and the 2.4 GHz
+  slot is a fallback the firmware drops whenever anything else is available.
+  Table and proof in [docs/protocol.md](docs/protocol.md) section 6.3.
 - **The setup protocol is recovered in full**, from the command a host sends to
   the link-manager messages the two controllers exchange, and it is written
   down field by field in [docs/protocol.md](docs/protocol.md).
