@@ -1,13 +1,34 @@
-# openulla
+# openulla: reverse engineering Apple's H2 5 GHz lossless audio link (AirPods Pro 2 USB-C, Vision Pro)
 
-Documenting, and eventually speaking, ULLA: the proprietary low-latency
-lossless audio link built into AirPods Pro 2 (USB-C) that Apple only switches
-on for the Vision Pro. The purpose is interoperability: letting other hosts
-talk to these earbuds. See [NOTICE](NOTICE).
+Apple sells it as "20-bit, 48 kHz Lossless Audio with a massive reduction in
+audio latency", switched on for exactly one pairing: AirPods Pro 2 (USB-C) with
+an Apple Vision Pro. Apple has never published a name or a specification for
+the protocol. **The firmware calls it ULLA, ultra-low-latency audio**, which is
+where this project gets its name.
+
+It does not run over ordinary Bluetooth. Apple's own engineers have said the H2
+chip in the USB-C model uses the 5 GHz band and that this is what enables the
+feature; Apple's FCC filings show what that radio actually is, a narrowband
+radio in the 5 GHz and, since 2024, 6 GHz bands.
+
+This repository documents that protocol and works toward speaking it from
+hardware you already own. The purpose is interoperability: letting other hosts
+talk to these earbuds, including the thing that started it, the fact that any
+ordinary Bluetooth host drops these earbuds to a telephone-quality mono codec
+the moment you open the microphone. See [NOTICE](NOTICE).
+
+Searching for this subject is awkward because Apple never named it, so for the
+record, the same thing is meant by: AirPods Pro 2 5 GHz protocol, H2 chip 5 GHz
+lossless, AirPods Pro 2 Vision Pro lossless reverse engineering, and ULLA.
 
 Independent research. Not affiliated with or endorsed by Apple. No Apple
 firmware or other Apple-owned binaries are redistributed here; the tools fetch
 public material from Apple's and the FCC's own servers.
+
+Sources for the two claims above: Apple's press release for the USB-C AirPods
+Pro 2, and Apple's Ron Huang on the H2's 5 GHz support, as reported by
+MacRumors and quoted by
+[MacStories](https://www.macstories.net/?p=72982).
 
 ## The short version
 
