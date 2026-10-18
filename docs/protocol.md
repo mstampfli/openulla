@@ -111,6 +111,23 @@ dispatches on it [fw rkof 0x6cf48, table at 0x6cf4c]. The ULLA ones:
 | 0x43 | 1 + 4 + 4 bytes | configure statistics [fw rkof 0x6d2e0] |
 | 0x17 | see 2.6 | wrapper used in both directions |
 
+**What the mode byte of 0x36 actually does**, since that one byte is the only choice a host
+makes. The manager stores it and never validates it [fw rkof 0x27a58, which has no range
+check, and measured: 0, 1 and 2 all answer status 0]. After that it is read in eight places,
+and they fall into three groups:
+
+- three read **only its low bit** [fw rkof 0x2609e, 0x264f4, 0x26900, each masking with 1], so
+  mode 2 behaves there exactly like mode 0;
+- two compare **the whole value against 1 and 0** to choose the vendor command's parameters
+  [fw rkof 0x271c4, 0x271da], which is section 6.0's table;
+- two pass it **on unchanged**, into the sibling's start-session request and into the vendor
+  command's last parameter [fw rkof 0x27466, 0x27238, 0x272c8], and one saves the previous
+  value beside it when the session is reset [fw rkof 0x27602].
+
+So the session manager has no separate lite-mode path of its own: it carries the byte to the
+controller and to its sibling, and the distinction lives below it, in the controller's
+procedure and in the DSP, which has its own lite receive client (section 7).
+
 For scale, and because it matters when a host is deciding what to answer: that table covers
 opcodes 1 to 0x64, of which **61 have a handler of their own and 39 share one path that
 ignores them** [fw rkof table 0x6cf4c, the shared target 0x6d218]. Sending and accepting are
