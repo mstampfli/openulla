@@ -49,20 +49,38 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
   variants, both in the NB UNII bands and in the 2.4 GHz Bluetooth band.
 - The firmware names the feature ULLA, versions 1.0 and 1.1, with a ULLA Lite
   mode.
-- The Bluetooth controller firmware is a plain Cortex-M image. Its ULLA
-  transition is a table-driven state machine with nine handlers that sends
-  link-manager PDUs with opcodes 0x73 and 0x74.
-- A non-Apple host sees none of this: A2DP, HFP and no LE Audio.
+- **The setup protocol is recovered in full**, from the command a host sends to
+  the link-manager messages the two controllers exchange, and it is written
+  down field by field in [docs/protocol.md](docs/protocol.md).
+- **No Apple authentication guards any of it.** The earbuds' four acceptance
+  checks look at feature flags, link state and roles. There is no key, no
+  nonce and no challenge anywhere in the setup.
+- **A Linux laptop can start a ULLA session and be told it succeeded.** Sending
+  seven bytes over an ordinary Bluetooth channel moves the earbuds' session
+  machine through three states and returns a success status. Measured, with
+  the bytes, in [docs/measurements.md](docs/measurements.md).
+- Where it stops: the next step is a link-manager exchange that only the
+  source's own Bluetooth controller can emit, and commodity controllers
+  neither expose that interface nor implement the radio modes it needs.
 
 ## What is open
 
-What has not been recovered yet is listed in
-[docs/ulla.md](docs/ulla.md#6-open). Nothing is filled in by guesswork.
+The audio layer. The over-the-air packet format is produced by radio hardware
+whose registers are undocumented, the codec is not named anywhere in the DSP
+image, and whether the audio payload is encrypted is a hardware question the
+firmware cannot answer. Details in [docs/ulla.md](docs/ulla.md#7-open).
+Nothing anywhere in this repository is filled in by guesswork.
 
 ## Repository layout
 
 - `docs/ulla.md`: the report; every claim cites a quote, a firmware address or
   a measurement.
+- `docs/protocol.md`: the setup protocol as a reference, for implementing it.
+  Frames, fields, opcodes, the session state machine with all its transitions,
+  the earbud-to-earbud messages, the link-manager PDUs, the controller's vendor
+  command, and the reason codes.
+- `docs/measurements.md`: what was observed against real earbuds from Linux,
+  with the exact bytes sent and received.
 - `docs/fcc/README.md`: index of the FCC exhibits used for the AirPods Pro 2
   USB-C left earbud (BCG-A3047) and the Apple Vision Pro (BCGA2117). The
   exhibits are not redistributed here; `tools/fetch_fcc.sh` downloads them
@@ -75,6 +93,10 @@ What has not been recovered yet is listed in
   tuning map payload.
 - `tools/ulla_strings.sh`: pulls the ULLA, UTP and HDR identifiers out of a
   firmware image.
+- `tools/aap_probe.py`: speaks the accessory protocol to the earbuds over
+  L2CAP. Opens the service, can ask them to start a ULLA session, subscribe to
+  their report streams, or stop a session, and prints every frame that comes
+  back. Every constant in it cites the firmware address that proves it.
 - `tools/bt_link_state.py`: prints what is actually established for a device,
   the kernel's own link handles beside the transports and the profile, because
   a profile name is not evidence of a link.
@@ -91,7 +113,15 @@ tools/fetch_firmware.sh       # firmware -> firmware/ (needs curl, unzip)
 python3 tools/uarp.py firmware/*/AssetData/Firmware.acsw/firmware.uarp list
 python3 tools/tmap_keys.py firmware/*/AssetData/Firmware.acsw/firmware.uarp
 tools/ulla_strings.sh firmware/*/AssetData/Firmware.acsw/firmware.uarp
+
+# talk to a paired pair of earbuds (their address, not ours, goes here)
+python3 tools/aap_probe.py --device AA:BB:CC:DD:EE:FF
+python3 tools/aap_probe.py --device AA:BB:CC:DD:EE:FF --seq subscribe,start --wait 20
 ```
+
+`aap_probe.py` needs nothing but a paired device and an ordinary user account.
+It changes the earbuds' session state, which a disconnect of its channel
+resets; see docs/measurements.md section 6 for the one side effect observed.
 
 ## Contributing
 

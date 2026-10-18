@@ -195,15 +195,34 @@ Read from the Ghidra decompile and checked by hand. Addresses are offsets into
   enabled" and "API lock is enabled"; its firmware `ibt-0040-0041.sfi` is an
   Intel CSS image with a 2048-bit RSA signature.
 
-## 6. Open
+## 6. The protocol itself
 
-Not yet recovered from the firmware, and not to be filled in until it is:
+The setup protocol is recovered in full and documented separately, because it is
+what an independent implementation actually needs:
 
-- The ULLA manager's transition table in `rkof`, and the numeric values of its
-  states, events and messages.
-- Which handler sets bits 0x04 and 0x08 of the state-5 flag byte, and what
-  0x5ef34 does.
-- What handler 0x66f9c reads from the answer it waits for.
-- The UTP message payloads.
-- The audio framing after setup (DSP payload `sbd1`) and the PHY (`phyb`).
-- Meaning of HDRp4, HDRp8 and of ULLA Lite.
+- [docs/protocol.md](protocol.md): the host interface, the session state
+  machine, the earbud-to-earbud messages, the link-manager PDUs and the
+  controller's vendor command, each item citing the firmware address it was
+  read from.
+- [docs/measurements.md](measurements.md): what was observed on a Linux host,
+  including a session started from an ordinary laptop with no Apple
+  authentication of any kind.
+
+## 7. Open
+
+Not recovered, and not to be filled in until it is:
+
+- The over-the-air packet format. The air packet is produced by radio hardware
+  programmed through registers; the PHY payload `phyb` has no symbols or
+  strings and the register semantics are not public.
+- The audio codec. The DSP payload `sbd1` names none on this path.
+- Whether the audio payload is encrypted. The setup establishes no key material
+  of its own, but whether the radio keeps applying the ordinary link cipher
+  after the mode change is a hardware question these files cannot answer.
+- The maximum ULLA packet size: the firmware carries a message about it, but
+  only through a numbered trace mechanism whose text table ships separately.
+- Meaning of HDRp4, HDRp8, and which devices other than the Vision Pro use the
+  lite mode.
+- The two setup fields whose values come from a runtime hardware read or from
+  parameter getters that are stubs in this build (protocol.md sections 5.1,
+  5.2). They do not affect acceptance, only the radio configuration.
