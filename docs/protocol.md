@@ -454,19 +454,26 @@ Four checks, in order, each with its own reason [fw acib 0x675f4]:
 The parser's per-opcode attribute table is state gating only, with no encryption bit, and the
 entry for 0x73 imposes no state requirement at all [fw acib 0xf1f58, 0x3b0aa].
 
-Each check has its own reason, and the receiver keeps it in the low nibble of the link's state
-byte [fw acib 0x67654]:
+Each check has its own reason. The receiver is handed a byte to answer in, sets **bit 7 of it
+before any check runs** [fw acib 0x67608], and writes the failing check's number into its low
+nibble [fw acib 0x67654, which clears the nibble and adds the number]:
 
-| check | what it reads | reason when it fails |
-|---|---|---|
-| 1 | a feature-enabled byte [fw acib 0x62074] | 1 |
-| 2 | object ready, through the session's function table [fw acib 0x62030] | 2 |
-| 3 | a busy flag [fw acib 0x62154] | 3 |
-| 4 | link state, role and link count [fw acib 0x620c8] | 4, 5 or 6 |
+| check | what it reads | nibble when it fails | on the air |
+|---|---|---|---|
+| 1 | a feature-enabled byte [fw acib 0x62074] | 1 | 0x81 |
+| 2 | object ready, through the session's function table [fw acib 0x62030] | 2 | 0x82 |
+| 3 | a busy flag [fw acib 0x62154] | 3 | 0x83 |
+| 4 | link state, role and link count [fw acib 0x620c8] | 4, 5 or 6 | 0x84, 0x85, 0x86 |
 
 Check 4 returns its reason directly: 6 when the link is absent, or its state byte is not 0xC,
 or a flag at its offset 0x185 is set; otherwise 4 or 5 from the role and connection-count
 tests [fw acib 0x62102 onwards]. Zero means it passed.
+
+The caller then tests that byte's low nibble: zero and it takes the accept path, otherwise it
+sends the not-accepted PDU with **the whole byte** as the reason [fw acib 0x63492 shifts the
+byte left by 28 and branches on zero, 0x6349a and 0x6349e pass it to the sender at 0x3c934].
+So the reason an earbud puts on the air for a refused setup is 0x81 to 0x86, and those are
+exactly the names the host-side table gives the primary role.
 
 Reason numbers, with the names the firmware's own tables give them [names at fw rkof
 0x1dea6a, selected by the two byte tables at rkof 0x2777c and 0x2778c and the two direct
@@ -490,15 +497,16 @@ comparisons at 0x27798 and 0x2779c]:
 | 0xaa | lite-mode transport disconnected |
 | 0xff | not applicable |
 
-**2 is missing from that list on purpose.** The secondary numbering skips it: its slot in the
-table points at the same "invalid reason" text as any unknown value, while the primary list is
-contiguous and its extra member at 0x82 is "already connected", which cannot happen to a
-secondary. And 2 is exactly what check 2 above produces, so the value does travel; it is the
-host-side name table that has no name for it.
+The two halves of that list are the same six failures twice, once per role, and the 0x80 bit
+is the role of the device doing the refusing. An earbud facing a source is the primary one, so
+the checks above produce the 0x81 to 0x86 half; the bare 1 to 6 are the same failures reported
+by a secondary.
 
-Values 1 to 6 are what this receiver puts on the air. The 0x81 to 0x87 names belong to the
-primary role's own failures; where the 0x80 bit is set was not established, and a scan of the
-controller image for those immediates returns 38 hits that cannot discriminate.
+**2 is missing from the secondary half on purpose.** Its slot in the name table points at the
+same "invalid reason" text as any unknown value, while the primary half is contiguous and its
+extra member at 0x82 is "already connected", which cannot happen to a secondary. Read together
+with the checks, that is also what check 2 means: the object is not ready because a link
+already exists.
 
 ### 5.5 What the sink does after accepting
 

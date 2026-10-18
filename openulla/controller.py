@@ -32,6 +32,7 @@ from .errors import ProtocolError
 from .hci import ModeChangeEvent, UllaSetup
 
 ACCEPT = 0
+PRIMARY_ROLE = 0x80  # bit 7 of the reason byte: the role of the device refusing
 
 
 @dataclass
@@ -49,16 +50,22 @@ class AcceptChecks:
     link_state: int = 0
 
     def decide(self) -> int:
-        """0 to accept, otherwise the reason byte. [fw acib 0x675f4]"""
+        """0 to accept, otherwise the reason byte that goes on the air. [fw acib 0x675f4]
+
+        The receiver sets bit 7 of its answer byte before any check runs [fw acib 0x67608]
+        and writes the failing check's number into the low nibble, and the caller sends the
+        whole byte [fw acib 0x63492 onwards]. So the reasons an earbud refuses with are the
+        primary-role half of the list, 0x81 to 0x86.
+        """
         if not self.feature_enabled:
-            return RejectReason.SECONDARY_ROLE_NOT_INITIATED
+            return PRIMARY_ROLE | 1
         if not self.object_ready:
-            return 2  # the slot the host-side name table leaves unnamed
+            return PRIMARY_ROLE | 2
         if self.busy:
-            return RejectReason.SECONDARY_DISALLOWED_ACTIVITY
+            return PRIMARY_ROLE | 3
         if self.link_state not in (0, 4, 5, 6):
             raise ProtocolError("the link-state check returns 0, 4, 5 or 6")
-        return self.link_state
+        return PRIMARY_ROLE | self.link_state if self.link_state else ACCEPT
 
 
 @dataclass

@@ -86,7 +86,7 @@ def test_a_peer_that_refuses_the_setup_leaves_the_manager_where_it_was():
     assert link.sink.state == State.CONTROLLER_SETUP
     event = link.controller_setup(SETUP, responder=Responder(checks=AcceptChecks(busy=True)))
     assert event.result == Result.SETUP_REJECTED_BY_PEER
-    assert event.reason == RejectReason.SECONDARY_DISALLOWED_ACTIVITY
+    assert event.reason == RejectReason.PRIMARY_DISALLOWED_ACTIVITY
     assert link.sink.state == State.CONTROLLER_SETUP
 
 

@@ -3,7 +3,7 @@ import pytest
 
 from openulla import lmp
 from openulla.codes import Mode, RejectReason, Result
-from openulla.controller import ACCEPT, AcceptChecks, Initiator, Responder
+from openulla.controller import ACCEPT, PRIMARY_ROLE, AcceptChecks, Initiator, Responder
 from openulla.errors import ProtocolError
 from openulla.hci import UllaSetup
 
@@ -11,17 +11,36 @@ SETUP = UllaSetup(handle=0x000B, extra_flags=0x01, config_word=0x0102, flags=0xF
 
 
 def test_the_checks_run_in_the_firmwares_order():
-    """Each check is tested only once the one before it has passed."""
-    assert AcceptChecks(feature_enabled=False, object_ready=False, busy=True).decide() == 1
-    assert AcceptChecks(object_ready=False, busy=True).decide() == 2
-    assert AcceptChecks(busy=True, link_state=6).decide() == 3
-    assert AcceptChecks(link_state=6).decide() == 6
+    """Each check is tested only once the one before it has passed, and the reason it gives
+    is the primary-role half of the list, because bit 7 is set before any check runs."""
+    assert AcceptChecks(feature_enabled=False, object_ready=False, busy=True).decide() == (
+        RejectReason.PRIMARY_ROLE_NOT_INITIATED
+    )
+    assert AcceptChecks(object_ready=False, busy=True).decide() == (
+        RejectReason.PRIMARY_ULLA_ALREADY_CONNECTED
+    )
+    assert AcceptChecks(busy=True, link_state=6).decide() == (
+        RejectReason.PRIMARY_DISALLOWED_ACTIVITY
+    )
+    assert AcceptChecks(link_state=6).decide() == (
+        RejectReason.PRIMARY_INVALID_SOURCE_CONNECTION
+    )
     assert AcceptChecks().decide() == ACCEPT
 
 
-def test_the_second_check_produces_the_reason_the_name_table_leaves_unnamed():
-    assert AcceptChecks(object_ready=False).decide() == 2
+def test_the_role_bit_is_what_makes_them_the_primary_half():
+    for nibble, reason in (
+        (1, RejectReason.PRIMARY_ROLE_NOT_INITIATED),
+        (2, RejectReason.PRIMARY_ULLA_ALREADY_CONNECTED),
+        (3, RejectReason.PRIMARY_DISALLOWED_ACTIVITY),
+        (4, RejectReason.PRIMARY_UTP_NOT_IN_ACTIVE_MODE),
+        (5, RejectReason.PRIMARY_ILLEGAL_NUM_CONNECTIONS),
+        (6, RejectReason.PRIMARY_INVALID_SOURCE_CONNECTION),
+    ):
+        assert reason == PRIMARY_ROLE | nibble
+    # 2 is the one the secondary half has no name for, and it is check 2's own number.
     assert 2 not in {reason.value for reason in RejectReason}
+    assert AcceptChecks(object_ready=False).decide() == PRIMARY_ROLE | 2
 
 
 def test_the_link_state_check_returns_only_the_reasons_it_can():
@@ -42,7 +61,9 @@ def test_an_accepted_setup_is_answered_with_the_accepted_pdu():
 def test_a_refused_setup_names_the_opcode_and_the_reason():
     responder = Responder(checks=AcceptChecks(busy=True))
     reply = lmp.parse(responder.receive(Initiator().setup_request(SETUP)))
-    assert reply == lmp.NotAccepted(lmp.OPCODE_ULLA_SETUP, RejectReason.SECONDARY_DISALLOWED_ACTIVITY)
+    assert reply == lmp.NotAccepted(
+        lmp.OPCODE_ULLA_SETUP, RejectReason.PRIMARY_DISALLOWED_ACTIVITY
+    )
     assert responder.received is None
 
 
