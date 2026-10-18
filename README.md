@@ -243,6 +243,12 @@ python3 tools/aap_probe.py --device AA:BB:CC:DD:EE:FF --seq subscribe,start --wa
 It changes the earbuds' session state, which a disconnect of its channel
 resets; see docs/measurements.md section 6 for the one side effect observed.
 
+On macOS (tested on macOS 27.0.1), the firmware and FCC tools run as shown,
+with `pdftotext` from Homebrew's `poppler` package and `strings` from the Xcode
+Command Line Tools. `aap_probe.py`, `bt_link_state.py` and `a2dp_send.py` are
+built on Linux's Bluetooth sockets, BlueZ and PipeWire, so they need a Linux
+host, and on any other system they exit saying so.
+
 ## Contributing
 
 Captures from Apple hosts (PacketLogger, Bluetooth logging profile), notes

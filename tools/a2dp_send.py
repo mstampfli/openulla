@@ -23,7 +23,10 @@ import sys
 import time
 import wave
 
-import dbus
+try:
+    import dbus
+except ImportError:  # not Linux, or dbus-python missing; main() says so
+    dbus = None
 
 TRANSPORT = "org.bluez.MediaTransport1"
 MAC_RE = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
@@ -151,6 +154,8 @@ def main():
     ap.add_argument("--stdin", action="store_true",
                     help="stream raw s16 stereo PCM from stdin until EOF")
     args = ap.parse_args()
+    if dbus is None:
+        raise SystemExit("a2dp_send.py needs Linux with BlueZ, dbus-python and libsbc")
 
     lib = load_sbc()
     bus = dbus.SystemBus()

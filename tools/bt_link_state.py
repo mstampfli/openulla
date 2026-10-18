@@ -149,6 +149,9 @@ def card_profile(mac):
 def main():
     if len(sys.argv) != 2 or not re.match(MAC_RE, sys.argv[1]):
         raise SystemExit("usage: bt_link_state.py AA:BB:CC:DD:EE:FF")
+    if not sys.platform.startswith("linux"):
+        raise SystemExit("bt_link_state.py reads the Linux kernel's link list, BlueZ and "
+                         "PipeWire, so it needs Linux")
     mac = sys.argv[1].upper()
     print("device %s" % mac)
 
