@@ -140,10 +140,25 @@ The class field is 4 bytes when the session's negotiated version pair is above 0
 subscribes the host to the ULLA report streams, tells the sibling earbud, and tells the local
 controller to begin reporting [fw rkof 0x6d116, 0x27f60].
 
-Those reports are link statistics, 185 and 61 bytes respectively [fw rkof 0x25bb2, 0x25bf4,
-collector around 0x25ad0], so they only carry content once a ULLA link is actually running.
-Report bodies [fw rkof 0x27e90]: one byte of report type, then the manager's mode and role
-bytes, then the data.
+Those reports are link statistics, and they only carry content once a ULLA link is actually
+running. Two notification ids feed them, each with a size the worker validates: **0xE910 with
+185 bytes and 0xE911 with 61** [fw rkof 0x25baa and 0x25bec compare against 0xB9 and 0x3D;
+the collector is around 0x25ad0].
+
+The report the host receives is [fw rkof 0x27e90, which zeroes a 185-byte buffer first]:
+
+| offset | size | meaning |
+|---|---|---|
+| 0 | 1 | report type |
+| 1 | 1 | the manager's field at its offset 0 |
+| 2 | 1 | the manager's field at its offset 0x20 |
+| 3 | .. | the data, and the wrapper's length is this plus three |
+
+The same report goes to the **sibling** instead when no host session is open, with a four-byte
+header: a constant 4, then the type, then those same two bytes, sent as message 12 of section
+4 [fw rkof 0x27ef4..0x27f26]. What the manager's two fields mean was not established; its
+current state is a different field, at its offset 0xC [fw rkof 0x25f32, the dispatcher's own
+index].
 
 ## 3. The session manager
 

@@ -71,9 +71,23 @@ def test_a_class_too_wide_for_its_field_is_refused():
         aap.wrapper(0x00200000, b"", width=2)
 
 
-def test_report_body_starts_with_type_mode_and_role():
+def test_report_body_starts_with_its_type_and_two_manager_bytes():
     report = aap.parse_report(bytes((7, 1, 0)) + b"rest")
-    assert (report.report_type, report.mode, report.role, report.data) == (7, 1, 0, b"rest")
+    assert (report.report_type, report.manager_fields, report.data) == (7, (1, 0), b"rest")
+
+
+def test_the_siblings_copy_of_a_report_carries_one_byte_more():
+    report = aap.parse_report(bytes((4, 7, 1, 0)) + b"rest", sibling=True)
+    assert (report.report_type, report.manager_fields, report.data) == (7, (1, 0), b"rest")
+    with pytest.raises(ProtocolError):
+        aap.parse_report(bytes((5, 7, 1, 0)), sibling=True)
+    with pytest.raises(ProtocolError):
+        aap.parse_report(bytes((4, 7, 1)), sibling=True)
+
+
+def test_the_two_report_notification_sizes():
+    assert aap.REPORT_SIZES == (185, 61)
+    assert aap.REPORT_NOTIFICATIONS == (0xE910, 0xE911)
 
 
 def test_wrapper_length_must_match_its_payload():

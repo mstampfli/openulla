@@ -35,7 +35,8 @@ HEADER_LENGTH = 4
 OPEN_REQUEST_LENGTH = 16
 OPEN_REPLY_BODY_LENGTH = 14
 CLASS_ULLA_REPORTS = 0x00200000
-REPORT_SIZES = (185, 61)
+REPORT_SIZES = (185, 61)  # validated against 0xB9 and 0x3D [fw rkof 0x25baa, 0x25bec]
+REPORT_NOTIFICATIONS = (0xE910, 0xE911)  # the two ids those sizes belong to, in that order
 VERSION_PAIR_WIDE_CLASS = 0x00010001  # above this, the wrapper's class field is four bytes
 
 
@@ -224,15 +225,28 @@ def subscribe_reports(cls_: int = CLASS_ULLA_REPORTS, width: int = 4) -> bytes:
 
 @dataclass(frozen=True)
 class Report:
-    """A report body: its type, then the manager's mode and role. [fw rkof 0x27e90]"""
+    """A report body: its type, then two bytes the manager copies from its own object.
+
+    Those two are the manager's fields at its offsets 0 and 0x20 [fw rkof 0x27eba..0x27ed0];
+    what they mean is not established, and the manager's current state is a different field.
+    The sibling gets the same report with a four-byte header whose first byte is 4
+    [fw rkof 0x27ef4..0x27f16].
+    """
 
     report_type: int
-    mode: int
-    role: int
+    manager_fields: tuple[int, int]
     data: bytes
 
+    SIBLING_MARKER = 4
 
-def parse_report(body: bytes) -> Report:
-    if len(body) < 3:
-        raise ProtocolError("a report body is at least three bytes")
-    return Report(body[0], body[1], body[2], body[3:])
+
+def parse_report(body: bytes, sibling: bool = False) -> Report:
+    """Read a report body, either the host's three-byte header or the sibling's four."""
+    header_length = 4 if sibling else 3
+    if len(body) < header_length:
+        raise ProtocolError(f"a report body is at least {header_length} bytes")
+    if sibling:
+        if body[0] != Report.SIBLING_MARKER:
+            raise ProtocolError(f"a sibling report starts with {Report.SIBLING_MARKER}")
+        body = body[1:]
+    return Report(body[0], (body[1], body[2]), body[3:])
