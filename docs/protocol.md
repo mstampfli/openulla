@@ -477,6 +477,15 @@ session that already exists while 0x73 is the one that creates it: 0x73's own ch
 different state entirely (5.4). What the values mean, and what either of 0x75 and 0x76 is for,
 is open.
 
+**How much of the ordinary opcode space this protocol uses**, as far as a sweep can say:
+walking every one of the 126 entries of the receive dispatch table and following each handler
+plus one level of its calls, the only handlers that reach that session object or its accessors
+are 0x75's and 0x76's. So the family on the air is 0x73, 0x74, 0x75 and 0x76 among the
+ordinary opcodes, plus the extended messages of 5.6, and nothing else in that space touches
+the session. The sweep follows straight-line code two levels deep, so it is evidence rather
+than proof: a handler that reaches the session through a function pointer or a third call
+would not show up in it.
+
 ### 5.3 Accept and reject
 
 Acceptance is the standard link-manager accepted PDU, opcode 3, carrying 0x73 [fw acib
