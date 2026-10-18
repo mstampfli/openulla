@@ -151,19 +151,20 @@ open questions, and they are the cheap ones to answer.
 
 In rough order of how little hardware it needs:
 
-1. **If you own an Apple host and these earbuds**, check whether the host
-   already uses this link. Run `tools/aap_probe.py --device <earbuds>` while
-   the Apple device is connected and playing: a start command that is
-   *refused* means the earbuds' session machine is not idle. With an Apple host
-   connected and playing, and the same command succeeding once that host is
-   disconnected, that would be the first evidence that a device other than a
-   Vision Pro drives ULLA. Run both halves; one alone proves nothing. Costs
-   nothing but your time.
-2. **If you can capture HCI on an Apple host**, the controller's vendor command
-   and its progress event are documented in
-   [docs/protocol.md](docs/protocol.md) section 6, including the mode, result
-   and reason bytes. If an Apple host drives this link, those appear in a
-   host-side capture.
+1. **If you can capture HCI on an Apple host that drives these earbuds**, this
+   is the cheapest open question we cannot answer ourselves: does anything
+   other than a Vision Pro use this link? The controller's vendor command and
+   its progress event are documented in [docs/protocol.md](docs/protocol.md)
+   section 6, including the mode, result and reason bytes, so a host-side
+   capture on a Mac would show them directly if that host drives the link.
+
+   Do **not** try to answer this by asking the earbuds from a second host while
+   an Apple device holds them. We measured that: the earbuds evict the second
+   host and say so, with the Bluetooth reason "Remote Device Terminated due to
+   Low Resources", even with every audio profile released on our side. By the
+   time the asking host is connected, the other one is gone and the session has
+   reset, so the test cannot tell its two outcomes apart. See
+   [docs/measurements.md](docs/measurements.md) section 8.
 3. **If you have a controller whose firmware you can patch**
    (InternalBlue-class tooling on a supported chip), the link-manager exchange
    is documented field by field in section 5 and needs no key or challenge of

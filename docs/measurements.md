@@ -128,3 +128,32 @@ affected.
   voice link dying the moment the transport was acquired.
 - **Link-manager traffic never reaches the host.** No amount of host-side capturing will show
   the setup PDUs of `protocol.md` section 5.
+
+## 8. Only one host at a time, and the earbuds say so
+
+Attempting to ask the earbuds a question while another host holds them does not work, and the
+failure is theirs rather than the asking host's.
+
+Setup, deliberately stripped to the minimum on the Linux side: reconnect, set the host audio
+server's card profile to off, then disconnect every Bluetooth audio profile through BlueZ
+(A2DP sink, both AVRCP roles, handsfree), leaving a bare encrypted baseband link held open
+only by the accessory-protocol channel itself. Verified in that state: link up and encrypted,
+no media transports, no audio card.
+
+In that configuration the channel worked normally and took 33 frames from the earbuds. An
+iPhone was then connected to the same earbuds. They reset the channel and tore down the link:
+
+```
+HCI Disconnect Complete, handle 256, status Success,
+Reason: Remote Device Terminated due to Low Resources (0x14)
+```
+
+So the eviction is the earbuds' own decision and they report the reason. One observation of
+that reason code, consistent with the owner's independent prior experience that the two
+devices fight over the earbuds.
+
+The consequence matters for anyone planning experiments: a second host cannot observe whether
+a first host is using this link by asking the earbuds, because connecting the second host
+evicts the first and resets the session. The test cannot distinguish its two outcomes, which
+is worse than it being merely inconvenient. Capturing HCI on the driving host is the approach
+that can work.
