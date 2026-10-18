@@ -19,7 +19,8 @@ fill it in; it says so, and the tests say so too.
 | `lmp.py` | the link-manager PDUs: 0x73, 0x74, accepted, not accepted, and both escape messages |
 | `hci.py` | the vendor commands, the band command family and the mode-change event |
 | `bands.py` | the radio's band plan, the frequency function, and the rules that pick a band |
-| `codes.py` | the numbered values with the firmware's own names |
+| `codes.py` | the numbered values with the firmware's own names, including the firmware's own spelling of each |
+| `errors.py` | two exceptions: malformed, and refused with the code the firmware would send |
 | `controller.py` | each end of the link-manager exchange, with the responder's four checks |
 | `sink.py` | an earbud-shaped simulator |
 | `source.py` | what a host sends, and the vendor commands its controller would need |
