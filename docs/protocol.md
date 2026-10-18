@@ -187,9 +187,12 @@ type carries is not established.
 
 The same report goes to the **sibling** instead when no host session is open, with a four-byte
 header: a constant 4, then the type, then those same two bytes, sent as message 12 of section
-4 [fw rkof 0x27ef4..0x27f26]. What the manager's two fields mean was not established; its
-current state is a different field, at its offset 0xC [fw rkof 0x25f32, the dispatcher's own
-index].
+4 [fw rkof 0x27ef4..0x27f26]. What the manager's two fields mean was not established, but both behave like small selectors
+rather than counters: the first is written once in the whole manager, to **2 or 3** when a
+session starts, depending on whether the sibling transport's own field at +0x18 is zero
+[fw rkof 0x27532..0x2753c], and the second is read elsewhere through a test against 1 that
+maps it to 1 or 2 [fw rkof 0x27d9a..0x27da2]. Neither is the manager's current state, which is
+a third field, at its offset 0xC [fw rkof 0x25f32, the dispatcher's own index].
 
 ## 3. The session manager
 

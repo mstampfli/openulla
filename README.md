@@ -77,6 +77,24 @@ Where the layers sit:
   then the radio changes mode and carries audio                       <- NOT recovered
 ```
 
+And the order it happens in, each step read from the firmware or measured
+(docs/protocol.md section 3.6 cites every one):
+
+```
+  host                     earbud manager              its controller / its sibling
+   |-- open service 4 ------->|
+   |<------ version 1.3 ------|
+   |-- 0x36, one mode byte -->|  only while idle
+   |                          |-- start session, address + mode --> sibling
+   |                          |   app setup, supervision timeout, sibling's answer
+   |<--- status 0 ------------|  once it waits for the local audio path
+   |                          |-- vendor command 0xFE50 ----------> controller
+   |                          |            feature exchange, bands, then the setup PDU
+   |                          |<-- vendor event: mode, result, reason
+   |                          |   link up -> DSP setup -> session open
+   |-- 0x38, start stream --->|
+```
+
 The full field-by-field reference is [docs/protocol.md](docs/protocol.md); the
 measurements behind the transcript are in
 [docs/measurements.md](docs/measurements.md).
