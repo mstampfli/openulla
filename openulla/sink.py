@@ -178,6 +178,15 @@ class Sink:
         return self.machine.state
 
     def close(self, peer: bytes = b"\x00" * 6) -> None:
-        """Closing the channel resets the session state [measured]."""
+        """Closing the channel ends the session, and a later open can start another.
+
+        How the firmware gets there is not established. Its table answers the disconnect
+        event only in the states before a session is open, and in the states after it the
+        link-down event is what tears things down (docs/protocol.md 3.4), so this feeds the
+        disconnect where there is a row for it and otherwise returns the machine to idle
+        rather than inventing an event.
+        """
         self.sessions.pop(peer, None)
         self.machine.feed(Event.DISCONNECT)
+        if self.machine.state not in (State.INIT, State.IDLE):
+            self.machine.state = State.IDLE

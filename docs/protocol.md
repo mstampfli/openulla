@@ -285,6 +285,14 @@ the handler returns 0x1770, "else" the other one, and "-" means stay.
 | 14 | 38 disconnect | idle | idle | 0x260e4 |
 | 15 wait abort response | no rows in this build | | | |
 
+Two things that table says by what it leaves out. **The disconnect event is only answered in
+the states before a session is open**: host setup, waiting for the sibling, waiting for the
+audio path, controller setup, DSP setup and host teardown. From session open onwards it is the
+**link-down event** that tears things down, and it is answered in every state from controller
+setup to controller teardown. So once a session is open the manager is not driven by the
+host's channel going away; something else has to raise the link down. And state 15, waiting
+for an abort response, has no rows at all in this build, which is why nothing can leave it.
+
 ### 3.5 Starting a session, in detail
 
 On event 3 in idle [fw rkof 0x274f0]: if the sibling transport is not in an active mode the

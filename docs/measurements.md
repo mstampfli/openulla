@@ -74,7 +74,10 @@ rather than coincidence:
 - The stop is ignored because the stop event has no row in the states the machine had reached,
   so the dispatcher finds nothing and leaves the state alone.
 - Recovery on channel close happens because the disconnect path posts the disconnect event,
-  which returns the machine to idle from any of those states.
+  which returns the machine to idle from the states this test reached. Those are the states
+  before a session is open, and they are exactly the ones whose rows answer that event; from
+  session open onwards the table answers the link-down event instead, so what resets a
+  manager that got further is not established (`protocol.md` section 3.4).
 
 The state change is therefore observable from outside the earbud, not merely inferred.
 
