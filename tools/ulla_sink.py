@@ -54,8 +54,9 @@ def serve_one(channel, address, advance):
         for reply in service.handle(data):
             show("->", reply)
             channel.send(reply)
+    reached = service.sink.state.name
     service.closed()
-    print(f"closed: {address}, session state {service.sink.state.name}")
+    print(f"closed: {address}, session was in {reached}, now {service.sink.state.name}")
 
 
 def main():

@@ -305,6 +305,15 @@ In rough order of how little hardware it needs:
    (see "What is open"). Which other Macs carry them is not established, and a
    capture answers that for your machine at the same time.
 
+   `tools/capture_decode.py` reads such a capture and prints the frames of this
+   protocol in it, so there is nothing to decode by hand. It reads btsnoop,
+   which `btmon -w` writes on Linux and which Wireshark can save a PacketLogger
+   `.pklg` file as. What to look at first, in order: the **feature exchange**
+   (section 5.8), because if a host drives this link at all that is its first
+   message and the capture then holds the feature words both ends advertise;
+   then the vendor command's parameters against the ones the earbud's own code
+   uses (6.0); then the band mask and channel ranges (6.2 and 6.5).
+
    Do **not** try to answer this by asking the earbuds from a second host while
    an Apple device holds them. We measured that: the earbuds evict the second
    host and say so, with the Bluetooth reason "Remote Device Terminated due to
@@ -319,6 +328,11 @@ In rough order of how little hardware it needs:
    reporting what the earbuds answer would tell us whether the mode change can
    be driven from non-Apple hardware at all. Whether current chips are supported
    by such tooling is unverified.
+
+   `openulla/` builds every PDU of that exchange, in the order a source has to
+   send them (section 8.1), and `tools/ulla_sink.py` answers as an earbud on a
+   real L2CAP channel, so the host half of an implementation can be tested
+   before any of it touches earbuds.
 3. **If you have a wideband software radio**, the air format is the big unknown.
    The link hops 79 channels at Bluetooth timing, so capturing the whole band
    and un-hopping in software is the realistic approach rather than chasing the
