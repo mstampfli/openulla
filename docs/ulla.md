@@ -307,7 +307,10 @@ family's and the regulatory selection narrows it, which is what the per-band cou
 The sink registers three stream endpoints through one registration function, each with a
 descriptor naming the service category (media codec), the codec type, the length of the
 capability bytes and a pointer to them [fw rkof 0x8a908..0x8a996, registration 0x450ac,
-descriptors at 0x1c14d0, 0x1c14e8, 0x1c1500].
+descriptors at 0x1c14d0, 0x1c14e8, 0x1c1500]. In each descriptor the codec type is the byte
+at +0xa, its capability length the byte at +0xb and the pointer the word at +0xc, which is
+what `tools/verify_claims.py` walks to check these bytes against the image: the three point
+at 0x1c1530, 0x1c153e and 0x1c1544, in the order vendor, AAC, SBC.
 
 | codec type | capability length | capability bytes |
 |---|---|---|

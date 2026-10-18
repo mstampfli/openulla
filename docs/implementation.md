@@ -104,5 +104,32 @@ link, and then the radio changes mode. Both halves are below the host interface:
 
 Every address in the docstrings is a byte offset into a payload of Apple's own published
 firmware, build 9A348, which `tools/fetch_firmware.sh` fetches and `tools/ftab.py` splits.
-No firmware and no disassembly is redistributed here, so the way to check a value is to
-extract the payload and read the address the comment names.
+No firmware and no disassembly is redistributed here, so the addresses are the way to check a
+value, and `tools/verify_claims.py` does it for you:
+
+```sh
+tools/fetch_firmware.sh
+python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
+    extract acib payloads/acib.bin --payload FTAB
+python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
+    extract rkof payloads/rkof.bin --payload FTAB
+python3 tools/verify_claims.py --payloads payloads
+```
+
+```
+  PASS  session transition table         48 rows over 15 states, events, both next states and handlers
+  PASS  band plan                        8 records of 7 bytes at acib 0xf52e8
+  PASS  HCI command table                11 handlers as published, keys ordered under the mask, 0xff75 absent behind 0x7f75
+  PASS  PDU lengths                      accepted 2, not accepted 3, 0x74 7, 0x73 9, including the header byte
+  PASS  LMP receive dispatch             table at acib 0x3b254, 5 opcodes checked
+  PASS  escape 0x7B dispatch             39-entry table at acib 0x3bc14, 0x17 and 0x1C
+  PASS  mode-change event shape          event 0xff, 7 parameters, id 0x0a00
+  PASS  mode, result and reason names    3 modes, 5 results, 12 reasons, 2 unnamed
+  PASS  A2DP stream endpoints            vendor 0xFF, AAC 0x02 and SBC 0x00, lengths and bytes as published
+9 of 9 claims hold
+```
+
+The transition-table line is the one worth looking at twice: it expands the library's 41 rows
+into the 48 (state, event) pairs the firmware's own table holds and requires every event, both
+next states and every handler address to match. Changing one byte of either image makes the
+tool fail, which was checked by doing it.

@@ -312,6 +312,11 @@ link keys and other people's device addresses.
   tuning map payload.
 - `tools/ulla_strings.sh`: pulls the ULLA, UTP and HDR identifiers out of a
   firmware image.
+- `tools/verify_claims.py`: re-derives what the docs and the code claim from a
+  firmware image on your own machine, one line per claim: the session manager's
+  whole transition table, the band plan, the command table with every handler
+  address, the PDU lengths, both dispatch tables, the event's shape, the reason
+  names and the stream endpoints. It fails on a single changed byte.
 - `tools/ulla_demo.py`: runs a whole setup against the simulated earbud and
   prints every frame and PDU of it, with no hardware involved. `--reject`
   makes the peer controller refuse at one of its four checks.
@@ -338,6 +343,13 @@ tools/fetch_firmware.sh       # firmware -> firmware/ (needs curl, unzip, python
 python3 tools/uarp.py firmware/*/AssetData/Firmware.acsw/firmware.uarp list
 python3 tools/tmap_keys.py firmware/*/AssetData/Firmware.acsw/firmware.uarp
 tools/ulla_strings.sh firmware/*/AssetData/Firmware.acsw/firmware.uarp
+
+# check every documented constant against that image, one line per claim
+python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
+    extract acib payloads/acib.bin --payload FTAB
+python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
+    extract rkof payloads/rkof.bin --payload FTAB
+python3 tools/verify_claims.py --payloads payloads
 
 # talk to a paired pair of earbuds (their address, not ours, goes here)
 python3 tools/aap_probe.py --device AA:BB:CC:DD:EE:FF

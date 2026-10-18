@@ -17,6 +17,12 @@ Every statement below is one of:
 Numbers are hexadecimal when written `0x..`. Multi-byte integers are little-endian unless
 stated otherwise.
 
+Most of what follows can be re-checked mechanically. `tools/verify_claims.py` reads these
+offsets in a firmware image on your own machine and prints one line per claim: the session
+manager's whole transition table, the band plan, the command table with every handler
+address, the PDU lengths, both dispatch tables, the event's shape, the reason names and the
+stream endpoints. It fails on a single changed byte, and it needs no firmware from us.
+
 ## 1. Layer map
 
 ```
@@ -473,7 +479,12 @@ table as 0xFE50 [fw acib dispatcher 0x18964, keys 0xf1928, handlers 0xf1230, 446
 compared under the mask 0x3FFF]: 0xFF79 resolves to the handler at acib 0x193f4, 0xFF7A to
 0x19528, 0xFF7C to 0x19704, 0xFFBD to 0x1926c. A caution for anyone repeating the lookup:
 because the comparison is masked, a hit must be checked against the full key. 0xFF75, for
-instance, is absent, and the search lands on the unrelated key 0x7F75.
+instance, is absent, and the search lands on the unrelated key 0x7F75. The aliasing cuts both
+ways, so a key that does not look like its opcode can still be the right entry: the key for
+0xFF77 is stored as 0xBF77, two high bits apart, and its handler is the one that command
+reaches. The handler table ends exactly where the key table begins, 446 words at 0xf1230
+against 446 halfwords at 0xf1928, and the keys are strictly increasing once masked, which is
+what makes the search valid.
 
 The handler reads the mask at the parameter offset and gates it on a feature bit [fw acib
 0x19430]. With the bit clear it completes with the standard code 0x0C. With the bit set, **a

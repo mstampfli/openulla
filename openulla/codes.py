@@ -71,6 +71,25 @@ def reason_name(value: int) -> str:
         return "INVALID_REASON"
 
 
+# The identifiers the firmware's own name tables hold for these values, kept exactly so that
+# tools/verify_claims.py can compare them against the image and a reader can grep a log.
+FIRMWARE_NAMES: dict[int, str] = {
+    Mode.BT_ACL_ACTIVE: "ULLA_MODE_BT_ACL_ACTIVE",
+    Mode.ULLA_ON: "ULLA_MODE_ON",
+    Mode.ULLA_LITE_ON: "ULLA_LITE_MODE_ON",
+}
+RESULT_FIRMWARE_NAMES: dict[int, str] = {
+    Result.SUCCESS: "ULLA_MODE_CHANGE_SUCCESS",
+    Result.ERROR: "ULLA_MODE_CHANGE_ERROR",
+    Result.FAIL_TO_BE_ESTABLISHED: "ULLA_MODE_CHANGE_FAIL_TO_BE_ESTABLISHED",
+    Result.SETUP_REJECTED_BY_PEER: "ULLA_MODE_CHANGE_SETUP_REJECTED_BY_PEER_ERROR",
+    Result.LSTO_ERROR: "ULLA_MODE_CHANGE_LSTO_ERROR",
+}
+REASON_FIRMWARE_NAMES: dict[int, str] = {
+    reason: f"REASON_{reason.name}" for reason in RejectReason
+}
+
+
 class SessionStatus(IntEnum):
     """Status word of the AAP status reply, opcode 0x37. [fw rkof 0x6e9cc]"""
 
