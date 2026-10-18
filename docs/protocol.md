@@ -421,6 +421,20 @@ Total 9 bytes [fw acib 0x3aa6e]:
 | 7 | 1 | two flag bits from the host's request |
 | 8 | 1 | one further flag bit from the host's request |
 
+Which of the host's parameters becomes which of those bytes is proven all the way through. The
+command's handler fills a small structure, that structure's bytes 4 to 0x13 are copied into
+the transition context [fw acib 0x68344, a 16-byte copy from its +4], and the sender reads the
+context to build the PDU [fw acib 0x68588]:
+
+| PDU field | comes from | where |
+|---|---|---|
+| the 32-bit field at offset 1 | the radio, not the host: a hardware read with retries | [fw acib 0xdc9c0, context +4] |
+| the configuration word at 5 | parameters 3 and 4 of the command | [fw acib 0x1daf2, context +8] |
+| the flag byte at 7 | bits 0 and 1 of parameter 5 | [fw acib 0x1db04, context +0xA] |
+| the flag byte at 8 | bit 3 of parameter 5, as a whole byte of 0 or 1 | [fw acib 0x1dafe, context +0xC] |
+| the byte past the length | parameter 2 | [fw acib 0x1daea, context +0x10] |
+| nothing on the air | bit 2 of parameter 5 | [fw acib 0x1daf8, context +0x18] |
+
 The receiving side reads the same fields from the same offsets [fw acib 0x675f4], so the
 layout is confirmed by the sending and receiving code independently. The 4-byte value comes
 from a hardware read with a validity check and up to ten retries [fw acib 0xdc9c0], so it is
@@ -722,7 +736,7 @@ The source's host starts the whole thing with vendor command **0xFE50** [fw acib
 | offset | size | meaning |
 |---|---|---|
 | 0 | 2 | connection handle |
-| 2 | 1 | copied into the setup request's last byte |
+| 2 | 1 | the setup request's third flag byte, the one past its declared length (5.1) |
 | 3 | 2 | the configuration word of the setup request |
 | 5 | 1 | see below: a bitmask on one path, a value 0 to 4 on the other |
 | 6 | 1 | the mode: 0 takes the transition path, non-zero the procedure path |
