@@ -1,0 +1,209 @@
+# ULLA: Apple's AirPods Pro 2 USB-C to Vision Pro link
+
+Facts about the proprietary radio link between AirPods Pro 2 (USB-C) and Apple
+Vision Pro. Every statement here comes from one of three kinds of source and
+says which: Apple's own text (FCC exhibits, patents), the firmware disassembly
+(with the address), or a measurement on a Linux host. Nothing is inferred.
+What is not known is listed as open, not filled in.
+
+## 1. Sources
+
+| Source | How obtained |
+|---|---|
+| FCC ID BCG-A3047 (AirPods Pro 2 USB-C, left bud) | fccid.io exhibit PDFs, text extracted with pdftotext (`tools/fetch_fcc.sh`, index in `docs/fcc/README.md`) |
+| FCC ID BCGA2117 (Apple Vision Pro) | same |
+| US 12683269 B2, US 12706371 B2 (Apple) | Google Patents |
+| AirPods firmware 9A348 for A3048 (right bud) | Apple's public asset catalog (mesu.apple.com), fetched with `tools/fetch_firmware.sh`, parsed with `tools/uarp.py` and `tools/ftab.py` |
+| Measurements on a Linux host (Intel AX211, BlueZ 5.82, PipeWire 1.4) | btmon, bluetoothctl, PipeWire |
+
+Firmware image: `com_apple_MobileAsset_UARP_A3048/5d0896d881bbc7e321f89b4ada11b31cf8b5569c.zip`,
+11,455,085 bytes, SHA-256 prefix `a04ff3f0d74e47e4`. Signed, not encrypted.
+The image is not redistributed here.
+
+## 2. FCC exhibits (Apple's declarations)
+
+### 2.1 Grants, AirPods Pro 2 USB-C (BCG-A3047)
+
+| Grant | Band | Power | Modes tested | Granted |
+|---|---|---|---|---|
+| 15C | 2402 to 2480 MHz | 17.7 mW peak | Bluetooth BDR, EDR, LE, HDR | 2023-09-12 |
+| 15E | 5157 to 5245 MHz (U-NII-1) | 9.8 mW conducted | NB UNII BDR, HDR, LE | 2023-09-12 |
+| 15E | 5731 to 5844 MHz (U-NII-3) | 21.7 mW conducted | NB UNII BDR, HDR, LE | 2023-09-12 |
+| 15E VLP | 6108 to 6420 MHz (U-NII-5) | 0.73 mW EIRP | NB UNII GFSK and pi/4 DQPSK, 1 and 2 Mbit/s | 2024-08-30 |
+
+The Vision Pro (BCGA2117) carries NB UNII BDR, HDR and LE grants in the same
+5 GHz bands (2024-01-16) and a 6 GHz Very Low Power grant dated 2024-08-30.
+The AirPods' 6 GHz report names the Vision Pro (A2117) as the companion device
+used to establish the link under test.
+
+### 2.2 Declared capabilities (quoted)
+
+AirPods Pro 2 USB-C: "Bluetooth (1x, BDR, EDR, LE1M, LE2M, HDR4, HDR8, HDRp4,
+HDRp8), NB UNII (1x, LE2M, HDR4, HDR8, HDRp4, HDRp8)." The 6 GHz report adds
+BDR to the NB UNII list.
+
+Vision Pro: "802.11b/g/n/ax WLAN, 802.11a/n/ac/ax UNII, Bluetooth (1x, EDR,
+LE1M, LE2M, HDR4, HDR8), NB UNII (1x, BDR, LE1M, LE2M, HDR4, HDR8, HDRp4,
+HDRp8)."
+
+### 2.3 Physical layer statements (AirPods HDR report, quoted)
+
+- "The hopping sequence is pseudorandom"
+- "79 channels can be used at a time for hopping"
+- "The receiver input bandwidth equals the transmit bandwidth"
+- "The receiver hops in sequence with the transmit signal"
+- "Narrowband UNII can only hop within the same UNII band and cannot hop between band"
+- "This device is capable of operating in hopping and non-hopping mode."
+- Test channels: 5157, 5201, 5245 MHz and 5731, 5788, 5844 MHz; 6108, 6264,
+  6420 MHz in the 6 GHz band.
+
+Reported values:
+
+| Mode | Data rate (stated) | 26 dB bandwidth | 99 % occupied | Duty cycle |
+|---|---|---|---|---|
+| NB UNII BDR | 1 Mbit/s | about 1 MHz | | 76.8 % |
+| NB UNII LE2M | 2 Mbit/s | 2.08 MHz | | 80.0 % |
+| NB UNII HDR4 | 4 Mbit/s | 2.25 to 2.33 MHz | 2.56 MHz | 78.0 % |
+| NB UNII HDR8 | 8 Mbit/s | 4.45 to 4.55 MHz | 5.1 MHz | 78.0 % |
+| NB UNII HDRp4 / HDRp8 | | | | 87.4 % / 88.2 % |
+
+The reports state the modulation types GFSK and pi/4 DQPSK; they do not state
+the modulation per HDR mode. HDR4 and HDR8 were also measured at 2.4 GHz
+(2404, 2441, 2480 MHz) with 2.30 MHz and 4.52 MHz bandwidth. The "p" variants
+are not explained.
+
+Link setup, quoted from the 6 GHz report: "after establishing communication
+between the EUT and the companion device, NB UNII HDR is used to maintain
+communication and traffic. NB UNII BDR and NB UNII LE are used for
+establishing the initial connection with the companion device." The report
+states transmit power control is triggered by RSSI.
+
+Both devices' reports carry simultaneous-transmission tables listing the 2.4 GHz
+Bluetooth radio (all modes, including HDR and HDRp), 2.4 and 5 GHz WLAN and the
+NB UNII radio as combinations certified to transmit together.
+
+## 3. Apple's patents (quoted)
+
+US 12683269 B2 and US 12706371 B2:
+
+- "a non-Bluetooth, ultra-low-latency audio communications protocol optimized
+  to support low latency and high data rate audio streaming from device 10 to
+  earbuds 22L and 22R"
+- "may be conveyed using an unlicensed band at 2.4 GHz and/or an unlicensed
+  band between 5-6 GHz"
+- "The ultra-low-latency audio protocol may involve communications without
+  performing time division duplexing"
+- "requires both earbuds 22R and 22L to convey radio-frequency signals 24A
+  directly with device 10" and audio "is concurrently (e.g., simultaneously)
+  transmitted to both earbuds"
+
+## 4. Firmware
+
+### 4.1 Container
+
+The UARP SuperBinary (format 3, version 9.0.348.0) holds 20 payloads. `FTAB`
+is a plain "rkosftab" table (`tools/ftab.py` lists and extracts it). Entries
+used here: `acib` (1,066,208 bytes) and `rkof` (2,088,320 bytes). Both are
+Cortex-M images at base 0 (Thumb). `acib` starts with the stack pointer
+0x1001bd80 and the reset vector 0x109.
+
+### 4.2 Strings
+
+Present verbatim in the image:
+
+- `ULLA 1.0`, `ULLA 1.1`, "Obsolete ULLA version 0x%04X, local version 0x%04X"
+- `ULLA_MODE_ON`, `ULLA_LITE_MODE_ON`, `ULLA_MODE_BT_ACL_ACTIVE`,
+  `ULLA_MODE_CHANGE_SUCCESS`, `ULLA_MODE_CHANGE_SETUP_REJECTED_BY_PEER_ERROR`,
+  `ULLA_MODE_CHANGE_LSTO_ERROR`, `ULLA_MODE_CHANGE_FAIL_TO_BE_ESTABLISHED`
+- `lm_ulla_trans_sec_handle_setup_lmp_accepted`,
+  `lm_ulla_trans_sec_handle_setup_lmp_not_accepted`,
+  `lm_ulla_trans_source_ulla_teardown_init_handle_lmp_not_accepted`
+- "ULLA: tried transmitting packet of size %d, maximal size is %d"
+- In `rkof`, name tables for the ULLA manager: states (INIT, IDLE, HOST_SETUP,
+  WAIT_START_SESSION_RESP, WAIT_LOCAL_FLOW_OFF_DONE, CONTROLLER_SETUP,
+  DSP_SETUP, SESSION_OPEN, STREAM_HOST_SETUP, STREAM_OPEN, WAIT_AUDIO_STOPPED,
+  STREAM_HOST_TEARDOWN, WAIT_STOP_SESSION_RESP, CONTROLLER_TEARDOWN,
+  HOST_TEARDOWN, WAIT_ABORT_RESP, NOCHANGE), 40 event names, and UTP message
+  names (START_SESSION_REQ/RSP, START_STREAM_REQ/RSP, STOP_SESSION_REQ/RSP,
+  STOP_STREAM_REQ/RSP, DSP_CFG_CMPLT, SESSION_STOPPED, SOURCE_DISCONNECTED,
+  STATS, CONFIG_ULLA_STATS). Listed in table order. The numeric value of each
+  name is not established: no code indexing these tables has been read yet.
+
+### 4.3 Link-manager transition in `acib`
+
+Read from the Ghidra decompile and checked by hand. Addresses are offsets into
+`acib` of build 9A348. The firmware has no symbols.
+
+- 0x66d58 sets a global byte to 5 and calls 0x68450, which registers handler
+  0x66f9c under id 0x36 through the link object's virtual table, sets state 4
+  and dispatches event 5.
+- Dispatcher 0x68294: `next = handlers[state](ctx, event, link)`, table at
+  0xf2664 with nine handlers (0x68588, 0x685f8, 0x6869c, 0x68788, 0x687fc,
+  0x6886c, 0x688f4, 0x688f8, 0x68924).
+- State 0 (0x68588), event 0: sends a link-manager PDU with opcode 0x73, then
+  calls 0x2515c(link, 5).
+- State 1 (0x685f8), event 1: reads parameter ids 0x12 (4 bytes) and 0x13
+  (2 bytes) and sends a PDU with opcode 0x74.
+- State 2 (0x6869c), event 3: calls 0x66a00, which reads parameter ids 0x19a,
+  0x19f, 0xc9 and 0x23 and tags its descriptor with 0x74.
+- State 3 (0x68788), event 4: calls 0x66b98, 0x62cb8(1), 0x62058 and 0x10548.
+- State 5 (0x6886c): event 2 sets bit 0x10 of the flag byte at ctx+0x23;
+  event 6 calls 0x5ef34. The handler moves to state 7 when bits 0x04, 0x08 and
+  0x10 of that byte are all set, and otherwise stays in 5.
+- 0x68504 holds the string "ULLA_TRANS: ERROR- lm_ulla_trans_source_ulla_teardown_init_handle_lmp_not_accepted".
+- Raw PDU send 0x3ad7c (42 callers): writes the transaction id to byte 0 and
+  the opcode to byte 1 of its record, and an extended opcode at byte 0xc only
+  when the opcode is above 0x7a. 0x73 and 0x74 are sent without an extended
+  opcode.
+
+### 4.4 Receiving side in `acib`
+
+- Parser 0x3af3c switches on the raw opcode minus one. Vendor opcodes handled:
+  0x66, 0x70 to 0x77, escapes 0x7b to 0x7f.
+- 0x73 goes to 0x63448, which calls the validator (0x675f4, 0x67e3c). Reject
+  reasons: 1 from 0x62074 (enable flag), 2 from 0x62030 (vtable+0xb0 check),
+  3 from 0x62154 (busy byte at obj+0x151), 4, 5, 6 from 0x620c8 (link state
+  and role). It accepts only when the low nibble of the reason is zero. None of
+  these functions compares a key, a nonce or a challenge.
+- 0x74 goes to 0x6352c, which passes two values read from the body to the
+  session object's vtable+0xc8. It has no accept or reject path.
+- 0x72 goes to 0x3590c. Procedure table at 0xf1e78; entry 5 is 0x34bb8, which
+  switches on cases 0 to 3 of a type byte and rejects with reason 0x0c when
+  called in the wrong procedure state.
+- Attribute table 0xf1f58, one byte per opcode: the low seven bits are a
+  required link state compared against the current one; bit 7 only decides
+  whether a violation is reported. There is no encryption bit. Opcode 0x73
+  has attribute 0.
+
+## 5. Measured on a non-Apple host
+
+- The SDP record lists Audio Sink, AVRCP, Handsfree, PnP and two vendor GATT
+  services. No LE Audio services. LE advertising is Apple proximity pairing
+  only (type 0x07, model 0x2027).
+- The standard link-manager feature pages carry no vendor bits.
+- A2DP sink endpoints: SBC, AAC with a 256 kbit/s field, and an Apple vendor
+  codec with id 0x8001.
+- HFP codec offer: `AT+BAC=1,2,127,255,128,129,130,256`.
+- Link-manager PDUs do not appear in an HCI capture; they never cross the host
+  interface.
+- Stereo A2DP and the voice link are mutually exclusive with these earbuds on
+  an Intel AX211, tested in both orders with the kernel's link list as the
+  witness: transport first, the voice link never establishes and the
+  microphone records zeros; voice link first, acquiring the transport fails
+  with an input/output error.
+- Intel AX211 (kernel 7.0) reports "Secure boot is enabled", "OTP lock is
+  enabled" and "API lock is enabled"; its firmware `ibt-0040-0041.sfi` is an
+  Intel CSS image with a 2048-bit RSA signature.
+
+## 6. Open
+
+Not yet recovered from the firmware, and not to be filled in until it is:
+
+- The ULLA manager's transition table in `rkof`, and the numeric values of its
+  states, events and messages.
+- Which handler sets bits 0x04 and 0x08 of the state-5 flag byte, and what
+  0x5ef34 does.
+- What handler 0x66f9c reads from the answer it waits for.
+- The UTP message payloads.
+- The audio framing after setup (DSP payload `sbd1`) and the PHY (`phyb`).
+- Meaning of HDRp4, HDRp8 and of ULLA Lite.

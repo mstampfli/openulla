@@ -1,0 +1,23 @@
+openulla
+
+Purpose: interoperability. This project documents how the ULLA link of AirPods
+Pro 2 (USB-C) works so that independently created programs and devices can
+interoperate with them. The findings are published only to the extent needed
+for that purpose.
+
+Method: analysis of publicly available material (FCC certification exhibits,
+Apple patents, the AirPods firmware as published by Apple on its public asset
+server) and measurements on our own devices.
+
+What this repository contains: descriptions written by its authors, short
+quotations with their sources named, metadata about public files, and the
+authors' own tools. It does not contain Apple firmware, extracts of it,
+decompiled or disassembled code, or copies of the FCC exhibits; the tools
+download public material from its original servers for local use.
+
+Nothing in this project circumvents authentication, encryption or any other
+technical protection measure.
+
+Not affiliated with or endorsed by Apple Inc. AirPods, Apple Vision Pro and
+related names are trademarks of Apple Inc., used here only to identify the
+devices.

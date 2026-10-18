@@ -1,0 +1,9 @@
+# Apple firmware and other fetched binaries are never committed.
+firmware/
+fcc/*.pdf
+*.zip
+*.uarp
+*.bin
+*.btsnoop
+*.strings
+__pycache__/
