@@ -470,12 +470,27 @@ The source's host starts the whole thing with vendor command **0xFE50** [fw acib
 | 0 | 2 | connection handle |
 | 2 | 1 | copied into the setup request's last byte |
 | 3 | 2 | the configuration word of the setup request |
-| 5 | 1 | flags: bits 0-1 and bit 3 go into the setup request, bit 2 elsewhere |
-| 6 | 1 | 0 starts the transition; non-zero selects another procedure |
+| 5 | 1 | see below: a bitmask on one path, a value 0 to 4 on the other |
+| 6 | 1 | the mode: 0 takes the transition path, non-zero the procedure path |
 
-The handler refuses with the standard codes 0x0C, 0x12 or 0x17 when a feature flag is clear,
-a procedure is busy, or a parameter is out of range. On success it fills the transition
-context, posts the link-manager procedure, and the state machine emits the 0x73 PDU.
+The last parameter chooses between two paths, and it is the mode byte of the host's own start
+command that ends up there, which section 6.0 traces [fw acib 0x1daa2].
+
+**With it zero**, the handler fills the transition context and the state machine emits the
+0x73 PDU. Parameter 5 is a bitmask here: bits 0 and 1 and bit 3 go into the setup request and
+bit 2 is used elsewhere [fw acib 0x1dace..0x1db0a].
+
+**With it non-zero**, a different procedure runs [fw acib 0x1daa6], and parameter 5 is not a
+bitmask but a small value: **5 or above is refused with 0x12**, and 4 is the one value that
+takes a shorter route [fw acib 0x1db7e, 0x1db92]. That path is gated on a different feature
+bit from the band family's: bit 6 of the device's feature byte ANDed with a per-link byte, or
+else bit 6 of the byte three further on ANDed with another, refusing with 0x0C
+[fw acib 0x1db5e..0x1db7c; the band family uses bit 5 of the same byte, section 6.2]. On
+success it allocates a request, stores parameter 5 in it with four constants and the handle,
+and hands it to the radio layer [fw acib 0x1dba4..0x1dbd8].
+
+Either way the handler refuses with the standard codes 0x0C, 0x12 or 0x17 when a feature flag
+is clear, a parameter is out of range, or a procedure is busy.
 
 Progress comes back as a vendor event [fw acib 0x10548, 0x11d34], nine bytes in all:
 
@@ -521,12 +536,27 @@ the branch that sets 4, field zero takes the one that sets 0xF, and any other va
 also takes 0xF. Split as the handler splits it, that means the setup PDU's flag byte is 0 with
 bit 2 set elsewhere for a field of 1, and 0b11 with bit 3 also set for 0 or anything else.
 
-The same field is the last byte of the sibling start-session request of section 4
-[fw rkof 0x27466], and a second command, **0xFE51**, carries it too: handle, a zero byte, then
-that field, four parameter bytes in all [fw rkof 0x27234]. What the other values of the last
-parameter select is open; the controller treats zero as the transition path and everything
-else as another procedure [fw acib 0x1daa2], so an implementation driving its own controller
-sends zero there.
+That stored field is the mode byte of the host's own start command, opcode 0x36 of section
+2.4. The chain is proven: the command's one byte reaches the manager, which stores it at its
+offset 0x29 together with the peer address taken from the session [fw rkof 0x27a58, whose
+arguments arrive in two registers through the outlined shim at 0x1abde8], and from there it is
+both the last byte of the sibling start-session request [fw rkof 0x27466] and the last
+parameter of this command [fw rkof 0x272c8]. A second command, **0xFE51**, carries it too:
+handle, a zero byte, then that field, four parameter bytes in all [fw rkof 0x27234].
+
+Reading the two together says which combinations the controller accepts:
+
+| mode | parameter 5 | parameter 6 | what the handler does |
+|---|---|---|---|
+| 0 | 0xF | 0 | the transition path, where 0xF is the bitmask bits 0, 1, 2 and 3 |
+| 1 | 4 | 1 | the procedure path, where 4 is its one special value |
+| 2 | 0xF | 2 | the procedure path, where 0xF is 5 or above, so **it is refused with 0x12** |
+
+The third row is the firmware's own code, not a transcription error: for a lite-mode request
+the manager would build a command its controller refuses. The earbud never takes this path in
+this build, because nothing stores the value that reaches it, so it is dormant source-role
+code rather than a live contradiction. For an implementation it means one thing: do not copy
+that flag byte blindly for a non-zero mode.
 
 ### 6.1 Which bands are allowed: command 0xFF79
 

@@ -86,7 +86,7 @@ class ControllerCommands:
     handle: int
 
     def start_transition(
-        self, config_word: int = 0, flags: int = 0, extra_flags: int = 0, procedure: int = 0
+        self, config_word: int = 0, flags: int = 0, extra_flags: int = 0, mode: int = 0
     ) -> bytes:
         """0xFE50, the command that makes the controller emit the setup request."""
         return hci.UllaSetup(
@@ -94,7 +94,7 @@ class ControllerCommands:
             extra_flags=extra_flags,
             config_word=config_word,
             flags=flags,
-            procedure=procedure,
+            mode=mode,
         ).command()
 
     def announce_bands(self, mask: int) -> tuple[bytes, bytes]:

@@ -126,15 +126,22 @@ def decode_hci_command(data):
              f"{length} parameter bytes"]
     if opcode == hci.OPCODE_ULLA_SETUP:
         setup = hci.UllaSetup.from_bytes(params)
+        flags = (
+            f"  flags 0x{setup.flags:02x} (bits 0, 1 and 3 reach the PDU)"
+            if setup.mode == 0
+            else f"  flags 0x{setup.flags:02x} (a value on this path, 0 to 4)"
+        )
         lines += [
             "  the command that starts the transition",
             f"  connection handle 0x{setup.handle:04x}",
             f"  configuration word 0x{setup.config_word:04x}",
-            f"  flags 0x{setup.flags:02x} (bits 0, 1 and 3 reach the PDU), "
-            f"further flags 0x{setup.extra_flags:02x}",
-            f"  procedure {setup.procedure}"
-            + (" (start the transition)" if setup.procedure == 0 else ""),
+            f"{flags}, further flags 0x{setup.extra_flags:02x}",
+            f"  mode {setup.mode}"
+            + (" (the transition path)" if setup.mode == 0 else " (the procedure path)"),
         ]
+        refusal = setup.refusal()
+        if refusal is not None:
+            lines.append(f"  the controller would refuse this with 0x{refusal:02x}")
     elif opcode in (hci.OPCODE_ALLOWED_BANDS, hci.OPCODE_ALLOWED_BANDS_AGAIN) and len(params) == 1:
         lines.append(f"  allowed-band mask 0x{params[0]:02x}")
         lines += [f"    band {line}" for line in describe_bands(params[0])]

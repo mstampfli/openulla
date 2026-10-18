@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from . import bands
-from .codes import Mode, Result
+from .codes import HciError, Mode, Result
 from .errors import ProtocolError
 
 OGF_VENDOR = 0x3F
@@ -89,24 +89,41 @@ def h4(packet: bytes, kind: int = H4_COMMAND) -> bytes:
 class UllaSetup:
     """Parameters of 0xFE50, the command that starts the whole transition.
 
-    `extra_flags` is copied into the last byte of the setup request PDU, `config_word` into
-    its configuration word, and bits 0, 1 and 3 of `flags` into its flag byte; bit 2 is used
-    elsewhere. `procedure` 0 starts the transition and other values select another procedure.
-    [fw acib 0x1da40]
+    `mode` is the last parameter, and it chooses the handler's path [fw acib 0x1daa2]. With 0
+    the transition runs: `extra_flags` is copied into the last byte of the setup request PDU,
+    `config_word` into its configuration word, and bits 0, 1 and 3 of `flags` into its flag
+    byte, with bit 2 used elsewhere [fw acib 0x1dace..0x1db0a]. With anything else a different
+    procedure runs, and there `flags` is not a bitmask but a value: 5 or above is refused with
+    0x12, and 4 is its one special value [fw acib 0x1daa6, 0x1db7e, 0x1db92].
+
+    The byte that reaches this parameter in the earbud's own source-role code is the mode byte
+    of AAP opcode 0x36; see hci.manager_setup and docs/protocol.md 6.0.
     """
 
     handle: int
     extra_flags: int
     config_word: int
     flags: int
-    procedure: int = 0
+    mode: int = 0
 
     LENGTH = 7
+    MAX_PROCEDURE_FLAGS = 4  # above this the procedure path answers 0x12
+
+    def refusal(self) -> int | None:
+        """The error the controller would answer for these parameters, if any.
+
+        Only what is proven is modelled: the procedure path's range check. The feature bits
+        that can also produce 0x0C, and the busy state behind 0x17, are per-device runtime
+        state this cannot know [fw acib 0x1db5e..0x1db7c, 0x1da6c].
+        """
+        if self.mode != 0 and self.flags > self.MAX_PROCEDURE_FLAGS:
+            return HciError.INVALID_PARAMETERS
+        return None
 
     def to_bytes(self) -> bytes:
         if not 0 <= self.handle <= 0x0EFF:
             raise ProtocolError("a connection handle is twelve bits")
-        for name in ("extra_flags", "flags", "procedure"):
+        for name in ("extra_flags", "flags", "mode"):
             if not 0 <= getattr(self, name) <= 0xFF:
                 raise ProtocolError(f"{name} is one byte")
         if not 0 <= self.config_word <= 0xFFFF:
@@ -115,7 +132,7 @@ class UllaSetup:
             self.handle.to_bytes(2, "little")
             + bytes((self.extra_flags,))
             + self.config_word.to_bytes(2, "little")
-            + bytes((self.flags, self.procedure))
+            + bytes((self.flags, self.mode))
         )
 
     @classmethod
@@ -127,27 +144,29 @@ class UllaSetup:
             extra_flags=params[2],
             config_word=int.from_bytes(params[3:5], "little"),
             flags=params[5],
-            procedure=params[6],
+            mode=params[6],
         )
 
     def command(self) -> bytes:
         return command(OPCODE_ULLA_SETUP, self.to_bytes())
 
 
-def manager_setup(handle: int, mode_field: int) -> UllaSetup:
+def manager_setup(handle: int, mode: int) -> UllaSetup:
     """0xFE50 with the parameters the earbud's own manager uses. [fw rkof 0x272c0, 0x271c4]
 
-    `mode_field` is the byte the manager keeps and passes on: it is the last parameter here
-    and the last byte of the sibling start-session request. The controller takes zero in that
-    parameter as the transition path and anything else as another procedure
-    [fw acib 0x1daa2], and what the other values select is not established.
+    `mode` is the byte the manager stores and passes on: the mode of AAP opcode 0x36, which is
+    the last parameter here and the last byte of the sibling start-session request.
+
+    Mode 2 is worth a word: the manager pairs it with the flag byte 0xF, which the procedure
+    path refuses with 0x12, and `UllaSetup.refusal` says so. That is the firmware's own
+    pairing, in code the earbud never reaches; docs/protocol.md 6.0 has the table.
     """
     return UllaSetup(
         handle=handle,
         extra_flags=MANAGER_EXTRA_FLAGS,
         config_word=MANAGER_CONFIG_WORD,
-        flags=MANAGER_FLAGS_MODE_ONE if mode_field == 1 else MANAGER_FLAGS_OTHERWISE,
-        procedure=mode_field,
+        flags=MANAGER_FLAGS_MODE_ONE if mode == 1 else MANAGER_FLAGS_OTHERWISE,
+        mode=mode,
     )
 
 

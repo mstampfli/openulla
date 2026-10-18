@@ -97,7 +97,7 @@ def test_the_setup_parameters_the_earbuds_own_manager_uses():
     for field in (0, 2, 0xFF):
         other = hci.manager_setup(0x000B, field)
         assert other.flags == hci.MANAGER_FLAGS_OTHERWISE
-        assert other.procedure == field
+        assert other.mode == field
         assert other.config_word == hci.MANAGER_CONFIG_WORD == 0x96
         assert other.extra_flags == hci.MANAGER_EXTRA_FLAGS == 1
 
@@ -122,3 +122,13 @@ def test_the_second_ulla_command_is_the_handle_a_zero_and_the_mode_field():
     assert hci.ulla_second_command(0x000B, 2) == bytes.fromhex("51 fe 04 0b 00 00 02")
     with pytest.raises(ProtocolError):
         hci.ulla_second_command(0x000B, 0x100)
+
+
+def test_the_refusal_the_procedure_path_would_answer():
+    """Parameter 5 is a value, not a bitmask, once the mode is non-zero. [protocol.md 6]"""
+    assert hci.manager_setup(0x000B, 0).refusal() is None
+    assert hci.manager_setup(0x000B, 1).refusal() is None
+    assert hci.manager_setup(0x000B, 2).refusal() == 0x12  # the firmware's own pairing
+    assert hci.UllaSetup(1, 0, 0, 4, mode=2).refusal() is None
+    assert hci.UllaSetup(1, 0, 0, 5, mode=2).refusal() == 0x12
+    assert hci.UllaSetup(1, 0, 0, 0xFF, mode=0).refusal() is None  # a bitmask on that path
