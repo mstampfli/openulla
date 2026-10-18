@@ -29,7 +29,7 @@ fill it in; it says so, and the tests say so too.
 ## Running it
 
 ```sh
-python3 -m pytest                  # 98 tests, no hardware, no dependencies
+python3 -m pytest                  # the whole suite, no hardware, no dependencies
 python3 tools/ulla_demo.py         # the whole setup, every byte, against the simulator
 python3 tools/ulla_demo.py --reject busy    # and the same with the peer refusing
 python3 tools/ulla_decode.py f6 17 e6       # decode one frame, PDU, command or event
