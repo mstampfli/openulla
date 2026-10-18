@@ -29,7 +29,7 @@ fill it in; it says so, and the tests say so too.
 ## Running it
 
 ```sh
-python3 -m pytest                  # 90 tests, no hardware, no dependencies
+python3 -m pytest                  # 92 tests, no hardware, no dependencies
 python3 tools/ulla_demo.py         # the whole setup, every byte, against the simulator
 python3 tools/ulla_demo.py --reject busy    # and the same with the peer refusing
 python3 tools/ulla_decode.py f6 17 e6       # decode one frame, PDU, command or event
@@ -142,10 +142,11 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  PDU lengths                      accepted 2, not accepted 3, 0x74 7, 0x73 9, including the header byte
   PASS  LMP receive dispatch             table at acib 0x3b254, 5 opcodes checked
   PASS  escape space dispatch            0x7B: 39 entries, 12 refused; 0x7F: 34 entries, 8 refused
+  PASS  0x7B body builders               31 extended opcodes, 8 of them with no builder at all
   PASS  mode-change event shape          event 0xff, 7 parameters, id 0x0a00
   PASS  mode, result and reason names    3 modes, 5 results, 12 reasons, 2 unnamed
   PASS  A2DP stream endpoints            vendor 0xFF, AAC 0x02 and SBC 0x00, lengths and bytes as published
-9 of 9 claims hold
+10 of 10 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows

@@ -106,8 +106,10 @@ def decode_lmp(data):
         lines += [f"  allowed-band mask 0x{parsed.mask:02x}"]
         lines += [f"    band {line}" for line in describe_bands(parsed.mask)]
     elif isinstance(parsed, lmp.BandRanges):
-        lines += [f"  band ranges, count byte {parsed.count_byte}, "
-                  f"{len(parsed.ranges)} triples read from the body length"]
+        lines += [f"  band ranges, {len(parsed.ranges)} triples, "
+                  "the count coming from the length and not from a field"]
+        if parsed.ignored:
+            lines.append(f"    trailing bytes the division ignores: {parsed.ignored.hex(' ')}")
         for r in parsed.ranges:
             lines.append(f"    band {r.band}, first channel {r.first_channel}, "
                          f"length {r.length}")

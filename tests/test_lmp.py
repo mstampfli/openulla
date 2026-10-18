@@ -64,27 +64,33 @@ def test_the_same_extended_opcode_in_the_other_escape_space_is_not_it():
         lmp.AllowedBands.from_bytes(bytes.fromhex("fe 17 f0"))
 
 
-def test_band_ranges_carry_up_to_five_triples():
+def test_band_ranges_carry_the_triples_with_no_count_byte():
     pdu = lmp.BandRanges((lmp.BandRange(5, 29, 6), lmp.BandRange(7, 41, 7)))
     raw = pdu.to_bytes()
-    assert raw == bytes.fromhex("f6 1c 02 05 1d 06 07 29 07")
+    assert raw == bytes.fromhex("f6 1c 05 1d 06 07 29 07")
+    assert len(raw) == 2 + 3 * 2
     assert lmp.BandRanges.from_bytes(raw).ranges == pdu.ranges
     with pytest.raises(ProtocolError):
         lmp.BandRanges(tuple(lmp.BandRange(1, 13, 5) for _ in range(6))).to_bytes()
 
 
-def test_the_receiver_recomputes_the_count_instead_of_trusting_it():
-    """The count byte says four; the body holds two triples, and two is what is read."""
-    lying = bytes.fromhex("f6 1c 04 05 1d 06 07 29 07")
-    parsed = lmp.BandRanges.from_bytes(lying)
-    assert parsed.count_byte == 4
-    assert len(parsed.ranges) == 2
+def test_the_count_is_the_length_and_nothing_else():
+    """Both ends keep the count in their own block and derive it from the length. [6.5]"""
+    for n in range(0, lmp.MAX_BAND_RANGES + 1):
+        raw = lmp.BandRanges(tuple(lmp.BandRange(1, 13, 5) for _ in range(n))).to_bytes()
+        assert len(lmp.BandRanges.from_bytes(raw).ranges) == n
+
+
+def test_a_length_that_is_not_a_whole_number_of_triples_loses_its_tail():
+    """The firmware divides, so the remainder is ignored rather than refused."""
+    parsed = lmp.BandRanges.from_bytes(bytes.fromhex("f6 1c 05 1d 06 07 29"))
+    assert len(parsed.ranges) == 1 and parsed.ignored == bytes.fromhex("07 29")
 
 
 def test_more_than_five_triples_are_refused_by_length():
     body = b"".join(bytes((i, 0, 0)) for i in range(6))
     with pytest.raises(ProtocolError):
-        lmp.BandRanges.from_bytes(bytes.fromhex("f6 1c 06") + body)
+        lmp.BandRanges.from_bytes(bytes.fromhex("f6 1c") + body)
 
 
 def test_an_unknown_opcode_is_reported_rather_than_guessed():

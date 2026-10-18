@@ -75,6 +75,25 @@ ESCAPE_7B_COUNT = 39
 ESCAPE_7B_STUB = 0x3C2C6  # where every unimplemented extended opcode of that space goes
 ESCAPE_7B_REFUSED = {0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x12, 0x13, 0x1D, 0x1E, 0x24}
 ESCAPE_7B_TARGETS = {lmp.EXT_ALLOWED_BANDS: 0x3C004, lmp.EXT_BAND_RANGES: 0x3BFC2}
+BUILDER_7B_TABLE = 0x3A9BA  # halfwords, index extended opcode - 0x0A, 31 entries
+BUILDER_7B_FIRST = 0x0A
+BUILDER_7B_NO_BUILDER = 0x3ABF0  # the same target as out of range
+# The case each extended opcode's body builder lands on, as docs/protocol.md 5.7 publishes it.
+BUILDER_7B_CASES = {
+    0x3ABC8: (0x0A, 0x0B),
+    0x3A9F8: (0x0C, 0x0D, 0x0E, 0x17),
+    0x3AAB6: (0x0F,),
+    0x3A9FE: (0x10, 0x11, 0x20, 0x21),
+    0x3AB8A: (0x15, 0x16, 0x24),
+    0x3ABB8: (0x18, 0x27),
+    0x3AC10: (0x19,),
+    0x3ABFC: (0x1A,),
+    0x3AC18: (0x1B,),
+    0x3ABDA: (0x1C,),
+    0x3ABA0: (0x1F, 0x28),
+    0x3ABD0: (0x26,),
+    BUILDER_7B_NO_BUILDER: (0x12, 0x13, 0x14, 0x1D, 0x1E, 0x22, 0x23, 0x25),
+}
 ESCAPE_7F_TABLE = 0x3B3BC
 ESCAPE_7F_COUNT = 34
 ESCAPE_7F_STUB = 0x3BF52
@@ -226,6 +245,27 @@ def check_escape_dispatch(acib, rkof):
     )
 
 
+def check_transmit_builders(acib, rkof):
+    """Which body builder each extended opcode of the 0x7B space uses. [5.7]"""
+    expected = {ext: case for case, exts in BUILDER_7B_CASES.items() for ext in exts}
+    covered = 0
+    for ext, case in sorted(expected.items()):
+        index = ext - BUILDER_7B_FIRST
+        got = BUILDER_7B_TABLE + 2 * u16(acib, BUILDER_7B_TABLE + 2 * index)
+        if got != case:
+            return False, f"extended 0x{ext:02x} now builds at 0x{got:x}, not 0x{case:x}"
+        covered += 1
+    without = sum(
+        1
+        for ext in range(BUILDER_7B_FIRST, BUILDER_7B_FIRST + 31)
+        if BUILDER_7B_TABLE + 2 * u16(acib, BUILDER_7B_TABLE + 2 * (ext - BUILDER_7B_FIRST))
+        == BUILDER_7B_NO_BUILDER
+    )
+    if without != len(BUILDER_7B_CASES[BUILDER_7B_NO_BUILDER]):
+        return False, f"{without} extended opcodes have no builder, not 8"
+    return True, f"{covered} extended opcodes, {without} of them with no builder at all"
+
+
 def check_event_shape(acib, rkof):
     """The constant word that gives the event its code, length and id. [6]"""
     got = u32(acib, EVENT_LITERAL)
@@ -308,6 +348,7 @@ CHECKS = (
     ("PDU lengths", check_pdu_lengths),
     ("LMP receive dispatch", check_receive_dispatch),
     ("escape space dispatch", check_escape_dispatch),
+    ("0x7B body builders", check_transmit_builders),
     ("mode-change event shape", check_event_shape),
     ("mode, result and reason names", check_names),
     ("A2DP stream endpoints", check_a2dp_endpoints),

@@ -454,11 +454,43 @@ argument]: in the 0x7B space 0x01, 0x0A to 0x0F, 0x17, 0x18, 0x1B, 0x1C, 0x24, 0
 0x21, 0x22, 0x23 and 0x26. Three senders compute their extended opcode at runtime and one
 function sends two different messages on two paths, so that list is a floor, not a ceiling.
 
-**Two of those are messages the earbuds send and will not accept.** 0x7B/0x24, sent with an
-empty payload, is one of the twelve on the reject stub, and 0x7B/0x28, sent with a 26-byte
-payload, is past the end of the 39-entry table altogether. So the other end of a ULLA link
-implements extended opcodes these earbuds do not, which is the first thing in this firmware
-that says the peer is a larger implementation than the earbud. What those two carry is open.
+**Two of those are messages the earbuds send and will not accept.** 0x7B/0x24 is one of the
+twelve on the reject stub, and 0x7B/0x28 is past the end of the 39-entry table altogether. So
+the other end of a ULLA link implements extended opcodes these earbuds do not, which is the
+first thing in this firmware that says the peer is a larger implementation than the earbud.
+
+### 5.7 What each message of the 0x7B space puts on the wire
+
+The bodies are not assembled by the senders. A sender fills a field block and names an
+extended opcode; one builder then turns the block into a body, with a sub-table for the 0x7B
+space indexed by the extended opcode minus 0x0A [fw acib 0x3a9ac, table 0x3a9ba, 31 entries
+for 0x0A to 0x28]. That makes the transmit layout of the whole space readable in one place.
+Offsets below are into the body, which follows the header and the extended opcode, and
+"block+N" is the sender's own field block:
+
+| extended opcode | body | total PDU |
+|---|---|---|
+| 0x0A, 0x0B | one word from block+0x10 | 6 |
+| 0x0C, 0x0D, 0x0E, 0x17 | one byte from block+0x10 | 3 |
+| 0x0F | two bytes, block+0x10 and +0x11 | 4 |
+| 0x10, 0x11, 0x20, 0x21 | one halfword from block+0x10 | 4 |
+| 0x15, 0x16, 0x24 | N bytes from block+0x11, where N is block+0x10 | N + 2 |
+| 0x18, 0x27 | fifteen bytes from block+0x10 | 17 |
+| 0x19 | byte, halfword, halfword, byte from block+0x10 onwards | 8 |
+| 0x1A | one byte from block+0x10, then ten bytes from block+0x11 | 13 |
+| 0x1B | one byte from block+0x10 | 3 |
+| 0x1C | 3N bytes from block+0x11, where N is block+0x10 | 3N + 2 |
+| 0x1F, 0x28 | byte, halfword, halfword, byte, then halfword, byte, byte, halfword | 14 |
+| 0x12, 0x13, 0x14, 0x1D, 0x1E, 0x22, 0x23, 0x25 | no builder at all | - |
+
+The last row is the mirror of the receive side: eight extended opcodes have no way to be
+built, and four of them (0x12, 0x13, 0x1D, 0x1E) are also on the receive stub, so this build
+can neither send nor accept them. 0x24 and 0x28, by contrast, can be built but not accepted,
+which is the asymmetry above.
+
+Two of these rows are the messages this document decodes in full, and the table is how they
+were checked: 0x17's one byte is the allowed-band mask of section 6.2, and 0x1C's 3N bytes are
+the band ranges of section 6.5, whose count is carried by the length alone.
 
 ## 6. Controller interface: HCI vendor commands
 
@@ -703,21 +735,27 @@ configured for.
 
 ### 6.5 The second band PDU: escape 0x7B, extended opcode 0x1C
 
-Where 0x17 says which bands are allowed, 0x1C says which channels within them. Body:
+Where 0x17 says which bands are allowed, 0x1C says which channels within them. The whole PDU:
 
 | offset | size | meaning |
 |---|---|---|
-| 0 | 1 | extended opcode, 0x1C |
-| 1 | 1 | number of triples that follow |
+| 0 | 1 | header: transaction id and escape opcode 0x7B |
+| 1 | 1 | extended opcode, 0x1C |
 | 2 | 3 each | one triple per band: band index, first channel, length |
+
+**There is no count field on the wire.** Both ends keep the count in their own field block and
+read it off the length instead: the sender copies three times its stored count from the block
+and reports a total of 3n + 2 [fw acib 0x3abda], and the receiver copies the triples into the
+same place in its own block and writes back `(PDU length - 2) / 3` as the count
+[fw acib 0x3bfc2]. The two are mirror images, and the length is the count.
 
 The sender walks the band indexes behind the same feature gate as 6.2, skips index 3 and any
 band whose range pair is zero, and packs **at most five** triples [fw acib 0x29964, escape and
-extended opcode as literals at 0x299d4]. The receiver takes the triples from the body,
-**recomputes the count as (body length - 2) / 3 rather than trusting the count byte**, and
-refuses a count above five [fw acib 0x3bfc2 for the copy and the division, 0x29b38 with the
-bound at 0x29b62]. It then stores each pair into a per-link array of eight two-byte entries,
-indexed by the band, at the link's offset 0x49F [fw acib 0x29b8c..0x29b9a].
+extended opcode as literals at 0x299d4]; the receiver refuses a count above five
+[fw acib 0x29b38, bound at 0x29b62]. It then stores each pair into a per-link array of eight
+two-byte entries, indexed by the band, at the link's offset 0x49F
+[fw acib 0x29b8c..0x29b9a]. The division truncates, so a PDU whose length is not 2 plus a
+multiple of three keeps the triples it has and loses the remainder rather than being refused.
 
 The same (index, first, length) shape is what command 0xFF8E takes from the host, and the
 range it validates against is the band's channel count from section 6.3, so all three places

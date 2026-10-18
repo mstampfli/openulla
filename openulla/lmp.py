@@ -252,37 +252,41 @@ class BandRange:
 class BandRanges:
     """Escape 0x7B, extended opcode 0x1C: which channels are used within each band.
 
+    The triples follow the extended opcode with **no count byte in front of them**: the
+    sender keeps its count in its own field block and copies three times that many bytes onto
+    the wire [fw acib 0x3abda], and the receiver recovers the count by dividing, as
+    (PDU length - 2) / 3, before storing it in the same place in its own block
+    [fw acib 0x3bfc2]. So the length is the count, both ways round.
+
     The sender packs at most five triples and skips band 3 and any band whose range is zero
-    [fw acib 0x29964]. The receiver recomputes the count from the body length and refuses
-    more than five [fw acib 0x3bfc2, 0x29b38], storing each pair in an eight-entry per-link
-    array at the link's offset 0x49F [fw acib 0x29b8c..0x29b9a].
+    [fw acib 0x29964]; the receiver refuses more than five [fw acib 0x29b38] and stores each
+    pair in an eight-entry per-link array at the link's offset 0x49F
+    [fw acib 0x29b8c..0x29b9a]. The division truncates, so a PDU whose length is not 2 plus a
+    multiple of three has its trailing bytes ignored rather than refused, which this mirrors.
     """
 
     ranges: tuple[BandRange, ...] = ()
     tid: int = 0
-    count_byte: int | None = field(default=None, compare=False)
+    ignored: bytes = field(default=b"", compare=False)
 
     def to_bytes(self) -> bytes:
         if len(self.ranges) > MAX_BAND_RANGES:
             raise ProtocolError(f"at most {MAX_BAND_RANGES} triples fit")
         body = b"".join(r.to_bytes() for r in self.ranges)
-        return bytes((header(ESCAPE_7B, self.tid), EXT_BAND_RANGES, len(self.ranges))) + body
+        return bytes((header(ESCAPE_7B, self.tid), EXT_BAND_RANGES)) + body
 
     @classmethod
     def from_bytes(cls, data: bytes) -> "BandRanges":
         head = parse_header(data)
         if head.opcode != ESCAPE_7B or head.ext_opcode != EXT_BAND_RANGES:
             raise ProtocolError("not the band-ranges PDU")
-        body = data[1:]  # extended opcode, count, then the triples
-        if len(body) < 2:
-            raise ProtocolError("the band-ranges body needs an extended opcode and a count")
-        count = (len(body) - 2) // 3  # recomputed, not read, exactly as the firmware does
+        count = (len(data) - 2) // 3  # the firmware's own formula, on the whole PDU
         if count > MAX_BAND_RANGES:
             raise ProtocolError(f"more than {MAX_BAND_RANGES} triples")
         triples = tuple(
-            BandRange(body[2 + 3 * i], body[3 + 3 * i], body[4 + 3 * i]) for i in range(count)
+            BandRange(data[2 + 3 * i], data[3 + 3 * i], data[4 + 3 * i]) for i in range(count)
         )
-        return cls(ranges=triples, tid=head.tid, count_byte=body[1])
+        return cls(ranges=triples, tid=head.tid, ignored=data[2 + 3 * count :])
 
 
 # Which extended opcodes each escape space implements in build 9A348, and which share the
