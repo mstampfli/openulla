@@ -4,24 +4,20 @@ import pytest
 from openulla import bands
 from openulla.errors import ProtocolError
 
-# The eight records as they stand at acib 0xf52e8, seven bytes each.
-RAW_TABLE = bytes.fromhex(
-    "6109520d160500"
-    "1e14640514140d"
-    "67167806141412"
-    "00000000000000"
-    "39176405141418"
-    "9d17780614141d"
-    "15187806141423"
-    "8d188c07141429"
-)
-
-
-def test_every_record_matches_the_firmware_bytes():
-    assert len(RAW_TABLE) == bands.BAND_COUNT * bands.RECORD_SIZE
+def test_every_record_is_seven_bytes_and_round_trips():
+    """The comparison against the firmware's own bytes is tools/verify_claims.py's job."""
+    assert len(bands.BAND_TABLE) == bands.BAND_COUNT
     for band in bands.BAND_TABLE:
-        start = band.index * bands.RECORD_SIZE
-        assert band.to_bytes() == RAW_TABLE[start : start + bands.RECORD_SIZE]
+        raw = band.to_bytes()
+        assert len(raw) == bands.RECORD_SIZE
+        assert int.from_bytes(raw[:2], "little") == band.start_mhz
+        assert tuple(raw[2:]) == (
+            band.width_mhz,
+            band.channels,
+            band.channel_bandwidth_mhz,
+            band.spacing_mhz,
+            band.first_channel,
+        )
 
 
 def test_width_is_the_channels_times_the_spacing_plus_one_bandwidth():

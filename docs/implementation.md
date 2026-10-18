@@ -126,6 +126,16 @@ link, and then the radio changes mode. Both halves are below the host interface:
   HCI packet-type mask has no bit for them, which is measured, not assumed:
   [measurements.md](measurements.md) section 9.
 
+## Getting a capture the reader can read
+
+On Linux, `btmon -w air.btsnoop` writes the layout `tools/capture_decode.py` was tested
+against, and anything else that writes btsnoop with the HCI UART datalink works too.
+
+On macOS, Apple's PacketLogger writes its own `.pklg` container, which this reader does not
+read: that layout has not been checked against a real file here, and this project does not
+ship code for a layout it has not seen. Converting the file first (Wireshark opens `.pklg`)
+or capturing on the Linux side of the same link both avoid the question.
+
 ## Checking the constants yourself
 
 Every address in the docstrings is a byte offset into a payload of Apple's own published

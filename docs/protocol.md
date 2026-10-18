@@ -933,3 +933,35 @@ one run of them against a simulated earbud.
 It cannot complete the link, because the next step is the link-manager exchange of section 5,
 which must be emitted by the source's own Bluetooth controller. Commodity controllers neither
 expose that interface nor implement the required radio modes, and their firmware is signed.
+
+### 8.1 The order to implement it in
+
+For anyone writing another implementation, this is the sequence that the sections above
+support, with the part each one proves. Nothing below is advice; each step is a layout or a
+rule that was read from the firmware or measured.
+
+1. **Be paired and connected.** The manager resolves the peer's address to an existing ACL
+   connection and fails fatally if there is none (3.5), so an ordinary Bluetooth connection
+   comes first.
+2. **Open AAP service 4 on PSM 0x1001** with the 16-byte open request, and read the version
+   pair back out of the reply; it decides the wrapper's class width (2.2, 2.6).
+3. **Send opcode 0x36 with one mode byte.** It is taken only while the manager is idle, and
+   otherwise ignored in silence (2.4). The session is the one the L2CAP channel identifies, so
+   there is no address to fill in (2.3).
+4. **Expect the status reply,** 0 once the manager reaches the state that waits for its local
+   audio path, or 0x1776 if its sibling transport is not ready (2.5, 3.6).
+5. **Subscribe with the 0x17 wrapper and class 0x00200000** if you want the reports, and parse
+   their three-byte header (2.6).
+6. On the controller side, if your controller lets you: **answer the feature exchange** first,
+   because every band message and the mode procedure are gated on the AND of the two words
+   (5.8). Then announce your allowed bands with the pair of commands and, if you use them, the
+   per-band channel ranges (6.1 to 6.5).
+7. **Emit the setup request** and be ready for the four checks and their reasons (5.1, 5.4),
+   or to receive one and answer it; the accept decision reads none of the PDU's own fields.
+8. **Report the outcome to your host** as the nine-byte vendor event, and expect the manager
+   to move on the link-up event (6, 3.6).
+9. **Do not expect to send back everything you receive**: a third of service 4's opcodes have
+   no inbound handler at all, the status reply among them (2.4).
+
+Steps 1 to 5 are what a Linux host can do today, and `openulla/` does them. Steps 6 to 8 need
+a controller that exposes its link-manager interface, which is the wall this project is at.
