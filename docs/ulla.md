@@ -15,6 +15,7 @@ What is not known is listed as open, not filled in.
 | FCC ID BCGA3240 (Apple MacBook Air, model A3240) | its narrowband test report, looked up by hand in a public FCC listing; not covered by `tools/fetch_fcc.sh` |
 | FCC ID BCG-E9198A (Apple smartphone, models A3719/A3720/A3721) | its grant, looked up the same way; not covered by `tools/fetch_fcc.sh` |
 | FCC ID BCG-A1978 (Apple Watch), FCC ID BCGA2124 (Apple iPad) | their public FCC listing indexes only: exhibit titles and dates. The reports themselves were not read, so nothing is claimed about their contents |
+| FCC ID BCGA2918 (Apple laptop, model A2918), FCC ID BCGA3593 (Apple digital media device, model A3593) | same, listing indexes only: exhibit titles, dates and equipment class |
 | US 12683269 B2, US 12706371 B2 (Apple) | Google Patents |
 | AirPods firmware 9A348 for A3048 (right bud) | Apple's public asset catalog (mesu.apple.com), fetched with `tools/fetch_firmware.sh`, parsed with `tools/uarp.py` and `tools/ftab.py` |
 | Measurements on a Linux host (Intel AX211, BlueZ 5.82, PipeWire 1.4) | btmon, bluetoothctl, PipeWire |
@@ -133,7 +134,27 @@ only the AirPods and Vision Pro exhibits. To reproduce them, look up FCC IDs
 BCGA3240 and BCG-E9198A in a public FCC listing: the MacBook statements come
 from its narrowband test report, the iPhone sentence from the grant itself.
 
-### 2.5 HDR is not ULLA, and HDR is not new
+### 2.5 Which other Apple devices file narrowband reports
+
+Besides the MacBook Air of 2.4 and the iPhone grant quoted there, two listing indexes are
+worth recording. Only titles, dates and equipment classes were read, from the indexes, not the
+reports, so nothing is claimed about what the reports contain.
+
+- **FCC ID BCGA2918**, an Apple laptop (model A2918), carries an exhibit titled "Narrowband
+  part1" dated 2023-10-30, beside 2.4, 5 and 6 GHz parts. The nearest earlier laptop filings
+  looked at (BCGA2941 of 2023-06-05, BCGA2141 of 2019, BCGA1989 and BCGA1990 of 2018) show no
+  narrowband exhibit in their indexes. So the earliest Mac narrowband report found so far is
+  from October 2023, weeks after the USB-C AirPods Pro 2 went on sale, and the 2018 and 2019
+  machines have none. This is not an exhaustive search of Apple's filings.
+- **FCC ID BCGA3593**, an Apple digital media device (model A3593), latest application
+  2026-10-13, is listed under the 6 GHz very-low-power equipment class. Two public FCC
+  databases disagree about its frequency list, one showing 2412-2472 and 6885-7085 MHz and the
+  other a document covering 6106-6425 MHz, so the only safe statement is the equipment class
+  and the date. It is recorded here because it is the first non-wearable, non-computer Apple
+  device seen with a 6 GHz very-low-power class, and because 6106-6425 is the same U-NII-5
+  span the earbud firmware's own band plan covers (4.5).
+
+### 2.6 HDR is not ULLA, and HDR is not new
 
 Two different things appear in these exhibits: a set of high-rate Bluetooth
 packet modes, and a protocol. They are separate, and the first one is not the

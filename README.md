@@ -137,7 +137,7 @@ can run over.
 So "this device supports HDR4 and HDR8" says the radio can carry those packets.
 It does not say the device speaks ULLA, and nothing here claims it does. What is
 new in this repository is the layer above the radio, not the radio. Sources and
-the exact wording of each filing: [docs/ulla.md](docs/ulla.md) section 2.5.
+the exact wording of each filing: [docs/ulla.md](docs/ulla.md) section 2.6.
 
 ## What is known so far
 
