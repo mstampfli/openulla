@@ -74,12 +74,21 @@ def test_the_sink_holds_the_acceptance_until_its_sibling_link_is_ready():
     assert lmp.parse(responder.sibling_became_ready()) == lmp.Accepted(lmp.OPCODE_ULLA_SETUP)
 
 
-def test_the_initiator_passes_only_the_flag_bits_the_command_gives_the_pdu():
+def test_the_initiator_maps_the_commands_parameters_the_way_the_firmware_does():
+    """The mapping of protocol.md 5.1, parameter by parameter."""
     pdu = lmp.SetupRequest.from_bytes(Initiator(radio_value=0x01020304).setup_request(SETUP))
-    assert pdu.flags == 0b1011  # bits 0, 1 and 3 of the command's flag byte
-    assert pdu.config_word == 0x0102
-    assert pdu.extra_flags == 0x01
-    assert pdu.radio_value == 0x01020304
+    assert pdu.config_word == SETUP.config_word  # parameters 3 and 4, passed through
+    assert pdu.flags == SETUP.flags & 0b11  # bits 0 and 1 of parameter 5
+    assert pdu.extra_flags == (SETUP.flags >> 3) & 1  # its bit 3, as a whole byte
+    assert pdu.radio_value == 0x01020304  # the radio read, not a parameter
+    # Parameter 2 is the byte the firmware writes past the declared length, so a nine-byte
+    # PDU cannot carry it and this one does not pretend to.
+    assert len(pdu.to_bytes()) == lmp.SetupRequest.LENGTH == 9
+    for flags, expected in ((0, (0, 0)), (0b11, (3, 0)), (0b1000, (0, 1)), (0xFF, (3, 1))):
+        built = lmp.SetupRequest.from_bytes(
+            Initiator().setup_request(UllaSetup(1, 0, 0, flags))
+        )
+        assert (built.flags, built.extra_flags) == expected, flags
 
 
 def test_the_transaction_id_of_the_answer_follows_the_request():

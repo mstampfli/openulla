@@ -111,11 +111,14 @@ def pdu_from(setup):
 
 
 def test_the_flag_bits_that_reach_the_pdu_follow_from_those_parameters():
-    pdu = pdu_from(hci.manager_setup(0x000B, 1))
-    assert pdu.flags == 0  # 4 keeps only bit 2, which the PDU does not carry
-    assert pdu.extra_flags == 1
-    assert pdu.config_word == 0x0096
-    assert pdu_from(hci.manager_setup(0x000B, 0)).flags == 0b1011
+    for_mode_one = pdu_from(hci.manager_setup(0x000B, 1))
+    # The manager's flag byte for mode 1 is 4: only bit 2, which reaches the context and
+    # never the air, so both of the PDU's flag bytes are zero.
+    assert (for_mode_one.flags, for_mode_one.extra_flags) == (0, 0)
+    assert for_mode_one.config_word == 0x0096
+    # For any other mode it is 0xF: bits 0 and 1 make the first byte 3, bit 3 the second 1.
+    for_mode_zero = pdu_from(hci.manager_setup(0x000B, 0))
+    assert (for_mode_zero.flags, for_mode_zero.extra_flags) == (0b11, 1)
 
 
 def test_the_second_ulla_command_is_the_handle_a_zero_and_the_mode_field():

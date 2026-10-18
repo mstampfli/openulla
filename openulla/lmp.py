@@ -85,10 +85,14 @@ def parse_header(data: bytes) -> Head:
 class SetupRequest:
     """Opcode 0x73. The fields the source fills in and the sink copies. [fw acib 0x3aa6e]
 
-    radio_value is read from the source's own radio hardware at runtime, with a validity
-    check and up to ten retries [fw acib 0xdc9c0], so it is not predictable from firmware.
-    config_word and the flag bytes come from the host's own vendor command (hci.UllaSetup).
-    None of them is read by the accept decision [fw acib 0x675f4].
+    Where each field comes from is proven through the transition context [docs/protocol.md
+    5.1]: radio_value is a hardware read with retries, so it is not predictable from firmware
+    [fw acib 0xdc9c0]; config_word is parameters 3 and 4 of the vendor command; `flags`, the
+    byte at offset 7, is bits 0 and 1 of its parameter 5, so it is a value 0 to 3; and
+    `extra_flags`, the byte at offset 8, is bit 3 of that parameter as a whole byte of 0 or 1.
+    The command's parameter 2 becomes a byte the sender writes past the declared length, so it
+    never reaches the air and is not modelled here. None of the fields is read by the accept
+    decision [fw acib 0x675f4].
     """
 
     radio_value: int

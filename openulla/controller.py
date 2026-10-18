@@ -136,17 +136,21 @@ class Initiator:
     tid: int = 0
 
     def setup_request(self, setup: UllaSetup) -> bytes:
-        """Build the 0x73 PDU from a host's 0xFE50 parameters. [fw acib 0x1da40, 0x3aa6e]
+        """Build the 0x73 PDU from a host's 0xFE50 parameters. [fw acib 0x1da40, 0x68588]
 
-        The configuration word is passed through, the flag byte carries bits 0, 1 and 3 of
-        the command's flags, and the command's third byte becomes the last PDU byte.
+        The mapping is the one docs/protocol.md 5.1 proves through the transition context:
+        the configuration word is passed through, the PDU's byte at offset 7 is bits 0 and 1
+        of the command's flag byte, and the byte at offset 8 is its bit 3 as a 0 or a 1. The
+        command's parameter 2 becomes the byte the firmware writes past the declared length,
+        which does not reach the air, so it is not sent here either. Bit 2 of the flag byte
+        reaches the context and nothing else.
         """
         self.handle = setup.handle
         return lmp.SetupRequest(
             radio_value=self.radio_value,
             config_word=setup.config_word,
-            flags=setup.flags & 0b1011,
-            extra_flags=setup.extra_flags,
+            flags=setup.flags & 0b11,
+            extra_flags=(setup.flags >> 3) & 1,
             tid=self.tid,
         ).to_bytes()
 
