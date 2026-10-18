@@ -1,7 +1,9 @@
 # The ULLA setup protocol, as recovered
 
 Purpose: interoperability. This is what an independent implementation needs in order to speak
-to AirPods Pro 2 (USB-C) the way Apple's own source does.
+to AirPods Pro 2 (USB-C) the way Apple's own source does. One such implementation is in this
+repository: `openulla/`, described in [implementation.md](implementation.md), encodes and
+decodes everything below and is checked against it by `python3 -m pytest`.
 
 Every statement below is one of:
 
@@ -306,6 +308,21 @@ not a firmware constant and cannot be predicted statically. **The accept decisio
 any of these fields** (section 5.4), so an implementation does not need to understand them in
 order to be accepted; it needs them only to make the radios agree.
 
+The total of 9 is the length the controller puts on the air: the per-opcode serializer writes
+the body and reports a length byte, which its caller stores as the packet's length
+[fw acib 0x3aa6e sets 9; the caller at 0x3ac8a reads it back and stores it at the packet's
+offset 2]. That length includes the header byte, which three controls settle: the accepted PDU
+writes one body byte and reports 2, the not-accepted PDU writes two and reports 3, and 0x74
+writes six and reports 7. Across all 46 opcodes that carry a length constant, 44 report
+exactly one more than the bytes they write.
+
+**One caution for an implementation.** 0x73 is one of the two that do not. Its case writes a
+*fifth* field, a third flag byte, at the body offset just past the declared length, and the
+receiver reads that offset too [fw acib 0x675f4 reads the body at +0, +4, +6, +7 and +8, and
+0x63488 hands it the body pointer directly]. So the byte the firmware takes for that field
+comes from whatever follows the PDU in its receive buffer. Send nine bytes, fill the two flag
+bytes at offsets 7 and 8, and do not expect a third flag byte to arrive.
+
 ### 5.2 Opcode 0x74, the configuration
 
 Total 7 bytes [fw acib 0x3a832]:
@@ -322,9 +339,17 @@ the two values straight to its session object with no checks of its own [fw acib
 
 ### 5.3 Accept and reject
 
-Acceptance is the standard link-manager accepted PDU carrying 0x73 [fw acib 0x3d19c, 2 bytes
-on the wire]; rejection is the standard not-accepted PDU carrying 0x73 and one reason byte
-[fw acib 0x3c934, 3 bytes].
+Acceptance is the standard link-manager accepted PDU, opcode 3, carrying 0x73 [fw acib
+0x3d19c, which passes 3 to the send builder and stores the one body byte; 2 bytes on the
+wire]; rejection is the standard not-accepted PDU, opcode 4, carrying 0x73 and one reason byte
+[fw acib 0x3c934, which passes 4 and stores the pair; 3 bytes].
+
+On the way in, the two answers are reached through the receive parser's own dispatch: a
+halfword table at acib 0x3b254, indexed by opcode minus one, with targets relative to
+0x3b23e. Opcode 3 lands on 0x3b696, opcode 4 on 0x3b71c, 0x73 on 0x3bb1e (the function that
+reads the fields) and 0x74 on 0x3b704. Anyone repeating that decode should know the table
+begins at 0x3b254 and not 0x3b256, because the instruction that forms its address word-aligns
+the program counter; being one entry out makes 0x73 and 0x74 look swapped.
 
 ### 5.4 What the receiver actually checks
 
@@ -341,12 +366,51 @@ Four checks, in order, each with its own reason [fw acib 0x675f4]:
 The parser's per-opcode attribute table is state gating only, with no encryption bit, and the
 entry for 0x73 imposes no state requirement at all [fw acib 0xf1f58, 0x3b0aa].
 
-Reason numbers, with the names the firmware's own tables give them [fw rkof 0x1dea6a and the
-selector at 0x2777c]: 0 none, 1 secondary role not initiated, 2 invalid, 3 secondary
-disallowed activity, 4 secondary transport not active, 5 secondary illegal connection count,
-6 secondary invalid source connection, 0x81..0x87 the same list for the primary role plus
-primary already connected and primary snoop disconnected, 0xaa lite-mode transport
-disconnected, 0xff not applicable.
+Each check has its own reason, and the receiver keeps it in the low nibble of the link's state
+byte [fw acib 0x67654]:
+
+| check | what it reads | reason when it fails |
+|---|---|---|
+| 1 | a feature-enabled byte [fw acib 0x62074] | 1 |
+| 2 | object ready, through the session's function table [fw acib 0x62030] | 2 |
+| 3 | a busy flag [fw acib 0x62154] | 3 |
+| 4 | link state, role and link count [fw acib 0x620c8] | 4, 5 or 6 |
+
+Check 4 returns its reason directly: 6 when the link is absent, or its state byte is not 0xC,
+or a flag at its offset 0x185 is set; otherwise 4 or 5 from the role and connection-count
+tests [fw acib 0x62102 onwards]. Zero means it passed.
+
+Reason numbers, with the names the firmware's own tables give them [names at fw rkof
+0x1dea6a, selected by the two byte tables at rkof 0x2777c and 0x2778c and the two direct
+comparisons at 0x27798 and 0x2779c]:
+
+| value | name |
+|---|---|
+| 0 | no specific reason |
+| 1 | secondary role not initiated |
+| 3 | secondary disallowed activity |
+| 4 | secondary transport not in active mode |
+| 5 | secondary illegal number of connections |
+| 6 | secondary invalid source connection |
+| 0x81 | primary role not initiated |
+| 0x82 | primary ULLA already connected |
+| 0x83 | primary disallowed activity |
+| 0x84 | primary transport not in active mode |
+| 0x85 | primary illegal number of connections |
+| 0x86 | primary invalid source connection |
+| 0x87 | primary snoop disconnected |
+| 0xaa | lite-mode transport disconnected |
+| 0xff | not applicable |
+
+**2 is missing from that list on purpose.** The secondary numbering skips it: its slot in the
+table points at the same "invalid reason" text as any unknown value, while the primary list is
+contiguous and its extra member at 0x82 is "already connected", which cannot happen to a
+secondary. And 2 is exactly what check 2 above produces, so the value does travel; it is the
+host-side name table that has no name for it.
+
+Values 1 to 6 are what this receiver puts on the air. The 0x81 to 0x87 names belong to the
+primary role's own failures; where the 0x80 bit is set was not established, and a scan of the
+controller image for those immediates returns 38 hits that cannot discriminate.
 
 ### 5.5 What the sink does after accepting
 
@@ -371,8 +435,25 @@ The handler refuses with the standard codes 0x0C, 0x12 or 0x17 when a feature fl
 a procedure is busy, or a parameter is out of range. On success it fills the transition
 context, posts the link-manager procedure, and the state machine emits the 0x73 PDU.
 
-Progress comes back as a vendor event [fw acib 0x10548, 0x11d34]: event code 0xFF, 7 bytes,
-then the connection handle and three bytes carrying the mode, the result and the reason.
+Progress comes back as a vendor event [fw acib 0x10548, 0x11d34], nine bytes in all:
+
+| offset | size | value |
+|---|---|---|
+| 0 | 1 | event code 0xFF |
+| 1 | 1 | parameter length, 7 |
+| 2 | 2 | event id 0x0A00 |
+| 4 | 2 | connection handle |
+| 6 | 1 | mode |
+| 7 | 1 | result |
+| 8 | 1 | reason |
+
+The event is built field by field: the word 0x0a0007ff is written first, then the handle as a
+halfword, then the three bytes [fw acib 0x11d4a..0x11d52]. The result reaches its byte through
+the allocator, which moves the third argument into the register the store uses [fw acib
+0x129ea]. The thirteen callers of the wrapper confirm the order, for instance (handle, 0, 1,
+0xff) at acib 0x67a56 and (handle, 0, 4, 0xff) at 0x6841c. A second vendor event uses the same
+shape with five parameters and event id 0x0A09 [fw acib 0x11d74]; what it reports is open.
+
 Mode values [fw rkof 0x1be190]: 0 ordinary ACL, 1 ULLA on, 2 lite mode on.
 Result values [fw rkof 0x1be5bc]: 0 success, 1 error, 2 failed to establish, 3 setup rejected
 by peer, 4 supervision timeout error.
@@ -581,6 +662,9 @@ With the above, a host that is already paired with the earbuds can [measured]:
 - ask the earbuds to start a ULLA session with itself and receive the success status,
 - subscribe to the report classes,
 - observe that the session machine advances and refuses a second start until it is reset.
+
+All four of those are what `openulla/` does, and `tools/ulla_demo.py` prints every byte of
+one run of them against a simulated earbud.
 
 It cannot complete the link, because the next step is the link-manager exchange of section 5,
 which must be emitted by the source's own Bluetooth controller. Commodity controllers neither
