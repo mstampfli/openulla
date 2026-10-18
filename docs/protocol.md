@@ -267,6 +267,39 @@ resolves it to an existing ACL connection (failing fatally if there is none), re
 connection's handle, resolves the sibling's address to its own handle, and moves to host setup.
 So the source must already have an ordinary Bluetooth connection to the earbud before asking.
 
+### 3.6 The order it all happens in
+
+The transition table of 3.4 says what each event does; this is the sequence those events
+arrive in, and the one place where the manager actually commands its controller.
+
+| step | what happens | where |
+|---|---|---|
+| 1 | the host opens service 4 and sends opcode 0x36 | section 2 |
+| 2 | the manager stores the peer's address and the mode byte and leaves idle | [fw rkof 0x274f0, 0x27a58] |
+| 3 | it asks its sibling, with the address reversed and the same mode byte | [fw rkof 0x27466], section 4 |
+| 4 | the app setup and the supervision timeout settle, events 12 and 27 | 3.4 |
+| 5 | the sibling answers, event 6, and the manager waits for the local audio path | 3.4 |
+| 6 | the local audio path stops, event 35, and **this handler is the one that commands the controller** | [fw rkof 0x27198] |
+| 7 | the controller reports the link up, event 29, and the DSP is configured | 3.4, and section 6's vendor event |
+| 8 | the DSP's events 8, 11 and 13 arrive and the session is open | 3.4 |
+| 9 | the host asks for the stream with 0x38, and events 25, 21, 19 and 26 open it | 3.4 |
+
+Step 6 is worth the detail. That handler finishes a timer and then dispatches on one field of
+the manager, with four values and a byte table [fw rkof 0x271b2, table 0x271c0, fatal for 0 or
+above 4 at 0x272ba]:
+
+| value | what it sends |
+|---|---|
+| 1 | the vendor command 0xFE50, with the parameters of section 6.0 [fw rkof 0x271c4..0x272e4] |
+| 2 | the vendor command 0xFE51 [fw rkof 0x27234] |
+| 3 | the host's status reply with 0, or else the sibling's start-session response [fw rkof 0x271e2, 0x271f8, 0x272b4] |
+| 4 | the sibling's stop-session response [fw rkof 0x271fe] |
+
+So the mode change is asked for **after** the local audio path has quiesced, not when the host
+first asks, and the status reply the host sees is sent from the same state. In this build
+nothing stores the value 1 in that field, which is why the earbud is the responder of the
+link-manager exchange rather than its initiator.
+
 ## 4. Earbud to earbud
 
 The manager talks to the sibling as client 5 of a transport carried over AAP service 0x10
