@@ -26,3 +26,5 @@ jobs:
           python tools/aap_probe.py --simulate --seq start,subscribe,stop
           python tools/ulla_decode.py f6 17 e6
           python tools/verify_claims.py --help
+          python tools/ulla_sink.py --help
+          python tools/capture_decode.py --help

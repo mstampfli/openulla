@@ -319,6 +319,10 @@ link keys and other people's device addresses.
 - `tools/ulla_decode.py`: decodes one frame, PDU, vendor command or vendor
   event from hex, naming its fields and, for the band messages, which bands a
   mask means. Useful when reading a capture or a log.
+- `tools/ulla_sink.py`: answers like an earbud on a real L2CAP channel, PSM
+  0x1001, so a source implementation can be tested over real Bluetooth with no
+  earbuds involved. It prints every internal event it supplies by name, and
+  `--no-advance` leaves the session machine where the host's own frames put it.
 - `tools/capture_decode.py`: reads a btsnoop capture (`btmon -w`, or the HCI
   UART layout other tools write) and prints the frames of this protocol in it,
   finding the channel the accessory protocol runs on from the L2CAP signalling.
