@@ -25,6 +25,8 @@ fill it in; it says so, and the tests say so too.
 | `source.py` | what a host sends, and the vendor commands its controller would need |
 | `sim.py` | a whole negotiation with no hardware |
 | `transport.py` | a real L2CAP channel, or a pair of queues |
+| `describe.py` | one place for the wording of every decode |
+| `capture.py` | finds this protocol's frames in a btsnoop capture, learning the channel from the L2CAP signalling |
 
 ## Running it
 
@@ -33,6 +35,7 @@ python3 -m pytest                  # the whole suite, no hardware, no dependenci
 python3 tools/ulla_demo.py         # the whole setup, every byte, against the simulator
 python3 tools/ulla_demo.py --reject busy    # and the same with the peer refusing
 python3 tools/ulla_decode.py f6 17 e6       # decode one frame, PDU, command or event
+python3 tools/capture_decode.py air.btsnoop # find this protocol's frames in a capture
 ```
 
 The decoder is the other way to use the library: give it hex and it names the fields, says

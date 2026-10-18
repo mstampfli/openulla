@@ -17,6 +17,8 @@ Apple's published update and `tools/ftab.py` extracts the payloads the citations
   source       what a host sends, and what it cannot
   sim          a whole negotiation with no hardware, for trying it and for the tests
   transport    a real L2CAP channel, or a pair of queues
+  describe     one place for the wording of every decode
+  capture      finding this protocol's frames in a btsnoop capture
 
 What this cannot do is carry audio: the mode change moves the link to a radio whose packet
 format is produced by hardware, which docs/protocol.md section 7 sets out in full.
@@ -28,8 +30,10 @@ __version__ = "0.1.0"
 from . import (
     aap,
     bands,
+    capture,
     codes,
     controller,
+    describe,
     hci,
     lmp,
     session,
@@ -44,8 +48,10 @@ from .errors import ProtocolError, Refused
 __all__ = [
     "aap",
     "bands",
+    "capture",
     "codes",
     "controller",
+    "describe",
     "hci",
     "lmp",
     "session",

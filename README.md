@@ -319,6 +319,10 @@ link keys and other people's device addresses.
 - `tools/ulla_decode.py`: decodes one frame, PDU, vendor command or vendor
   event from hex, naming its fields and, for the band messages, which bands a
   mask means. Useful when reading a capture or a log.
+- `tools/capture_decode.py`: reads a btsnoop capture (`btmon -w`, or the HCI
+  UART layout other tools write) and prints the frames of this protocol in it,
+  finding the channel the accessory protocol runs on from the L2CAP signalling.
+  It prints only what it recognises; captures stay on your machine.
 - `tools/verify_claims.py`: re-derives what the docs and the code claim from a
   firmware image on your own machine, one line per claim: the session manager's
   whole transition table, the band plan, the command table with every handler
