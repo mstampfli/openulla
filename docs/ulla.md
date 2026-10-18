@@ -63,14 +63,57 @@ Reported values:
 |---|---|---|---|---|
 | NB UNII BDR | 1 Mbit/s | about 1 MHz | | 76.8 % |
 | NB UNII LE2M | 2 Mbit/s | 2.08 MHz | | 80.0 % |
-| NB UNII HDR4 | 4 Mbit/s | 2.25 to 2.33 MHz | 2.56 MHz | 78.0 % |
-| NB UNII HDR8 | 8 Mbit/s | 4.45 to 4.55 MHz | 5.1 MHz | 78.0 % |
-| NB UNII HDRp4 / HDRp8 | | | | 87.4 % / 88.2 % |
+| NB UNII HDR4 | 4 Mbit/s | 2.557 to 2.559 MHz | 2.252 to 2.281 MHz | 78.0 % |
+| NB UNII HDR8 | 8 Mbit/s | 5.072 to 5.101 MHz | 4.449 to 4.548 MHz | 78.0 % |
+| NB UNII HDRp4 | | 2.736 to 2.779 MHz | 2.402 to 2.435 MHz | 87.4 % |
+| NB UNII HDRp8 | | 5.415 to 5.423 MHz | 4.822 to 4.859 MHz | 88.2 % |
 
-The reports state the modulation types GFSK and pi/4 DQPSK; they do not state
-the modulation per HDR mode. HDR4 and HDR8 were also measured at 2.4 GHz
-(2404, 2441, 2480 MHz) with 2.30 MHz and 4.52 MHz bandwidth. The "p" variants
-are not explained.
+(Table 7-2 of that report puts the 99 % occupied column before the 26 dB
+column. An earlier revision of this document had the two swapped.)
+
+The AirPods reports state the modulation types GFSK and pi/4 DQPSK without
+saying which belongs to which HDR mode; another Apple filing does, see 2.4.
+HDR4 and HDR8 were also measured in the ordinary 2.4 GHz Bluetooth band
+(2404, 2441, 2480 MHz) at 2.30 MHz and 4.52 MHz. The "p" variants are not
+explained anywhere; measurably they are slightly wider and run at a higher
+duty cycle.
+
+### 2.4 The same radio modes are in a MacBook
+
+The narrowband test report for FCC ID BCGA3240, an Apple MacBook Air (model
+A3240), declares narrowband operation in "US: 5162-5245 MHz" and "US and
+Canada: 5733-5844 MHz", the same two bands the AirPods use, and states: "Both
+power modes support HDR4 (4-DH5) and HDR8 (8-DH5). iPA mode additionally
+supports Basic Rate (DH5)." It supports those modes on "two different cores
+(Core 0 and Core 1)" and on both simultaneously.
+
+Three things follow:
+
+- The radio capability this link needs is **not unique to the Vision Pro**. A
+  current MacBook has it. What a Mac's software does with it is a separate
+  question and is not established here.
+- That report names the modulation per mode in its measurement headers, as
+  "pi/4 DQPSK (4-DH5)" and "pi/4 DQPSK (8-DH5)". So **HDR8 is pi/4 DQPSK, not
+  8DPSK**, and both HDR modes ride in DH5-shaped, five-slot packets at 4 and
+  8 Mbit/s, written 4-DH5 and 8-DH5 in Bluetooth's own packet naming.
+- Two independently usable radio cores match two facts recorded elsewhere here:
+  the AirPods' tuning map carries separate transmit power settings for two
+  source links, and Apple's patents claim each earbud holds its own direct link
+  to the source.
+
+Its measured bandwidths (26 dB / 99 %, MHz) are 1.248 to 1.252 / 0.996 to 1.000
+for DH5, 2.776 to 2.800 / 2.344 for 4-DH5, and 5.340 to 5.355 / 4.635 to 4.650
+for 8-DH5. Those sit within a few hundred kilohertz of the AirPods' HDR and
+HDRp figures above, which is consistent with one PHY family. It is not enough to
+claim that a given Mac mode is the earbuds' HDR4 rather than HDRp4, and no such
+mapping is claimed.
+
+Recent iPhones carry a narrowband UNII radio in the same two bands as well: the
+grant for FCC ID BCG-E9198A states that besides 802.11 the device "supports
+narrowband UNII with bandwidths of 1 MHz, 2 MHz, 4 MHz and 8 MHz in UNII bands
+1 and 3 and 802.15.4ab in UNII-3". That grant names bandwidth classes rather
+than modes, and the same sentence also covers a ranging standard, so it does not
+by itself show that an iPhone implements the HDR modes.
 
 Link setup, quoted from the 6 GHz report: "after establishing communication
 between the EUT and the companion device, NB UNII HDR is used to maintain

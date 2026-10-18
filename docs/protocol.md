@@ -381,6 +381,12 @@ by peer, 4 supervision timeout error.
 
 Once the mode change succeeds the radio carries the audio. The parts that are established:
 
+- The two Apple modes are pi/4 DQPSK and ride in DH5-shaped, five-slot packets at 4 and
+  8 Mbit/s, named 4-DH5 and 8-DH5 in Bluetooth's own packet naming. Source: the narrowband
+  test report for FCC ID BCGA3240, an Apple MacBook Air, which labels its measurements
+  "pi/4 DQPSK (4-DH5)" and "pi/4 DQPSK (8-DH5)". That tells you the packet family and the
+  symbol rate class, not the bit layout.
+
 - The earbud's DSP firmware contains the ULLA receive clients, a normal one and a lite one,
   and an encode node that selects behaviour by a version byte, 0x10 for 1.0 and 0x11 for 1.1
   [fw sbd1 0x9d334; the DSP image is AArch64].

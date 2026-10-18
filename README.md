@@ -133,27 +133,32 @@ image, and whether the audio payload is encrypted is a hardware question the
 firmware cannot answer. Details in [docs/ulla.md](docs/ulla.md#7-open).
 Nothing anywhere in this repository is filled in by guesswork.
 
-**This is probably not Vision-Pro-only hardware, and that matters for what
-comes next.** Two facts from the material already in this repository:
+**This is not Vision-Pro-only hardware.** A current MacBook has the same radio:
+the narrowband test report for an Apple MacBook Air states "Both power modes
+support HDR4 (4-DH5) and HDR8 (8-DH5)" in the same two 5 GHz bands the AirPods
+use, on two independently usable radio cores. Current iPhones declare a
+narrowband radio in those bands too. Details and sources in
+[docs/ulla.md](docs/ulla.md) section 2.4.
 
-- Apple's own test reports declare the HDR4 and HDR8 modes in the **ordinary
-  2.4 GHz Bluetooth band** as well as in the 5 GHz bands, and measured them
-  there, at 2.30 MHz and 4.52 MHz bandwidth.
-- The firmware carries a **lite mode** as a first-class citizen: its own mode
-  value, its own receive client in the audio DSP, and its own failure reason.
+Two more facts from the material here: Apple declares the HDR modes in the
+**ordinary 2.4 GHz Bluetooth band** as well, and the firmware treats a **lite
+mode** as a first-class citizen, with its own mode value, its own receive client
+in the audio DSP and its own failure reason.
 
-What those two do **not** establish, and nobody should claim they do: that the
-lite mode uses the 2.4 GHz band, that any non-Vision-Pro device drives either
-mode, or that a commodity controller could form the HDR modulations. Those are
+What none of that establishes, and nobody should claim it does: that a Mac's or
+an iPhone's software ever drives this link, that the lite mode uses the 2.4 GHz
+band, or that a non-Apple controller could form these modulations. Those are the
 open questions, and they are the cheap ones to answer.
 
 ## How you can help
 
 In rough order of how little hardware it needs:
 
-1. **If you can capture HCI on an Apple host that drives these earbuds**, this
-   is the cheapest open question we cannot answer ourselves: does anything
-   other than a Vision Pro use this link? The controller's vendor command and
+1. **If you have a recent Mac, you already have the radio** (see "What is open"),
+   and macOS can capture its own Bluetooth traffic with Apple's PacketLogger.
+   That makes a Mac the best platform for the cheapest open question we cannot
+   answer ourselves: does anything other than a Vision Pro use this link? The
+   controller's vendor command and
    its progress event are documented in [docs/protocol.md](docs/protocol.md)
    section 6, including the mode, result and reason bytes, so a host-side
    capture on a Mac would show them directly if that host drives the link.
