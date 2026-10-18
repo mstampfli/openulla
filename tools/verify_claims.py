@@ -94,6 +94,23 @@ BUILDER_7B_CASES = {
     0x3ABD0: (0x26,),
     BUILDER_7B_NO_BUILDER: (0x12, 0x13, 0x14, 0x1D, 0x1E, 0x22, 0x23, 0x25),
 }
+BUILDER_7F_TABLE = 0x3A7CC  # halfwords, index extended opcode - 3, 38 entries
+BUILDER_7F_FIRST = 0x03
+BUILDER_7F_NO_BUILDER = 0x3AB7E
+BUILDER_7F_CASES = {
+    0x3A818: (0x17, 0x18, 0x1B, 0x1C, 0x1D, 0x21, 0x22),
+    0x3A9F8: (0x06, 0x0B, 0x1E, 0x1F, 0x20, 0x28),
+    0x3AAB6: (0x0D, 0x27),
+    0x3AABC: (0x19, 0x1A),
+    0x3AAC6: (0x15, 0x16),
+    0x3AADA: (0x03, 0x04),
+    0x3AAEE: (0x0C, 0x26),
+    0x3AB1E: (0x11,),
+    0x3AB2E: (0x05,),
+    0x3AB5C: (0x07,),
+    0x3AB6A: (0x10,),
+    BUILDER_7F_NO_BUILDER: (0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x12, 0x13, 0x14, 0x23, 0x24, 0x25),
+}
 ESCAPE_7F_TABLE = 0x3B3BC
 ESCAPE_7F_COUNT = 34
 ESCAPE_7F_STUB = 0x3BF52
@@ -246,24 +263,27 @@ def check_escape_dispatch(acib, rkof):
 
 
 def check_transmit_builders(acib, rkof):
-    """Which body builder each extended opcode of the 0x7B space uses. [5.7]"""
-    expected = {ext: case for case, exts in BUILDER_7B_CASES.items() for ext in exts}
-    covered = 0
-    for ext, case in sorted(expected.items()):
-        index = ext - BUILDER_7B_FIRST
-        got = BUILDER_7B_TABLE + 2 * u16(acib, BUILDER_7B_TABLE + 2 * index)
-        if got != case:
-            return False, f"extended 0x{ext:02x} now builds at 0x{got:x}, not 0x{case:x}"
-        covered += 1
-    without = sum(
-        1
-        for ext in range(BUILDER_7B_FIRST, BUILDER_7B_FIRST + 31)
-        if BUILDER_7B_TABLE + 2 * u16(acib, BUILDER_7B_TABLE + 2 * (ext - BUILDER_7B_FIRST))
-        == BUILDER_7B_NO_BUILDER
-    )
-    if without != len(BUILDER_7B_CASES[BUILDER_7B_NO_BUILDER]):
-        return False, f"{without} extended opcodes have no builder, not 8"
-    return True, f"{covered} extended opcodes, {without} of them with no builder at all"
+    """Which body builder each extended opcode of each space uses. [5.7]"""
+    covered, without = 0, 0
+    for name, table, first, count, cases, stub in (
+        ("0x7B", BUILDER_7B_TABLE, BUILDER_7B_FIRST, 31, BUILDER_7B_CASES, BUILDER_7B_NO_BUILDER),
+        ("0x7F", BUILDER_7F_TABLE, BUILDER_7F_FIRST, 38, BUILDER_7F_CASES, BUILDER_7F_NO_BUILDER),
+    ):
+        expected = {ext: case for case, exts in cases.items() for ext in exts}
+        for ext, case in sorted(expected.items()):
+            got = table + 2 * u16(acib, table + 2 * (ext - first))
+            if got != case:
+                return False, f"{name}/0x{ext:02x} now builds at 0x{got:x}, not 0x{case:x}"
+            covered += 1
+        stubbed = sum(
+            1
+            for ext in range(first, first + count)
+            if table + 2 * u16(acib, table + 2 * (ext - first)) == stub
+        )
+        if stubbed != len(cases[stub]):
+            return False, f"{name} has {stubbed} extended opcodes with no builder"
+        without += stubbed
+    return True, f"{covered} extended opcodes over both spaces, {without} with no builder"
 
 
 def check_event_shape(acib, rkof):
@@ -348,7 +368,7 @@ CHECKS = (
     ("PDU lengths", check_pdu_lengths),
     ("LMP receive dispatch", check_receive_dispatch),
     ("escape space dispatch", check_escape_dispatch),
-    ("0x7B body builders", check_transmit_builders),
+    ("extended PDU body builders", check_transmit_builders),
     ("mode-change event shape", check_event_shape),
     ("mode, result and reason names", check_names),
     ("A2DP stream endpoints", check_a2dp_endpoints),

@@ -142,7 +142,7 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  PDU lengths                      accepted 2, not accepted 3, 0x74 7, 0x73 9, including the header byte
   PASS  LMP receive dispatch             table at acib 0x3b254, 5 opcodes checked
   PASS  escape space dispatch            0x7B: 39 entries, 12 refused; 0x7F: 34 entries, 8 refused
-  PASS  0x7B body builders               31 extended opcodes, 8 of them with no builder at all
+  PASS  extended PDU body builders       69 extended opcodes over both spaces, 19 with no builder
   PASS  mode-change event shape          event 0xff, 7 parameters, id 0x0a00
   PASS  mode, result and reason names    3 modes, 5 results, 12 reasons, 2 unnamed
   PASS  A2DP stream endpoints            vendor 0xFF, AAC 0x02 and SBC 0x00, lengths and bytes as published

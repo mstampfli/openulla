@@ -459,38 +459,56 @@ twelve on the reject stub, and 0x7B/0x28 is past the end of the 39-entry table a
 the other end of a ULLA link implements extended opcodes these earbuds do not, which is the
 first thing in this firmware that says the peer is a larger implementation than the earbud.
 
-### 5.7 What each message of the 0x7B space puts on the wire
+### 5.7 How long each extended message is, in both spaces
 
-The bodies are not assembled by the senders. A sender fills a field block and names an
-extended opcode; one builder then turns the block into a body, with a sub-table for the 0x7B
-space indexed by the extended opcode minus 0x0A [fw acib 0x3a9ac, table 0x3a9ba, 31 entries
-for 0x0A to 0x28]. That makes the transmit layout of the whole space readable in one place.
-Offsets below are into the body, which follows the header and the extended opcode, and
-"block+N" is the sender's own field block:
+The bodies are not assembled by the senders. A sender fills a field block whose first sixteen
+bytes are a transmit descriptor, and names an extended opcode; one builder then turns the
+block into a body [fw acib 0x3a620, reached with the descriptor's byte at +2 zero]. Extended
+opcodes 1 and 2 are handled in its prologue, and each escape space has its own sub-table after
+that: 0x7B's is indexed by the extended opcode minus 0x0A [fw acib 0x3a9ac, table 0x3a9ba, 31
+entries for 0x0A to 0x28] and 0x7F's by the extended opcode minus 3 [fw acib 0x3a7be, table
+0x3a7cc, 38 entries for 0x03 to 0x28]. So the transmit length of every extended message is
+readable in one place. Below, "block+N" is the sender's field block, body offsets follow the
+header and the extended opcode, and the total includes both of those:
 
-| extended opcode | body | total PDU |
+| extended opcode | body | total |
 |---|---|---|
-| 0x0A, 0x0B | one word from block+0x10 | 6 |
-| 0x0C, 0x0D, 0x0E, 0x17 | one byte from block+0x10 | 3 |
-| 0x0F | two bytes, block+0x10 and +0x11 | 4 |
-| 0x10, 0x11, 0x20, 0x21 | one halfword from block+0x10 | 4 |
-| 0x15, 0x16, 0x24 | N bytes from block+0x11, where N is block+0x10 | N + 2 |
-| 0x18, 0x27 | fifteen bytes from block+0x10 | 17 |
-| 0x19 | byte, halfword, halfword, byte from block+0x10 onwards | 8 |
-| 0x1A | one byte from block+0x10, then ten bytes from block+0x11 | 13 |
-| 0x1B | one byte from block+0x10 | 3 |
-| 0x1C | 3N bytes from block+0x11, where N is block+0x10 | 3N + 2 |
-| 0x1F, 0x28 | byte, halfword, halfword, byte, then halfword, byte, byte, halfword | 14 |
-| 0x12, 0x13, 0x14, 0x1D, 0x1E, 0x22, 0x23, 0x25 | no builder at all | - |
+| **either space**, 0x01 | two bytes, block+0x10 and +0x11 | 4 |
+| **either space**, 0x02 | three bytes, block+0x10 to +0x12 | 5 |
+| **0x7B** 0x0A, 0x0B | one word from block+0x10 | 6 |
+| 0x7B 0x0C, 0x0D, 0x0E, 0x17 | one byte from block+0x10 | 3 |
+| 0x7B 0x0F | two bytes, block+0x10 and +0x11 | 4 |
+| 0x7B 0x10, 0x11, 0x20, 0x21 | one halfword from block+0x10 | 4 |
+| 0x7B 0x15, 0x16, 0x24 | N bytes from block+0x11, where N is block+0x10 | N + 2 |
+| 0x7B 0x18, 0x27 | fifteen bytes from block+0x10 | 17 |
+| 0x7B 0x19 | byte, halfword, halfword, byte | 8 |
+| 0x7B 0x1A | one byte, then ten bytes from block+0x11 | 13 |
+| 0x7B 0x1B | one byte from block+0x10 | 3 |
+| 0x7B 0x1C | 3N bytes from block+0x11, where N is block+0x10 | 3N + 2 |
+| 0x7B 0x1F, 0x28 | byte, halfword, halfword, byte, halfword, byte, byte, halfword | 14 |
+| 0x7B 0x26 | one word and one halfword | 8 |
+| **0x7F** 0x03, 0x04 | two bytes, then two words read through a pointer in the block | 12 |
+| 0x7F 0x05 | byte, word, halfword, byte, byte, word | 15 |
+| 0x7F 0x06, 0x0B, 0x1E, 0x1F, 0x20, 0x28 | one byte from block+0x10 | 3 |
+| 0x7F 0x07 | halfword, byte, byte | 6 |
+| 0x7F 0x0C, 0x26 | two bytes, six bytes, two halfwords, two bytes | 16 |
+| 0x7F 0x0D, 0x27 | two bytes, block+0x10 and +0x11 | 4 |
+| 0x7F 0x10 | byte, halfword, halfword | 7 |
+| 0x7F 0x11 | ten bytes from block+0x16 | 12 |
+| 0x7F 0x15, 0x16 | byte, halfword, word | 9 |
+| 0x7F 0x17, 0x18, 0x1B, 0x1C, 0x1D, 0x21, 0x22 | empty | 2 |
+| 0x7F 0x19, 0x1A | three bytes | 5 |
+| 0x7B 0x03 to 0x09, 0x12 to 0x14, 0x1D, 0x1E, 0x22, 0x23, 0x25 | no builder at all | - |
+| 0x7F 0x08 to 0x0A, 0x0E, 0x0F, 0x12 to 0x14, 0x23 to 0x25 | no builder at all | - |
 
-The last row is the mirror of the receive side: eight extended opcodes have no way to be
-built, and four of them (0x12, 0x13, 0x1D, 0x1E) are also on the receive stub, so this build
-can neither send nor accept them. 0x24 and 0x28, by contrast, can be built but not accepted,
-which is the asymmetry above.
+Put against the receive side of 5.6 that sorts every extended opcode of the 0x7B space into
+three groups: 0x03 to 0x09, 0x12, 0x13, 0x1D and 0x1E can be neither built nor accepted;
+0x14, 0x22, 0x23 and 0x25 can be accepted but not built; and 0x24 and 0x28 can be built but
+not accepted, which is the asymmetry above.
 
-Two of these rows are the messages this document decodes in full, and the table is how they
-were checked: 0x17's one byte is the allowed-band mask of section 6.2, and 0x1C's 3N bytes are
-the band ranges of section 6.5, whose count is carried by the length alone.
+Two rows are the messages this document decodes in full, and this table is how they were
+checked: 0x7B/0x17's one byte is the allowed-band mask of section 6.2, and 0x7B/0x1C's 3N
+bytes are the band ranges of section 6.5, whose count the length carries.
 
 ## 6. Controller interface: HCI vendor commands
 
