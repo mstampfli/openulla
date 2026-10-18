@@ -14,12 +14,13 @@ from the firmware's own senders and parsers, which agree field for field.
                          [fw acib 0x3c934, which passes 4 and stores the pair]
   escape 0x7B / 0x17     allowed-band mask, one payload byte, body length 2
                          [fw acib 0x2992a sending, 0x3b558 checking the length]
-  escape 0x7B / 0x1C     band ranges: a count, then (band, first channel, length) triples,
-                         at most five  [fw acib 0x29964 sending, 0x3bfc2 and 0x29b38 receiving]
+  escape 0x7B / 0x1C     band ranges: (band, first channel, length) triples and no count
+                         field, at most five  [fw acib 0x29964 and the builder 0x3abda
+                         sending, 0x3bfc2 and 0x29b38 receiving]
 
-The receiver of 0x1C recomputes the number of triples as (body length - 2) / 3 instead of
-trusting the count byte [fw acib 0x3bfc2], so a sender that disagrees with itself is read by
-its length.
+Each end of 0x1C keeps the number of triples in its own field block and reads it off the
+length: the sender copies three bytes per triple and reports 3n + 2, and the receiver divides
+(PDU length - 2) by 3 [fw acib 0x3abda, 0x3bfc2]. The length is the count.
 """
 from __future__ import annotations
 

@@ -14,9 +14,10 @@ the receiver itself [fw acib 0x675f4]:
 None of them is cryptographic: no key, no nonce, no challenge, and the parser's per-opcode
 attribute table imposes no state requirement on 0x73 at all [fw acib 0xf1f58, 0x3b0aa].
 
-Reasons 1 to 6 are what this receiver puts on the air. The 0x81 to 0x87 names belong to the
-primary role's own failures in the host-side name table [fw rkof 0x2777c] and are not emitted
-here; where the 0x80 bit is set was not established.
+The reason that goes on the air is 0x81 to 0x86, not the bare nibble: the receiver sets bit 7
+of its answer byte before any check runs and the caller sends the whole byte [fw acib 0x67608,
+0x63492 onwards]. Those are the primary-role names in the host-side table [fw rkof 0x2777c],
+and the bit says which role is refusing; an earbud facing a source is the primary one.
 
 On acceptance the sink copies the parsed fields into its own context, forwards an identical
 0x73 to its sibling link, and sends the accepted PDU only once both links are ready
