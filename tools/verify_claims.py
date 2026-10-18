@@ -72,7 +72,13 @@ RECEIVE_BASE = 0x3B23E
 RECEIVE_TARGETS = {0x03: 0x3B696, 0x04: 0x3B71C, 0x73: 0x3BB1E, 0x74: 0x3B704, 0x7B: 0x3B558}
 ESCAPE_7B_TABLE = 0x3BC14  # halfwords, index extended opcode - 1
 ESCAPE_7B_COUNT = 39
+ESCAPE_7B_STUB = 0x3C2C6  # where every unimplemented extended opcode of that space goes
+ESCAPE_7B_REFUSED = {0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x12, 0x13, 0x1D, 0x1E, 0x24}
 ESCAPE_7B_TARGETS = {lmp.EXT_ALLOWED_BANDS: 0x3C004, lmp.EXT_BAND_RANGES: 0x3BFC2}
+ESCAPE_7F_TABLE = 0x3B3BC
+ESCAPE_7F_COUNT = 34
+ESCAPE_7F_STUB = 0x3BF52
+ESCAPE_7F_REFUSED = {0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x12, 0x13, 0x14}
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 
@@ -195,12 +201,29 @@ def check_receive_dispatch(acib, rkof):
 
 
 def check_escape_dispatch(acib, rkof):
-    """The 0x7B escape space, and the two messages we encode. [6.2, 6.5]"""
+    """Both escape spaces: the two messages we encode, and what each space refuses. [5.6]"""
     for ext, target in ESCAPE_7B_TARGETS.items():
         got = ESCAPE_7B_TABLE + 2 * u16(acib, ESCAPE_7B_TABLE + 2 * (ext - 1))
         if got != target:
             return False, f"extended 0x{ext:02x} now lands on 0x{got:x}, not 0x{target:x}"
-    return True, f"{ESCAPE_7B_COUNT}-entry table at acib 0x{ESCAPE_7B_TABLE:x}, 0x17 and 0x1C"
+    for table, count, stub, refused in (
+        (ESCAPE_7B_TABLE, ESCAPE_7B_COUNT, ESCAPE_7B_STUB, ESCAPE_7B_REFUSED),
+        (ESCAPE_7F_TABLE, ESCAPE_7F_COUNT, ESCAPE_7F_STUB, ESCAPE_7F_REFUSED),
+    ):
+        got = {
+            ext
+            for ext in range(1, count + 1)
+            if table + 2 * u16(acib, table + 2 * (ext - 1)) == stub
+        }
+        if got != refused:
+            return False, (
+                f"the space at 0x{table:x} refuses {sorted(hex(e) for e in got)}, "
+                f"not {sorted(hex(e) for e in refused)}"
+            )
+    return True, (
+        f"0x7B: {ESCAPE_7B_COUNT} entries, {len(ESCAPE_7B_REFUSED)} refused; "
+        f"0x7F: {ESCAPE_7F_COUNT} entries, {len(ESCAPE_7F_REFUSED)} refused"
+    )
 
 
 def check_event_shape(acib, rkof):
@@ -284,7 +307,7 @@ CHECKS = (
     ("HCI command table", check_hci_command_table),
     ("PDU lengths", check_pdu_lengths),
     ("LMP receive dispatch", check_receive_dispatch),
-    ("escape 0x7B dispatch", check_escape_dispatch),
+    ("escape space dispatch", check_escape_dispatch),
     ("mode-change event shape", check_event_shape),
     ("mode, result and reason names", check_names),
     ("A2DP stream endpoints", check_a2dp_endpoints),

@@ -424,6 +424,42 @@ It copies the parsed fields into its own context, forwards an identical 0x73 to 
 link, and only sends the accepted PDU back once both links are ready [fw acib 0x677c8,
 0x303a8, 0x302f8].
 
+### 5.6 The two escape spaces, and which messages exist in them
+
+Extended PDUs live behind two escape opcodes, 0x7B and 0x7F, numbered independently. Each has
+its own dispatch table, reached from the main table's case for that opcode after a bound
+check, and each has one stub that every unimplemented extended opcode shares with the
+out-of-range case:
+
+| escape | entries | extended opcodes | table | reject stub |
+|---|---|---|---|---|
+| 0x7B | 39 | 0x01 to 0x27 | acib 0x3bc14, from 0x3bc04 | 0x3c2c6 |
+| 0x7F | 34 | 0x01 to 0x22 | acib 0x3b3bc, from 0x3b372 | 0x3bf52 |
+
+What each space implements in this build:
+
+| escape | implemented | refused, on the shared stub |
+|---|---|---|
+| 0x7B | 0x01, 0x02, 0x0A to 0x11, 0x14 to 0x1C, 0x1F to 0x23, 0x25, 0x26, 0x27 | 0x03 to 0x09, 0x12, 0x13, 0x1D, 0x1E, 0x24 |
+| 0x7F | 0x01 to 0x07, 0x0B to 0x0D, 0x10, 0x11, 0x15 to 0x22 | 0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x12, 0x13, 0x14 |
+
+Extended opcode 0x02 of both spaces shares one handler, so the two spaces are not entirely
+separate. The two messages this document decodes are 0x7B/0x17 (section 6.2) and 0x7B/0x1C
+(section 6.5).
+
+Which of them this build **sends** is a different list, found by scanning every call of the
+send builder for the constants it passes [fw acib 0x3ad7c, the extended opcode in its third
+argument]: in the 0x7B space 0x01, 0x0A to 0x0F, 0x17, 0x18, 0x1B, 0x1C, 0x24, 0x26, 0x27 and
+0x28; in the 0x7F space 0x03, 0x04, 0x0C, 0x0D, 0x10, 0x11, 0x15, 0x16, 0x17, 0x19, 0x21,
+0x22, 0x23 and 0x26. Three senders compute their extended opcode at runtime, so that list is a
+floor, not a ceiling.
+
+**Two of those are messages the earbuds send and will not accept.** 0x7B/0x24, sent with an
+empty payload, is one of the twelve on the reject stub, and 0x7B/0x28, sent with a 26-byte
+payload, is past the end of the 39-entry table altogether. So the other end of a ULLA link
+implements extended opcodes these earbuds do not, which is the first thing in this firmware
+that says the peer is a larger implementation than the earbud. What those two carry is open.
+
 ## 6. Controller interface: HCI vendor commands
 
 The source's host starts the whole thing with vendor command **0xFE50** [fw acib table at
@@ -629,9 +665,8 @@ The same (index, first, length) shape is what command 0xFF8E takes from the host
 range it validates against is the band's channel count from section 6.3, so all three places
 agree on what a range means.
 
-For the record, the receive dispatch table of the 0x7B space has 39 entries [fw acib 0x3bc14],
-of which extended opcodes 0x03 to 0x09, 0x12, 0x13, 0x1D, 0x1E and 0x24 all land on one
-reject stub, so they are not implemented in this build.
+Where this message sits among the rest of its escape space, and which extended opcodes that
+space implements at all, is section 5.6.
 
 ## 7. The audio layer, and what is not known
 
