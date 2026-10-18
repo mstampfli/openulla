@@ -441,7 +441,9 @@ exactly one more than the bytes they write.
 receiver reads that offset too [fw acib 0x675f4 reads the body at +0, +4, +6, +7 and +8, and
 0x63488 hands it the body pointer directly]. So the byte the firmware takes for that field
 comes from whatever follows the PDU in its receive buffer. Send nine bytes, fill the two flag
-bytes at offsets 7 and 8, and do not expect a third flag byte to arrive.
+bytes at offsets 7 and 8, and do not expect a third flag byte to arrive. On the sending side
+that byte is real enough: the source's own sender fills it from its transition context, at the
+context's offset 0x10 [fw acib 0x685cc..0x685d2 and section 5.5].
 
 ### 5.2 Opcodes 0x74, 0x75 and 0x76, the messages after the setup
 
@@ -569,11 +571,27 @@ extra member at 0x82 is "already connected", which cannot happen to a secondary.
 with the checks, that is also what check 2 means: the object is not ready because a link
 already exists.
 
-### 5.5 What the sink does after accepting
+### 5.5 What each side does with the request
 
-It copies the parsed fields into its own context, forwards an identical 0x73 to the second
-link, and only sends the accepted PDU back once both links are ready [fw acib 0x677c8,
-0x303a8, 0x302f8].
+**The source.** The controller implements this role too, and the chain from the host's command
+to the bytes on the air is complete:
+
+1. 0xFE50 with its last parameter zero fills the transition context [fw acib 0x1dace..0x1db0a].
+2. The procedure's first state builds the PDU from that context and sends it
+   [fw acib 0x68588, the send at 0x685de]: the word at the context's +4 becomes the PDU's
+   32-bit field, the halfword at +8 its configuration word, and the bytes at +0xA, the low
+   byte of the word at +0xC and the byte at +0x10 become its three flag bytes, of which the
+   last is the one that falls outside the declared length (5.1). The transaction id comes from
+   the link's own byte at +0xE, which is where every sender in this family takes it from.
+3. When the peer accepts, the next state sends 0x74 with the two values its parameter table
+   returns [fw acib 0x685f8, the send at 0x6866c].
+
+So nothing about the source role is missing from the controller; what is missing in this build
+is a host that asks for it, which is the point 3.6 makes about the field that would.
+
+**The sink.** It copies the parsed fields into its own context, forwards an identical 0x73 to
+the second link [fw acib 0x303a8, the send at 0x30410], and only sends the accepted PDU back
+once both links are ready [fw acib 0x677c8, 0x302f8].
 
 ### 5.6 The two escape spaces, and which messages exist in them
 
