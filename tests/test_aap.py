@@ -94,3 +94,10 @@ def test_wrapper_length_must_match_its_payload():
     bad = aap.data_frame(aap.Opcode.WRAPPER, (0).to_bytes(4, "little") + b"\x08\x00" + b"\x01")
     with pytest.raises(ProtocolError):
         aap.parse_wrapper(aap.parse_frame(bad).body)
+
+
+def test_the_three_report_types():
+    assert aap.REPORT_TYPES == (0, 1, 2)
+    for report_type in aap.REPORT_TYPES:
+        report = aap.parse_report(bytes((report_type, 1, 0)) + b"data")
+        assert report.report_type == report_type

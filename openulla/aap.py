@@ -37,6 +37,7 @@ OPEN_REPLY_BODY_LENGTH = 14
 CLASS_ULLA_REPORTS = 0x00200000
 REPORT_SIZES = (185, 61)  # validated against 0xB9 and 0x3D [fw rkof 0x25baa, 0x25bec]
 REPORT_NOTIFICATIONS = (0xE910, 0xE911)  # the two ids those sizes belong to, in that order
+REPORT_TYPES = (0, 1, 2)  # one entry into the builder each [fw rkof 0x27f42, 0x27f38, 0x27e84]
 VERSION_PAIR_WIDE_CLASS = 0x00010001  # above this, the wrapper's class field is four bytes
 
 

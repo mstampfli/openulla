@@ -180,6 +180,11 @@ The report the host receives is [fw rkof 0x27e90, which zeroes a 185-byte buffer
 | 2 | 1 | the manager's field at its offset 0x20 |
 | 3 | .. | the data, and the wrapper's length is this plus three |
 
+There are **three report types, 0, 1 and 2**, each with its own entry into that builder, and
+each taking a descriptor whose halfword at +0 is the data length and whose word at +4 is the
+data [fw rkof 0x27f42, 0x27f38 and 0x27e84, which pass 0, 1 and 2 respectively]. What each
+type carries is not established.
+
 The same report goes to the **sibling** instead when no host session is open, with a four-byte
 header: a constant 4, then the type, then those same two bytes, sent as message 12 of section
 4 [fw rkof 0x27ef4..0x27f26]. What the manager's two fields mean was not established; its
