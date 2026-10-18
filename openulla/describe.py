@@ -113,7 +113,17 @@ def describe_lmp(data: bytes) -> list[str]:
             f"  flags 0x{parsed.flags:02x}, further flags 0x{parsed.extra_flags:02x}",
         ]
     elif isinstance(parsed, lmp.Configuration):
-        lines += [f"  the ULLA configuration: 0x{parsed.value32:08x}, 0x{parsed.value16:04x}"]
+        which = "0x74" if parsed.opcode == lmp.OPCODE_ULLA_CONFIG else "0x75"
+        lines += [
+            f"  the ULLA configuration ({which}): 0x{parsed.value32:08x}, 0x{parsed.value16:04x}"
+        ]
+        if parsed.would_be_dropped():
+            lines.append(
+                f"    0x75's receiver drops a halfword above "
+                f"{lmp.Configuration.MAX_VALUE16_FOR_75}"
+            )
+    elif isinstance(parsed, lmp.SessionBare):
+        lines += ["  the bare session message (0x76), header and nothing else"]
     elif isinstance(parsed, lmp.Accepted):
         lines += [f"  accepted, for opcode 0x{parsed.accepted_opcode:02x}"]
     elif isinstance(parsed, lmp.NotAccepted):

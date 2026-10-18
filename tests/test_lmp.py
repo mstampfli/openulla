@@ -156,3 +156,33 @@ def test_the_mode_procedure_gate_takes_either_of_its_two_bytes():
 def test_a_quirked_link_keeps_the_band_bit_in_what_it_advertises():
     assert lmp.FEATURE_REDUCED_LOW_BYTE & (1 << lmp.FEATURE_BIT_BANDS)
     assert not lmp.FEATURE_REDUCED_LOW_BYTE & (1 << lmp.FEATURE_BIT_MODE_PROCEDURE)
+
+
+def test_the_two_messages_that_follow_the_configuration():
+    """0x75 has 0x74's layout; 0x76 is the header alone. [protocol.md 5.2]"""
+    alt = lmp.Configuration(0x11223344, 0x1D4B, opcode=lmp.OPCODE_ULLA_CONFIG_ALT)
+    raw = alt.to_bytes()
+    assert raw == bytes.fromhex("ea 44 33 22 11 4b 1d")
+    assert len(raw) == lmp.Configuration.LENGTH
+    assert lmp.Configuration.from_bytes(raw) == alt
+    assert lmp.parse(raw).opcode == lmp.OPCODE_ULLA_CONFIG_ALT
+    bare = lmp.SessionBare(tid=1)
+    assert bare.to_bytes() == bytes((0x76 << 1 | 1,))
+    assert lmp.parse(bare.to_bytes()) == bare
+    with pytest.raises(ProtocolError):
+        lmp.SessionBare.from_bytes(bytes((0x76 << 1, 0x00)))
+
+
+def test_the_bound_that_0x75s_receiver_applies():
+    assert lmp.Configuration.MAX_VALUE16_FOR_75 == 7499
+    inside = lmp.Configuration(0, 7499, opcode=lmp.OPCODE_ULLA_CONFIG_ALT)
+    outside = lmp.Configuration(0, 7500, opcode=lmp.OPCODE_ULLA_CONFIG_ALT)
+    assert not inside.would_be_dropped()
+    assert outside.would_be_dropped()
+    # The bound belongs to 0x75 alone: 0x74's receiver checks nothing.
+    assert not lmp.Configuration(0, 0xFFFF).would_be_dropped()
+
+
+def test_an_opcode_that_is_not_a_configuration_is_refused():
+    with pytest.raises(ProtocolError):
+        lmp.Configuration(0, 0, opcode=0x77).to_bytes()

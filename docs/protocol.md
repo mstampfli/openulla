@@ -443,9 +443,9 @@ receiver reads that offset too [fw acib 0x675f4 reads the body at +0, +4, +6, +7
 comes from whatever follows the PDU in its receive buffer. Send nine bytes, fill the two flag
 bytes at offsets 7 and 8, and do not expect a third flag byte to arrive.
 
-### 5.2 Opcode 0x74, the configuration
+### 5.2 Opcodes 0x74, 0x75 and 0x76, the messages after the setup
 
-Total 7 bytes [fw acib 0x3a832]:
+**0x74, the configuration.** Total 7 bytes [fw acib 0x3a832]:
 
 | offset | size | meaning |
 |---|---|---|
@@ -456,6 +456,26 @@ Total 7 bytes [fw acib 0x3a832]:
 In the build examined, the two parameter getters for these ids are stubs that return nothing
 [fw acib 0xcf9ac, 0xcf9ae], so this firmware contributes zeroes for both. The receiver passes
 the two values straight to its session object with no checks of its own [fw acib 0x6352c].
+
+**0x75 has the same seven bytes.** It shares 0x74's case in the sender, so its layout is
+identical [fw acib 0x3a832 serves both opcodes], but its receiver is a different function and
+it does check [fw acib 0x3bb8a, handler 0x487a0]:
+
+- the halfword must be **at most 7499** (0x1D4B), and above that the message is dropped;
+- the session must be active: the state byte of the session object is 2 and a flag of it is
+  non-zero [fw acib 0x2f550];
+- the link's own role byte must be zero, so only one end may send it [fw acib 0x2f566];
+- the link type must resolve [fw acib 0x2f540].
+
+**0x76 is the header alone,** one byte with no body at all: its case in the sender leaves the
+length at the 1 the switch starts with [fw acib 0x3aaaa, the common exit]. Its receiver tests
+the first two of those conditions [fw acib 0x3b9de].
+
+All three of those accessors read one object, the controller's ULLA session
+[fw acib 0x100027cc, with the link at its +0xC], which is why these three are messages for a
+session that already exists while 0x73 is the one that creates it: 0x73's own checks look at
+different state entirely (5.4). What the values mean, and what either of 0x75 and 0x76 is for,
+is open.
 
 ### 5.3 Accept and reject
 

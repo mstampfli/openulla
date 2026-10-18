@@ -33,6 +33,8 @@ OPCODE_ACCEPTED = 3
 OPCODE_NOT_ACCEPTED = 4
 OPCODE_ULLA_SETUP = 0x73
 OPCODE_ULLA_CONFIG = 0x74
+OPCODE_ULLA_CONFIG_ALT = 0x75  # the same seven bytes, a different receiver
+OPCODE_ULLA_BARE = 0x76  # the header alone
 ESCAPE_FIRST = 0x7B  # the opcode from which an extended opcode byte follows
 ESCAPE_7B = 0x7B
 ESCAPE_7F = 0x7F
@@ -124,39 +126,76 @@ class SetupRequest:
 
 @dataclass(frozen=True)
 class Configuration:
-    """Opcode 0x74, two values read by id from the controller's parameter table.
+    """Opcodes 0x74 and 0x75, two values read by id from the controller's parameter table.
 
     In this build both getters are stubs that return nothing [fw acib 0xcf9ac, 0xcf9ae], so
-    this firmware sends zeroes; the receiver stores them without checking [fw acib 0x6352c].
+    this firmware sends zeroes. 0x74's receiver stores them without checking
+    [fw acib 0x6352c]; 0x75 has the same seven bytes, because the sender's case serves both
+    opcodes [fw acib 0x3a832], but its own receiver drops a halfword above 7499 and requires
+    an active session on the link whose role byte is zero [fw acib 0x487a0, 0x2f550, 0x2f566,
+    0x2f540]. What either message is for is open.
     """
 
     value32: int
     value16: int
     tid: int = 0
+    opcode: int = OPCODE_ULLA_CONFIG
 
     LENGTH = 7
+    MAX_VALUE16_FOR_75 = 0x1D4B  # the bound 0x75's receiver applies [fw acib 0x487ba]
 
     def to_bytes(self) -> bytes:
-        if not 0 <= self.value32 <= 0xFFFFFFFF or not 0 <= self.value16 <= 0xFFFF:
-            raise ProtocolError("configuration values are four and two bytes")
+        if self.opcode not in (OPCODE_ULLA_CONFIG, OPCODE_ULLA_CONFIG_ALT):
+            raise ProtocolError(f"0x{self.opcode:02x} is not one of the configuration opcodes")
         return (
-            bytes((header(OPCODE_ULLA_CONFIG, self.tid),))
-            + self.value32.to_bytes(4, "little")
-            + self.value16.to_bytes(2, "little")
+            bytes((header(self.opcode, self.tid),))
+            + octets.p32(self.value32, "value32")
+            + octets.p16(self.value16, "value16")
         )
+
+    def would_be_dropped(self) -> bool:
+        """Whether 0x75's own bound refuses this one. [fw acib 0x487ba]"""
+        return self.opcode == OPCODE_ULLA_CONFIG_ALT and self.value16 > self.MAX_VALUE16_FOR_75
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Configuration:
         head = parse_header(data)
-        if head.opcode != OPCODE_ULLA_CONFIG:
+        if head.opcode not in (OPCODE_ULLA_CONFIG, OPCODE_ULLA_CONFIG_ALT):
             raise ProtocolError(f"opcode 0x{head.opcode:02x} is not the configuration")
         if len(data) != cls.LENGTH:
             raise ProtocolError(f"the configuration is {cls.LENGTH} bytes, got {len(data)}")
         return cls(
-            value32=int.from_bytes(data[1:5], "little"),
-            value16=int.from_bytes(data[5:7], "little"),
+            value32=octets.u32(data, 1),
+            value16=octets.u16(data, 5),
             tid=head.tid,
+            opcode=head.opcode,
         )
+
+
+@dataclass(frozen=True)
+class SessionBare:
+    """Opcode 0x76: the header and nothing else. [fw acib 0x3aaaa sending, 0x3b9de receiving]
+
+    Its receiver takes it only while the session is active on a link whose role byte is zero,
+    the first two of the conditions 0x75 is held to [fw acib 0x2f550, 0x2f566]. What it means
+    is open.
+    """
+
+    tid: int = 0
+
+    LENGTH = 1
+
+    def to_bytes(self) -> bytes:
+        return bytes((header(OPCODE_ULLA_BARE, self.tid),))
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> SessionBare:
+        head = parse_header(data)
+        if head.opcode != OPCODE_ULLA_BARE:
+            raise ProtocolError(f"opcode 0x{head.opcode:02x} is not the bare session message")
+        if len(data) != cls.LENGTH:
+            raise ProtocolError(f"that message is one byte, got {len(data)}")
+        return cls(tid=head.tid)
 
 
 @dataclass(frozen=True)
@@ -388,8 +427,10 @@ def parse(data: bytes) -> object:
     head = parse_header(data)
     if head.opcode == OPCODE_ULLA_SETUP:
         return SetupRequest.from_bytes(data)
-    if head.opcode == OPCODE_ULLA_CONFIG:
+    if head.opcode in (OPCODE_ULLA_CONFIG, OPCODE_ULLA_CONFIG_ALT):
         return Configuration.from_bytes(data)
+    if head.opcode == OPCODE_ULLA_BARE:
+        return SessionBare.from_bytes(data)
     if head.opcode == OPCODE_ACCEPTED:
         return Accepted.from_bytes(data)
     if head.opcode == OPCODE_NOT_ACCEPTED:
