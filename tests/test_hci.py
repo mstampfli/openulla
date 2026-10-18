@@ -1,0 +1,89 @@
+"""The vendor commands, the refusals the firmware makes, and the mode-change event."""
+import pytest
+
+from openulla import hci
+from openulla.codes import Mode, RejectReason, Result
+from openulla.errors import ProtocolError
+
+
+def test_the_opcodes_are_the_vendor_group_and_the_command_ids_the_firmware_uses():
+    assert hci.vendor_opcode(0x250) == hci.OPCODE_ULLA_SETUP == 0xFE50
+    assert hci.vendor_opcode(0x379) == hci.OPCODE_ALLOWED_BANDS == 0xFF79
+    assert hci.vendor_opcode(0x37A) == hci.OPCODE_ALLOWED_BANDS_AGAIN == 0xFF7A
+    assert hci.vendor_opcode(0x392) == hci.OPCODE_COUNTRY_CODES == 0xFF92
+    assert hci.vendor_opcode(0x3B3) == hci.OPCODE_TEST_BAND_RANGE == 0xFFB3
+    assert hci.OPCODE_ULLA_SETUP >> 10 == hci.OGF_VENDOR
+
+
+def test_the_setup_command_has_seven_parameter_bytes_in_the_documented_order():
+    setup = hci.UllaSetup(handle=0x000B, extra_flags=0x02, config_word=0x0104, flags=0x0B)
+    assert setup.to_bytes() == bytes.fromhex("0b 00 02 04 01 0b 00")
+    assert setup.command() == bytes.fromhex("50 fe 07 0b 00 02 04 01 0b 00")
+    assert hci.UllaSetup.from_bytes(setup.to_bytes()) == setup
+    with pytest.raises(ProtocolError):
+        hci.UllaSetup.from_bytes(bytes(6))
+
+
+def test_the_h4_byte_is_added_only_when_asked():
+    assert hci.h4(hci.band_gate(True)) == bytes.fromhex("01 77 ff 01 01")
+
+
+def test_the_mask_commands_always_travel_as_a_pair():
+    first, second = hci.allowed_bands(0xF0)
+    assert first == bytes.fromhex("79 ff 01 f0")
+    assert second == bytes.fromhex("7a ff 01 f0")
+    assert first[3:] == second[3:]
+
+
+def test_the_masks_and_indexes_the_handlers_refuse():
+    with pytest.raises(ProtocolError):
+        hci.allowed_bands(0)
+    with pytest.raises(ProtocolError):
+        hci.allowed_bands(0b1000)
+    with pytest.raises(ProtocolError):
+        hci.set_link_band(0x0B, 9)
+    hci.set_link_band(0x0B, 8)  # eight means none
+    with pytest.raises(ProtocolError):
+        hci.country_code(8)
+    with pytest.raises(ProtocolError):
+        hci.country_codes([0, 8])
+    hci.country_codes([0, 0xFF])
+    with pytest.raises(ProtocolError):
+        hci.test_band_and_range(3, 0, 1)
+    with pytest.raises(ProtocolError):
+        hci.test_band_and_range(1, 13, 6)  # band 1 has five channels
+    assert hci.test_band_and_range(1, 13, 5) == bytes.fromhex("b3 ff 03 01 0d 05")
+
+
+def test_band_ranges_are_checked_against_the_band_table():
+    assert hci.band_ranges([(5, 29, 6)]) == bytes.fromhex("8e ff 04 01 05 1d 06")
+    with pytest.raises(ProtocolError):
+        hci.band_ranges([(5, 29, 7)])
+    with pytest.raises(ProtocolError):
+        hci.band_ranges([])
+
+
+def test_the_mode_change_event_is_seven_parameters_behind_the_event_id():
+    event = hci.ModeChangeEvent(handle=0x000B, mode=Mode.ULLA_ON, result=Result.SUCCESS,
+                                reason=RejectReason.NOT_APPLICABLE)
+    raw = event.to_bytes()
+    assert raw == bytes.fromhex("ff 07 00 0a 0b 00 01 00 ff")
+    assert raw[1] == hci.ModeChangeEvent.PARAM_LENGTH == 7
+    assert int.from_bytes(raw[2:4], "little") == hci.EVENT_ID_MODE_CHANGE
+    assert hci.ModeChangeEvent.from_bytes(raw) == event
+    assert event.describe() == "handle 0x000b ULLA_ON SUCCESS NOT_APPLICABLE"
+
+
+def test_a_rejection_keeps_the_peers_reason_byte():
+    event = hci.ModeChangeEvent(1, Mode.BT_ACL_ACTIVE, Result.SETUP_REJECTED_BY_PEER, 5)
+    assert "ILLEGAL_NUM_CONNECTIONS" in event.describe()
+    assert "INVALID_REASON" in hci.ModeChangeEvent(1, 0, 1, 2).describe()
+
+
+def test_an_event_whose_length_disagrees_with_itself_is_refused():
+    with pytest.raises(ProtocolError):
+        hci.ModeChangeEvent.from_bytes(bytes.fromhex("ff 06 00 0a 0b 00 01 00 ff"))
+    with pytest.raises(ProtocolError):
+        hci.ModeChangeEvent.from_bytes(bytes.fromhex("ff 05 09 0a 0b 00 01"))
+    with pytest.raises(ProtocolError):
+        hci.ModeChangeEvent.from_bytes(bytes.fromhex("3e 07 00 0a 0b 00 01 00 ff"))

@@ -81,6 +81,52 @@ The full field-by-field reference is [docs/protocol.md](docs/protocol.md); the
 measurements behind the transcript are in
 [docs/measurements.md](docs/measurements.md).
 
+## The implementation
+
+`openulla/` speaks every layer that has been recovered, in pure Python with no
+dependencies, and stops exactly where the recovery stops. Every constant,
+length and refusal in it cites the firmware address or the measurement that
+proves it; nothing is filled in. `tools/ulla_demo.py` runs a whole setup
+against a simulated earbud and prints every byte, so none of it needs hardware:
+
+```
+$ python3 tools/ulla_demo.py
+1. the host opens AAP service 4 on L2CAP PSM 0x1001
+  open request                       00 00 04 00 01 00 02 00 00 00 00 00 00 00 00 00
+     accessory version 1.3, status 0
+2. the host asks for a session with itself
+  start session, opcode 0x36         04 00 04 00 36 00 00
+  the bud asks its sibling           05 01 66 55 44 33 22 11 00
+     status reply 0x0000, manager now in WAIT_AUDIO_QUIESCE
+3. the host subscribes to the report classes
+  wrapper 0x17, class 0x00200000     04 00 04 00 17 00 00 00 20 00 04 00 00 00 00 00
+4. the local audio path quiesces, and the controller is told to change mode
+  HCI 0xFF77, band commands on       77 ff 01 01
+  HCI 0xFF79, mask 0xe6              79 ff 01 e6
+  HCI 0xFF7A, the same mask          7a ff 01 e6
+     that mask names bands (1, 2, 5, 6, 7)
+  HCI 0xFE50, start the transition   50 fe 07 0b 00 00 00 01 03 00
+5. controller to controller, on the existing ACL link
+  LMP source -> sink                 e6 00 00 00 00 00 01 03 00
+  LMP sink -> source                 06 73
+  vendor event 0xFF to the host      ff 07 00 0a 0b 00 01 00 ff
+     handle 0x000b ULLA_ON SUCCESS NOT_APPLICABLE
+6. the DSP's side, and the session is open
+     manager now in SESSION_OPEN
+7. the host starts the stream
+  start stream, opcode 0x38          04 00 04 00 38 00
+     manager now in STREAM_OPEN
+```
+
+Steps 1 to 3 are bytes a Linux laptop has really exchanged with real earbuds.
+From step 4 on, the simulator stands in for a Bluetooth controller, because
+those commands and PDUs have to come from one. `python3 -m pytest` runs 83
+tests that check the layouts against the measured frames and the firmware's own
+tables, including the band plan's four internal identities and the receiver that
+recomputes a count instead of trusting it. [docs/implementation.md](docs/implementation.md)
+says what the simulator does, what it refuses to invent, and why the last step
+cannot be done from a commodity host.
+
 ## Why this exists
 
 Spite, mostly.
@@ -239,6 +285,13 @@ link keys and other people's device addresses.
 
 ## Repository layout
 
+- `openulla/`: the implementation. Pure Python, no dependencies, every constant
+  citing the firmware address or the measurement that proves it. See
+  [docs/implementation.md](docs/implementation.md).
+- `tests/`: 83 tests over the layouts, the state machine, the band plan and a
+  whole simulated negotiation. `python3 -m pytest`.
+- `docs/implementation.md`: what the code covers, what the simulator refuses to
+  invent, and why the last step needs a controller that does not exist yet.
 - `docs/ulla.md`: the report; every claim cites a quote, a firmware address or
   a measurement.
 - `docs/protocol.md`: the setup protocol as a reference, for implementing it.
@@ -259,6 +312,9 @@ link keys and other people's device addresses.
   tuning map payload.
 - `tools/ulla_strings.sh`: pulls the ULLA, UTP and HDR identifiers out of a
   firmware image.
+- `tools/ulla_demo.py`: runs a whole setup against the simulated earbud and
+  prints every frame and PDU of it, with no hardware involved. `--reject`
+  makes the peer controller refuse at one of its four checks.
 - `tools/aap_probe.py`: speaks the accessory protocol to the earbuds over
   L2CAP. Opens the service, can ask them to start a ULLA session, subscribe to
   their report streams, or stop a session, and prints every frame that comes
@@ -274,6 +330,9 @@ link keys and other people's device addresses.
 ## Reproducing
 
 ```sh
+python3 -m pytest             # the implementation's own checks, no hardware needed
+python3 tools/ulla_demo.py    # a whole setup against the simulator, every byte of it
+
 tools/fetch_fcc.sh            # FCC exhibits -> fcc/*.pdf and fcc/*.txt (needs curl, pdftotext)
 tools/fetch_firmware.sh       # firmware -> firmware/ (needs curl, unzip, python3)
 python3 tools/uarp.py firmware/*/AssetData/Firmware.acsw/firmware.uarp list

@@ -7,3 +7,5 @@ fcc/*.pdf
 *.btsnoop
 *.strings
 __pycache__/
+.pytest_cache/
+*.egg-info/

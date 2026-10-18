@@ -1,0 +1,108 @@
+# The implementation
+
+`openulla/` is an independent implementation of the setup protocol described in
+[protocol.md](protocol.md). It speaks every layer that was recovered, and it stops exactly
+where the recovery stops. It needs nothing but Python 3.11 and the standard library.
+
+The rule the code obeys is the rule the documentation obeys: **every constant, every length
+and every refusal cites the firmware address or the measurement that proves it**, in the
+module docstring and beside the value. Where something is not established, the code does not
+fill it in; it says so, and the tests say so too.
+
+## What is in it
+
+| module | what it is |
+|---|---|
+| `aap.py` | the host interface: AAP service 4 on L2CAP PSM 0x1001, the open exchange, the commands of protocol.md 2.4, the status reply and the 0x17 wrapper |
+| `session.py` | the earbud's session manager: 17 states, 40 events, all 41 rows of the firmware's transition table, and the machine that walks them |
+| `sibling.py` | the earbud-to-earbud messages, including the reversed address order |
+| `lmp.py` | the link-manager PDUs: 0x73, 0x74, accepted, not accepted, and both escape messages |
+| `hci.py` | the vendor commands, the band command family and the mode-change event |
+| `bands.py` | the radio's band plan, the frequency function, and the rules that pick a band |
+| `codes.py` | the numbered values with the firmware's own names |
+| `controller.py` | each end of the link-manager exchange, with the responder's four checks |
+| `sink.py` | an earbud-shaped simulator |
+| `source.py` | what a host sends, and the vendor commands its controller would need |
+| `sim.py` | a whole negotiation with no hardware |
+| `transport.py` | a real L2CAP channel, or a pair of queues |
+
+## Running it
+
+```sh
+python3 -m pytest                  # 83 tests, no hardware, no dependencies
+python3 tools/ulla_demo.py         # the whole setup, every byte, against the simulator
+python3 tools/ulla_demo.py --reject busy    # and the same with the peer refusing
+```
+
+Against real earbuds, `tools/aap_probe.py` is the one that leaves the machine; everything
+else is offline.
+
+## What one run looks like
+
+```
+1. the host opens AAP service 4 on L2CAP PSM 0x1001
+  open request                       00 00 04 00 01 00 02 00 00 00 00 00 00 00 00 00
+     accessory version 1.3, status 0
+2. the host asks for a session with itself
+  start session, opcode 0x36         04 00 04 00 36 00 00
+  the bud asks its sibling           05 01 66 55 44 33 22 11 00
+     status reply 0x0000, manager now in WAIT_AUDIO_QUIESCE
+3. the host subscribes to the report classes
+  wrapper 0x17, class 0x00200000     04 00 04 00 17 00 00 00 20 00 04 00 00 00 00 00
+4. the local audio path quiesces, and the controller is told to change mode
+  HCI 0xFF77, band commands on       77 ff 01 01
+  HCI 0xFF79, mask 0xe6              79 ff 01 e6
+  HCI 0xFF7A, the same mask          7a ff 01 e6
+     that mask names bands (1, 2, 5, 6, 7)
+  HCI 0xFE50, start the transition   50 fe 07 0b 00 00 00 01 03 00
+5. controller to controller, on the existing ACL link
+  LMP source -> sink                 e6 00 00 00 00 00 01 03 00
+  LMP sink -> source                 06 73
+  vendor event 0xFF to the host      ff 07 00 0a 0b 00 01 00 ff
+     handle 0x000b ULLA_ON SUCCESS NOT_APPLICABLE
+6. the DSP's side, and the session is open
+     manager now in SESSION_OPEN
+7. the host starts the stream
+  start stream, opcode 0x38          04 00 04 00 38 00
+     manager now in STREAM_OPEN
+```
+
+The first three steps are the ones a Linux host has really done against real earbuds; the
+bytes above are the same bytes [measurements.md](measurements.md) records. From step 4 on the
+simulator stands in for hardware, because the vendor commands and the link-manager PDUs have
+to come from a Bluetooth controller that implements them.
+
+## What the simulator does and does not do
+
+`sink.Sink` answers the way the earbud answers wherever that is proven: the session belongs
+to the channel it arrives on and there are three such channels, the open reply carries
+accessory version 1.3, a start command is taken only while the manager is idle and ignored in
+silence otherwise, an earbud whose sibling transport is down answers status 0x1776 and stays
+idle, status 0 arrives once the manager reaches the state that waits for the local audio path,
+and the report subscription tells both the sibling and the local controller.
+
+It does not invent what was not recovered. A real earbud raises its own internal events as its
+DSP, its sibling and its controller get there; here those events are fed in explicitly, so a
+test states the order it wants rather than trusting a guess. The handlers' internals are not
+modelled: the machine takes a row's first branch unless a caller says otherwise, which is what
+the firmware's 0x1770 return value means. There is no audio path at all.
+
+## What it cannot do, and why
+
+The setup ends with the two controllers exchanging link-manager PDUs on their existing ACL
+link, and then the radio changes mode. Both halves are below the host interface:
+
+- A commodity Bluetooth controller does not expose a way to emit a vendor link-manager PDU,
+  and its firmware is signed, so the exchange of protocol.md section 5 cannot be driven from
+  a Linux host. `source.ControllerCommands` builds the vendor commands anyway, byte for byte,
+  for hardware that does expose them and for comparing against a capture.
+- The radio modes themselves are baseband, so they live in controller silicon. The standard
+  HCI packet-type mask has no bit for them, which is measured, not assumed:
+  [measurements.md](measurements.md) section 9.
+
+## Checking the constants yourself
+
+Every address in the docstrings is a byte offset into a payload of Apple's own published
+firmware, build 9A348, which `tools/fetch_firmware.sh` fetches and `tools/ftab.py` splits.
+No firmware and no disassembly is redistributed here, so the way to check a value is to
+extract the payload and read the address the comment names.
