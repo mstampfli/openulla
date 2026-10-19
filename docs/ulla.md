@@ -444,15 +444,19 @@ Not recovered, and not to be filled in until it is:
   codes, their slot counts, and the payload header's twelve-bit length field.
   What remains is produced by radio hardware
   programmed through registers, and the register semantics are not public. The
-  PHY payload `phyb` does carry about two dozen strings, which is worth stating
-  correctly: a build tag, one source path under `WxBtPhy/firmware/w3`, the fault
-  handlers, and digital-pre-distortion and analog-front-end logging. That is
-  transmit-chain calibration, not framing, so the conclusion stands while the
-  earlier wording ("no symbols or strings") does not. The payload's structure
-  now says the same thing independently of its strings: it is an ARMv7-M code
-  image for a third processor the firmware calls BTP, opening with an exception
-  vector table whose twenty-five device interrupts are thirteen unhandled stubs
-  and twelve handlers for the calibration blocks. Detail in
+  PHY payload `phyb` does carry strings, which is worth stating correctly: a
+  build tag, source paths under `WxBtPhy/firmware/w3` for more than one
+  component, the fault handlers, and digital-pre-distortion and
+  analog-front-end logging. That is transmit-chain calibration, not framing, so
+  the conclusion stands while the earlier wording ("no symbols or strings")
+  does not. The payload's structure now says the same thing independently of
+  its strings: it is M-profile ARM code, at least ARMv7-M, for a third
+  processor it calls BTP in its own diagnostics, opening with a 48-word
+  exception vector table whose thirty-two device interrupt slots hold
+  twenty-five entries, thirteen of them unhandled stubs and twelve handlers for
+  the calibration blocks. Two earlier descriptions of this payload were
+  narrower than the file: it has far more than "about two dozen" printable
+  strings, and more than one source path. Detail in
   [protocol.md](protocol.md) sections 7 and 7.4.
 - The audio codec. The DSP payload `sbd1` names none on this path.
 - Whether the audio payload is encrypted. The setup establishes no key material

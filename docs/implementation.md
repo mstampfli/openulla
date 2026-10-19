@@ -262,7 +262,7 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  the five paired procedures       5 senders choose between the two forms on bits [2, 5], the three power answers are one two-bit code five times, 9 pair immediates hold, 10 sequence gates, the TLV reply opens with type 0 carrying 0x5b
   PASS  prose-only citations             48 prose citations hold their instruction
   PASS  citations are instructions       775 acib citations, none of them a literal-pool word, with 1 allowed as data
-  PASS  the radio PHY image              41 vectors, every one a Thumb address, 11 reserved slots on one handler, vector 15 a tick counter, the reset handler writing MSP and PSP, and 13 of 25 IRQs a bare bx lr
+  PASS  the radio PHY image              a 48-word table ending at the info block with 41 live entries, 11 reserved slots on one handler and SVCall/PendSV on another, vector 15 a tick counter, msr of MSP, PSP and BASEPRI, '[BTP]: (version:' its own name, and of 25 populated IRQs 13 bare bx lr, 9 trampolines, 3 bodies
 33 of 33 claims hold
 ```
 

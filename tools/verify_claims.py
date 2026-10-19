@@ -342,23 +342,44 @@ DATA_CITATIONS = {
 # words are the ones that prompted the check, each with the instruction that loads it; they are
 # no longer cited anywhere, so they cannot be satisfied by the documents.
 LITERAL_CONTROLS = {0x14584: 0x14548, 0x4A3B4: 0x4A362}
-# phyb, the radio PHY payload: an ARMv7-M image for the core the firmware calls BTP [7.5].
+# phyb, the radio PHY payload: an M-profile image for the core it calls BTP [protocol.md 7.4].
 PHY_SIZE = 74240
-PHY_VECTORS = 41  # words 0 to 40; 41 onwards are zero
+# The table runs to the RTKit image-information block, so its length is 48 words and not the 41
+# where its non-zero entries stop. 16 system vectors then 32 device interrupts, which is also
+# all the code can address: it touches only the first register of each NVIC bank.
+PHY_VECTORS = 48
+PHY_LIVE_VECTORS = 41  # words 41 to 47 are empty
 PHY_FIRST_IRQ = 16  # the architecture's first device interrupt vector
-PHY_STUB_COUNT = 13  # of the 25 IRQ vectors, this many are a bare bx lr
+PHY_INFO_BLOCK = 0xC0  # where the table ends: the word 'uuid'
+PHY_INFO_MAGIC = 0x64697575  # 'uuid' little-endian
+PHY_STUB_COUNT = 13  # of the 25 populated IRQ vectors, this many are a bare bx lr
+PHY_TRAMPOLINES = 9  # and of the twelve that do something, this many are one b.w
+PHY_NVIC = (0x1C0, 0x1D0, 0x1E4)  # literals ISER0, ICER0, ICPR0: one register each, so 32 IRQs
 # Every reserved exception slot shares one handler, which is the signature of a vector table
-# rather than a list of numbers: 2 to 10 are the faults and reserved words, 12 and 13 likewise.
+# rather than a list of numbers. 12 is DebugMonitor rather than reserved, and shares it too.
 PHY_DEFAULT_SLOTS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13)
+PHY_SECOND_SLOTS = (11, 14)  # SVCall and PendSV, which share a different handler
 THUMB_BX_LR = 0x4770
 # Vector 15 is SysTick and its handler is five instructions: load a pointer from the literal
 # pool, load the word, add one, store it back, return.
 PHY_TICK_BODY = [0x6801, 0x3101, 0x6001, 0x4770]  # ldr r1,[r0]; adds r1,#1; str r1,[r0]; bx lr
 # The reset handler writes both stack pointers, which is why vector word 0 is zero. SYSm 8 is
-# MSP and 9 is PSP, and those special registers exist only on ARMv7-M and above.
+# MSP and 9 is PSP. These do NOT pin the architecture - ARMv6-M has both banked stack pointers
+# and the same MSR access with the same encodings - so they are checked as what they are, the
+# explanation for word 0, and the architecture rests on PHY_ARCH_MSR below.
 PHY_STACK_WRITES = ((0x5B5C, 0x08), (0x5B64, 0x09))
+# BASEPRI, which ARMv6-M does not have, so this one instruction is what makes the image at
+# least ARMv7-M. A previous version of this check rested that claim on MSP and PSP.
+PHY_ARCH_MSR = (0x172, 0x11)
 # The only two interrupts this image names in its own diagnostics, by IRQ number.
 PHY_NAMED_IRQS = ((16, "AFE_EL_CORR_DONE"), (20, "DPD_RAM_WR_AVAIL"))
+# And the image's own name for its owner, which is better evidence than the RTKitOS data words:
+# this one is loaded by an instruction.
+PHY_OWNER_LOAD = 0x58FE
+PHY_OWNER_TEXT = "[BTP]"
+# The floor on how much of the image is non-zero. The real payload is 42.7 per cent filled;
+# this is well below that and far above a file hollowed out to satisfy the targeted checks.
+PHY_MIN_FILLED = 0.25
 # 0x7B/0x14's three gates: the length, a link bit, and feature bit 0. [5.15]
 GATE_14_LENGTH = (0x3C02C, 0x2804)  # cmp r0, #4 on the whole PDU length
 GATE_14_LENGTH_ERROR = (0x3C31E, 0x2019)  # movs r0, #0x19
@@ -1939,48 +1960,108 @@ def check_instruction_citations(acib, rkof, ctab, sbd1, phyb):
 
 
 def check_phy_image(acib, rkof, ctab, sbd1, phyb):
-    """That the radio PHY payload is an ARMv7-M image, and its interrupt map. [7.5]
+    """That the radio PHY payload is an M-profile image, and its interrupt map. [7.4]
 
     This payload had no citation in these documents at all. It is not a block of coefficients:
-    it opens with a Cortex-M exception vector table and holds Thumb code, and the two facts
-    that identify it as that rather than as a table of numbers are checked here - vector 15's
-    handler is a tick counter, and the reset handler writes both stack pointers itself, which
-    is why the table's first word is zero where an initial stack pointer would sit.
+    it opens with a Cortex-M exception vector table and holds Thumb code.
+
+    Several of these were added after a refuter broke the first version. It passed on a file of
+    zeros carrying only the two hundred bytes it read; it rested the architecture on an MSR of
+    the stack pointers, which ARMv6-M has too, so the one claim it existed to defend was the
+    one it could not discriminate; it accepted an MSR encoding that was not an MSR at all; and
+    it read the table's length from where its entries stop rather than from where it ends.
     """
     if len(phyb) != PHY_SIZE:
         return False, f"phyb is {len(phyb)} bytes, not the {PHY_SIZE} of build 9A348"
+    # A whole-image anchor, because everything below is targeted and a file of zeros carrying
+    # only the six hundred-odd bytes those targets read would otherwise pass with the same
+    # summary line. A real code image of this kind is well under three quarters empty - this
+    # one is 57 per cent - so a floor on how much of it is non-zero costs nothing on a future
+    # build and refuses a hollowed-out file outright. A digest would refuse the future build
+    # too, which is the opposite of what this tool is for.
+    filled = sum(1 for byte in phyb if byte)
+    if filled < len(phyb) * PHY_MIN_FILLED:
+        return False, (
+            f"only {filled} of {len(phyb)} bytes are non-zero, under the {PHY_MIN_FILLED:.0%} "
+            "floor, so this is not a code image and nothing below would mean anything"
+        )
     vectors = [u32(phyb, 4 * i) for i in range(PHY_VECTORS)]
     if vectors[0] != 0:
-        return False, f"the first vector word is 0x{vectors[0]:x}, not the zero 7.5 explains"
-    for index, word in enumerate(vectors[1:], 1):
+        return False, f"the first vector word is 0x{vectors[0]:x}, not the zero 7.4 explains"
+    for index, word in enumerate(vectors[1:PHY_LIVE_VECTORS], 1):
         if not word & 1 or (word & ~1) >= len(phyb):
             return False, f"vector {index} is 0x{word:x}, not a Thumb address inside the image"
-    if any(u32(phyb, 4 * i) for i in range(PHY_VECTORS, PHY_VECTORS + 3)):
-        return False, f"the table does not stop at {PHY_VECTORS} words"
-    # The shared default handler is what makes this a vector table rather than a list: one
-    # target serves every reserved slot.
+    # The table's length is where it ends, which is the information block, not where its
+    # entries stop. Every word between the two has to be empty.
+    for index in range(PHY_LIVE_VECTORS, PHY_VECTORS):
+        if u32(phyb, 4 * index) != 0:
+            return False, f"vector {index} is not empty, so the table is not {PHY_VECTORS} words"
+    if u32(phyb, PHY_INFO_BLOCK) != PHY_INFO_MAGIC:
+        return False, f"0x{PHY_INFO_BLOCK:x} is not the information block the table ends at"
+    # Thirty-two interrupt slots is also all this code can address.
+    for where in PHY_NVIC:
+        if u32(phyb, where) & 0xFFFFF000 != 0xE000E000:
+            return False, f"0x{where:x} is no longer an NVIC register literal"
+    # The shared handlers are what make this a vector table rather than a list: one target
+    # serves every reserved slot, and a second serves SVCall and PendSV.
     shared = {vectors[i] for i in PHY_DEFAULT_SLOTS}
     if len(shared) != 1:
         return False, f"the reserved slots no longer share one handler: {shared}"
+    second = {vectors[i] for i in PHY_SECOND_SLOTS}
+    if len(second) != 1:
+        return False, f"SVCall and PendSV no longer share one handler: {second}"
+    if second == shared:
+        return False, "SVCall and PendSV now share the default handler, so they are not a pair"
     # Vector 15 is SysTick, and its handler increments a counter through a literal and returns.
     tick = vectors[15] & ~1
     if literal_word(phyb, tick) is None:
         return False, f"0x{tick:x} does not open by loading a literal"
     if [u16(phyb, tick + off) for off in (2, 4, 6, 8)] != PHY_TICK_BODY:
         return False, f"0x{tick:x} is no longer a counter increment and return"
-    # The reset handler writes MSP and PSP, which is the other half of the first word being 0.
-    for where, special in PHY_STACK_WRITES:
+    # The reset handler writes MSP and PSP, which is the other half of the first word being 0,
+    # and the architecture rests on its write of BASEPRI, which ARMv6-M has no such register
+    # for. Each is checked as a whole MSR encoding: the first version tested the low byte of
+    # the second halfword and nothing else, so a second halfword of 0x0808 - not an MSR at all
+    # - passed as "msr MSP", and so did a first halfword naming the program counter.
+    for where, special in (*PHY_STACK_WRITES, PHY_ARCH_MSR):
         first, second = u16(phyb, where), u16(phyb, where + 2)
-        if first & 0xFFF0 != 0xF380 or second & 0xFF != special:
+        register = first & 0xF
+        if (first & 0xFFF0 != 0xF380 or second & 0xFF00 != 0x8800
+                or second & 0xFF != special or register > 12):
             return False, (
                 f"0x{where:x} is {first:04x} {second:04x}, not an msr of special register "
-                f"0x{special:x}"
+                f"0x{special:x} from a general register"
             )
-    stubs = [i for i in range(PHY_FIRST_IRQ, PHY_VECTORS)
-             if u16(phyb, vectors[i] & ~1) == THUMB_BX_LR]
+    # Only the populated slots are classified; the seven empty ones hold no address at all.
+    populated = range(PHY_FIRST_IRQ, PHY_LIVE_VECTORS)
+    stubs, trampolines, bodies = [], [], []
+    for index in populated:
+        target = vectors[index] & ~1
+        first, second = u16(phyb, target), u16(phyb, target + 2)
+        if first == THUMB_BX_LR:
+            stubs.append(index)
+        elif first & 0xF800 == 0xF000 and second & 0xD000 == 0x9000:
+            trampolines.append(index)
+        else:
+            bodies.append(index)
     if len(stubs) != PHY_STUB_COUNT:
         return False, f"{len(stubs)} of the IRQ vectors are bare bx lr, not {PHY_STUB_COUNT}"
-    # The two interrupts whose own handler names them, which is how 7.5 can name them at all.
+    if len(trampolines) != PHY_TRAMPOLINES:
+        return False, (
+            f"{len(trampolines)} of the implemented handlers are a single b.w, not "
+            f"{PHY_TRAMPOLINES}; the bodies are {bodies}"
+        )
+    # The image's own name for its owner, loaded by an instruction rather than read out of a
+    # data word in another payload.
+    owner = literal_word(phyb, PHY_OWNER_LOAD)
+    if owner is None or owner >= len(phyb):
+        return False, f"0x{PHY_OWNER_LOAD:x} no longer loads a literal inside the image"
+    owner_text = phyb[owner:owner + 32].split(b"\x00")[0].decode("latin-1").strip()
+    if PHY_OWNER_TEXT not in owner_text:
+        return False, (
+            f"0x{PHY_OWNER_LOAD:x} loads {owner_text!r}, which does not name {PHY_OWNER_TEXT}"
+        )
+    # The two interrupts whose own handler names them, which is how 7.4 can name them at all.
     for irq, text in PHY_NAMED_IRQS:
         handler = vectors[PHY_FIRST_IRQ + irq] & ~1
         found = None
@@ -1993,9 +2074,11 @@ def check_phy_image(acib, rkof, ctab, sbd1, phyb):
         if found is None or text not in found:
             return False, f"IRQ {irq}'s handler no longer names {text!r}, it reads {found!r}"
     return True, (
-        f"{PHY_VECTORS} vectors, every one a Thumb address, {len(PHY_DEFAULT_SLOTS)} reserved "
-        f"slots on one handler, vector 15 a tick counter, the reset handler writing MSP and "
-        f"PSP, and {len(stubs)} of {PHY_VECTORS - PHY_FIRST_IRQ} IRQs a bare bx lr"
+        f"a {PHY_VECTORS}-word table ending at the info block with {PHY_LIVE_VECTORS} live "
+        f"entries, {len(PHY_DEFAULT_SLOTS)} reserved slots on one handler and SVCall/PendSV on "
+        f"another, vector 15 a tick counter, msr of MSP, PSP and BASEPRI, {owner_text!r} its "
+        f"own name, and of {len(list(populated))} populated IRQs {len(stubs)} bare bx lr, "
+        f"{len(trampolines)} trampolines, {len(bodies)} bodies"
     )
 
 

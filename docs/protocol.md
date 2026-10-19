@@ -2942,47 +2942,86 @@ constant that particular message would have printed is still unreachable.
 ### 7.4 The radio PHY payload, and why it does not hold the air format
 
 This payload had no citation anywhere in these documents, so what it is was worth establishing
-rather than assuming. **It is not a block of coefficients: it is an ARMv7-M code image.** The
-firmware's own table of payload tags gives its owner a name, pairing `phyb` with **BTP** where
-it pairs `acib` with BTM and `aopf` with AOP [fw rkof the tag at 0x1dd2aa, its name at
-0x1dd2af, the pointer that reaches the tag at 0x1f0d08]. So there is a third processor in this
-device beyond the controller and the DSP, and this is its image.
+rather than assuming. **It is not a block of coefficients: it is M-profile ARM code, at least
+ARMv7-M, and the image names its own owner.** A diagnostic string in it reads `[BTP]: (version:
+`, loaded by an instruction in its own body [fw phyb the load at 0x58fe, whose literal is the
+string at 0x87c5]. The RTKitOS image agrees from the outside, holding `phyb` and `BTP` as
+adjacent strings the way it holds `acib` and `BTM`, with a descriptor that carries the RAM
+window 0x4D28_0000 that every address this image touches falls inside [fw rkof the tag at
+0x1dd2aa, its name at 0x1dd2af, the descriptor word at 0x1f0cc4; these are data words, and
+nothing in that image references the descriptors, so the outside evidence is a data layout and
+the image's own string is what carries the claim]. So there is a third processor in this device
+beyond the controller and the DSP, and this is its image.
 
-**The first 0xA4 bytes are an exception vector table**, which is what identifies the
-architecture. Forty-one words, every one after the first an odd address inside the image, and
-the forty-second onwards zero. Three things make it a vector table rather than a list of
-numbers:
+**The first 0xC0 bytes are an exception vector table.** It ends exactly where the RTKit image
+information block begins, at the word `uuid` [fw phyb 0xc0], so the table is **48 words**: the
+architecture's sixteen system vectors and **32 device interrupts**. Thirty-two is also what the
+code can address, because its interrupt handling only ever touches the first of each NVIC
+register bank, one 32-bit register each [fw phyb the literals 0xE000E100 at 0x1c0, 0xE000E180
+at 0x1d0 and 0xE000E280 at 0x1e4]. Forty-one of the 48 words are non-zero and the last seven
+are empty, so **25 of the 32 interrupt slots are populated**. An earlier version of this
+section called the table 41 words, which is where its non-zero entries stop and not its length.
 
-- **The reserved slots share one handler.** Words 2 to 10 and 12 to 13 all hold one address,
-  and words 11 and 14 hold a second. That is the shape a default handler makes.
+Three things make it a vector table rather than a list of numbers, and the third is the one
+that settles it:
+
+- **The reserved slots share one handler.** Words 2 to 10, 12 and 13 all hold one address, and
+  words 11 and 14 hold a second. That is the shape a default handler makes.
 - **Word 15's handler is a tick counter.** It loads a pointer from its own literal pool, loads
   the word, adds one, stores it back and returns, in five instructions [fw phyb 0x434 the
-  literal load, 0x436, 0x438, 0x43a and 0x43c]. Word 15 is where the architecture puts SysTick.
-- **The first word is zero where an initial stack pointer belongs, and the reset handler
-  explains it.** Instead of taking a stack pointer from the table, the reset handler loads two
-  values and writes them to the special registers itself, `msr MSP` then `msr PSP` [fw phyb
-  0x5b5c and 0x5b64]. Those two special registers exist only on ARMv7-M and above, and the
-  image uses Thumb-2 wide encodings throughout, so the core is an M-profile one of at least
-  that version, not an ARMv6-M.
+  literal load, 0x436, 0x438, 0x43a and 0x43c]. Word 15 is where the architecture puts SysTick,
+  and the same function programs the SysTick registers through the literal 0xE000E010 [fw phyb
+  the load at 0x468].
+- **Both shared handlers test the exception-return value**, which only an exception handler
+  receives: each begins by testing bit 2 of the link register to find which stack the frame is
+  on [fw phyb 0x5bc2 in the first, 0x5c04 in the second]. The first then dumps registers and
+  spins, which is a fault handler; the second saves and restores a context and writes PSP, which
+  is a scheduler, so words 11 and 14 are SVCall and PendSV. Nothing but an exception vector
+  reaches code that reads EXC_RETURN.
 
-**Twenty-five of the forty-one are device interrupts, and thirteen of those are a bare `bx
-lr`.** So the PHY declares nearly twice the interrupt sources it handles. Of the twelve that do
-something, ten reach their work through a one-instruction trampoline, and **two name themselves
-in their own diagnostics**: IRQ 16 is `AFE_EL_CORR_DONE` and IRQ 20 is `DPD_RAM_WR_AVAIL`
-[fw phyb the vector at 0x80 and its handler at 0xcbc, the vector at 0x90 and its handler at
-0xc98, each loading its text from its own literal]. AFE is the analog front end and DPD is
-digital pre-distortion, which is what the rest of the image is about.
+**The first word is zero where an initial stack pointer belongs**, and the reset handler
+explains it: instead of taking one from the table it loads two values and writes them itself,
+`msr MSP` then `msr PSP` [fw phyb 0x5b5c and 0x5b64]. That pair does **not** pin the
+architecture, and an earlier version of this section claimed it did: ARMv6-M has both banked
+stack pointers and the same MSR access to them with the same encodings, so the argument did not
+discriminate at all. What does pin it, in the same instruction family: `msr BASEPRI` [fw phyb
+0x172, whose SYSm field is 0x11], a register ARMv6-M does not have. The image also conditionally
+saves the upper floating-point registers in its fault path, under an `it` block, neither of
+which exists below ARMv7-M [fw phyb 0x5bd4 the test of the exception-return value's bit 4,
+0x5bd8 the condition, 0x5bda the save]. Nothing in the image excludes ARMv8-M, so "at least
+ARMv7-M" is as far as this goes.
+
+**Thirteen of the 25 populated interrupt slots are a bare `bx lr`.** So the PHY declares
+roughly twice the interrupt sources it handles. Of the twelve that do something, **nine reach
+their work through a one-instruction trampoline and three have a body of their own**; an
+earlier version of this section said ten and two. Two of the three bodies **name themselves in
+their own diagnostics**: IRQ 16 is `AFE_EL_CORR_DONE` and IRQ 20 is `DPD_RAM_WR_AVAIL` [fw phyb
+the vector at 0x80 and its handler at 0xcbc, the vector at 0x90 and its handler at 0xc98, each
+loading its text from its own literal]. AFE is the analog front end and DPD is digital
+pre-distortion, which is what the rest of the image is about. The third body, IRQ 5, is the
+cleanest proof that these slots really are numbered from word 16: it ends by calling a helper
+that sets bit *5* in NVIC's interrupt-clear-enable register, which is this vector's index minus
+sixteen [fw phyb 0x29e loading 5, 0x2a2 the call, and in the helper 0x1c4 the shift and the
+store through the literal 0xE000E180].
 
 **And that is the point for anyone hoping this payload holds the air format: it does not.** Its
-own build string names the component it was compiled from, `WxBtPhy/firmware/w3/mac.c`, and its
-diagnostics name what it manages: the PLL and AGC lock states, RSSI readings, per-band transmit
-power tables with a system-configuration block that carries a version and a checksum, and the
-DPD actuation and test paths. That is transmit-chain calibration and MAC housekeeping. The
-modulation and the symbol-level framing are in the radio hardware the registers drive, and no
-payload in this build describes them, which is the same conclusion
+own diagnostics name what it manages: the PLL and AGC lock states, RSSI readings, per-band
+transmit power tables with a system-configuration block that carries a version and a checksum,
+and the DPD actuation and test paths. That is transmit-chain calibration and MAC housekeeping,
+and the assert and log sites name more than one component of `WxBtPhy/firmware/w3` - `mac.c`
+and `exception.c` among them - rather than the single file an earlier version of this paragraph
+attributed the whole image to, which had also mistaken those `__FILE__` strings for a build
+string; the build tag is a separate short string, and the RTKit version is another. **The
+register sequences are not here either**, which is the strongest form of this conclusion: the
+startup path hands two RAM regions to a walker that requires a record magic of 0x4E56, so the
+modem and radio-sequence tables arrive from outside this image and it is only the path they
+travel [fw phyb 0x4f36 and 0x4f44 passing the two regions, 0x50d2 the magic the walker
+demands]. The modulation and the symbol-level framing are in the radio hardware those registers
+drive, and no payload in this build describes them, which is the same conclusion
 [ulla.md](ulla.md) reached from the strings alone and now rests on the image's structure.
-`tools/verify_claims.py` re-derives the vector table, the tick handler, both stack-pointer
-writes, the stub count and both interrupt names.
+`tools/verify_claims.py` re-derives the vector table's extent, the tick handler, the
+architecture instruction, both stack-pointer writes, the two shared handlers, the stub and body
+counts and both interrupt names.
 
 ## 8. What an implementation can do today
 
