@@ -1570,14 +1570,31 @@ Once the mode change succeeds the radio carries the audio. The parts that are es
   the byte being 0x11 and handed to a formatter, so the firmware prints its own ULLA version
   as text [fw sbd1 0x9d338 to 0x9d350].
 - That version is a field of the node, at its offset 0x2bc, and it is exposed on the node's
-  property interface: property id 0x259 reads it, and id 0x25a copies out a 56-byte block
-  assembled from ten other fields of the same node [fw sbd1 0x9d0dc the getter's switch,
-  0x9d0fc..0x9d14c the copy]. Every access to the version field in the image is a read, so it
-  arrives from outside the DSP.
+  property interface. That interface's switch answers **three** ids, not two
+  [fw sbd1 0x9d0dc]:
+
+  | id | what it returns | length |
+  |---|---|---|
+  | 0x258 | the node's word at +0x2E8 | 4 |
+  | 0x259 | the version byte's word at +0x2BC | 4 |
+  | 0x25A | a block assembled from ten other fields | 0x38 |
+
+  The block's own layout is readable, source to destination: +0x2C8 as eight bytes to its
+  start, then +0x2D0 and +0x2D4 as words, then +0x2D8 as sixteen bytes, then +0x2F0, +0x2F4,
+  +0x2F8, +0x2FC, +0x2A0 and +0x300 as words, ending at 0x38
+  [fw sbd1 0x9d0fc to 0x9d14c, the length set at 0x9d14c]. Every access to the version field
+  in the image is a read, so it arrives from outside the DSP, and so does everything this
+  interface hands back: the three ids are getters with no setter among them.
 - It has a dedicated routine for version 1.1, and that routine's name is in the image, passed
   as a label to a log call in its own body: **`processBufferUllav11`** [fw sbd1 0x9e070, the
   name at 0x9e078]. The per-frame path branches on the same version before looking at a
-  per-link mask and a frame counter [fw sbd1 0x9e4f8].
+  per-link mask and a frame counter [fw sbd1 0x9e4f8]. Three things there are readable: the
+  1.0 branch needs a second value to be exactly **4** as well as the version to be 0x10, a
+  word taken from the buffer is shifted right by a variable amount and masked with the node's
+  field at +0x2C4, and then **bits 1 and 2** of what remains steer two different paths
+  [fw sbd1 0x9e504 to 0x9e528]. Two bits again: the version-1.1 routine's own dispatch is
+  four-way on two bits as well, which is an observation about where the structure sits rather
+  than a reading of what it means.
 
   One correction while naming these: an earlier reading of this section cited a second address
   for "frames and subframes per version", and that one is **not** the ULLA node. It is
