@@ -3,8 +3,8 @@
 The responder's decision is four checks in a fixed order, each with its own reason, read from
 the receiver itself [fw acib 0x675f4]:
 
-  1  a feature-enabled byte      [fw acib 0x62074]  fails -> reason 1
-  2  an object-ready call        [fw acib 0x62030]  fails -> reason 2
+  1  the module's enable byte    [fw acib 0x62074]  fails -> reason 1
+  2  the role's slot +0xB0       [fw acib 0x62030]  fails -> reason 2
   3  a busy flag                 [fw acib 0x62154]  set   -> reason 3
   4  link state, role and count  [fw acib 0x620c8]  returns the reason in its low nibble:
                                  0 to pass, 6 when the link is absent or its state byte is not

@@ -555,8 +555,12 @@ the program counter; being one entry out makes 0x73 and 0x74 look swapped.
 
 Four checks, in order, each with its own reason [fw acib 0x675f4]:
 
-1. a feature-enabled byte [fw acib 0x62074]
-2. an object-ready call through the session's function table [fw acib 0x62030]
+1. **is the ULLA module enabled**: the byte at the module block's +0, which the function that
+   installs the role tables sets to 1 [fw acib 0x62074 reading it, 0x62424 setting it]
+2. an object-ready call through the role's own slot at the block's +0xB0, which answers yes
+   when the module is disabled, so check 1 is always the one that fails first
+   [fw acib 0x62030, the two implementations 0x635bc and 0x66e70 installed at 0x62438
+   and 0x62458]
 3. a busy flag [fw acib 0x62154]
 4. link state, role and link count [fw acib 0x620c8]: the link must be in the expected state
    with a particular flag clear, and depending on role either the sibling's link must also be
@@ -572,8 +576,8 @@ nibble [fw acib 0x67654, which clears the nibble and adds the number]:
 
 | check | what it reads | nibble when it fails | on the air |
 |---|---|---|---|
-| 1 | a feature-enabled byte [fw acib 0x62074] | 1 | 0x81 |
-| 2 | object ready, through the session's function table [fw acib 0x62030] | 2 | 0x82 |
+| 1 | the module's enable byte [fw acib 0x62074] | 1 | 0x81 |
+| 2 | object ready, through the role's slot +0xB0 [fw acib 0x62030] | 2 | 0x82 |
 | 3 | a busy flag [fw acib 0x62154] | 3 | 0x83 |
 | 4 | link state, role and link count [fw acib 0x620c8] | 4, 5 or 6 | 0x84, 0x85, 0x86 |
 
@@ -886,6 +890,17 @@ traced here.
 | 7 | acib 0x66fe8 | the first callback state 5 registered |
 | 8 | acib 0x67028 | the second callback state 5 registered |
 | 9 | acib 0x684fc, slot +0xD8 | the teardown's last step |
+
+**The module keeps a phase of its own** beside this machine, a word at its block's +0x84, and
+the numbers are worth having because other code tests them: **2** while the setup transaction
+runs, **3** once ULLA is on, **5** while the teardown runs, and **0** when it is off
+[fw acib 0x66da0 setting 2 before the first entry, 0x66d64 setting 5 before the second, and
+0x66e24 setting 3 or 0]. That last one is reached through the module's slot +0xB8, and it is
+called from every place that reports a mode to the host, with the same value the host is told:
+the three machines' reporting states pass the mode they are about to report, and the two
+refusal paths pass zero [fw acib 0x62058 called at 0x687cc for the source, 0x67a3e for the
+sink, 0x68154 for the third role, and 0x67820 and 0x68496 for the refusals]. So the phase and
+the host's mode never disagree, and 6.6's "is the link up" test is this phase reading 3.
 
 So the machine has two entry points, one per half. The first sets the state to 0 and posts
 event 0, after putting the link into mode 0x35 [fw acib 0x6842c]. The second sets the state to
@@ -1440,8 +1455,11 @@ the note: its handler reads none, although the manager sends four zero bytes wit
 0xFE58 all begin with the same gate chain [fw acib 0x1dd88, 0x1de62, 0x1dde4, 0x1d900,
 0x1d952, all through 0x1dfe0]:
 
-1. a device predicate [fw acib 0x62044]. When it holds, the handler takes a path of its own
-   that does not involve the session object at all.
+1. **whether the link is already up** [fw acib 0x62044, which asks the role's own slot at the
+   module block's +0xB4]. A source's implementation of that slot answers by comparing the
+   module's phase with 3 [fw acib 0x66e5c], and a responder's compares a second field with 2
+   [fw acib 0x635d0]. When it holds, the handler takes a path of its own that does not involve
+   the session object at all.
 2. otherwise the session has to be **active**: the state byte 2 with a flag set, which is
    exactly the check 0x75's receiver makes [fw acib 0x2f550]. If it is not, the command
    completes with **0x0C**, command disallowed.
