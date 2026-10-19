@@ -5,6 +5,8 @@ fcc/*.pdf
 *.uarp
 *.bin
 *.btsnoop
+*.pklg
+captures/
 *.strings
 __pycache__/
 .pytest_cache/

@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-10-18-m1-airpods-established-session",
+  "observation_date": "2026-10-18",
+  "contributor": "dberweger2017",
+  "setup": {
+    "host_model": "MacBookPro17,1",
+    "soc": "Apple M1",
+    "macos_version": "27.2",
+    "macos_build": "26B5091g",
+    "bluetooth_controller": "Broadcom BCM_4378",
+    "controller_transport": "PCIe",
+    "controller_firmware": "24.1.548.4084",
+    "accessory_model": "AirPods Pro 2 (USB-C)",
+    "accessory_product_id": "0x2027",
+    "accessory_firmware": "9A348",
+    "packetlogger_version": "26.0.0"
+  },
+  "provenance": {
+    "issue_comment": "https://github.com/mstampfli/openulla/issues/3#issuecomment-6253991655",
+    "parameter_followup": "https://github.com/mstampfli/openulla/issues/3#issuecomment-6266962214",
+    "raw_capture_included": false,
+    "raw_capture_sha256": "b17596ca24b86873941b9e377e11ffd84e982e6fd5d489d1a66df069801dd08f",
+    "raw_capture_bytes": 551026,
+    "record_numbering": "one-based indexes in the private PacketLogger file",
+    "time_reference": "milliseconds relative to the first record; not UTC"
+  },
+  "capture": {
+    "record_types": {
+      "acl_received": 379,
+      "acl_sent": 5523,
+      "config": 34,
+      "hci_command": 854,
+      "hci_event": 7097,
+      "note": 10,
+      "sco_received": 2374,
+      "sco_sent": 2352
+    },
+    "vendor_commands": {
+      "0xFC1C": 1,
+      "0xFC57": 8,
+      "0xFCE2": 22,
+      "0xFCE9": 345,
+      "0xFD02": 1,
+      "0xFD4A": 68,
+      "0xFD4B": 68,
+      "0xFD4D": 136,
+      "0xFDC1": 2,
+      "0xFDDD": 13,
+      "0xFDE4": 5,
+      "0xFE2D": 13
+    },
+    "vendor_command_responses": {
+      "0xFC1C": 1,
+      "0xFC57": 8,
+      "0xFCE2": 22,
+      "0xFCE9": 345,
+      "0xFD02": 1,
+      "0xFD4A": 68,
+      "0xFD4B": 68,
+      "0xFD4D": 136,
+      "0xFDC1": 2,
+      "0xFDDD": 13,
+      "0xFDE4": 5,
+      "0xFE2D": 13
+    },
+    "unclassified_vendor_events_by_payload_length": {
+      "180": 193,
+      "25": 194,
+      "65": 84
+    },
+    "records": 18623,
+    "timestamp_span_ms": 453392.97,
+    "packetlogger_error_items": 17
+  },
+  "selected_command_observations": {
+    "0xFD02": {
+      "count": 1,
+      "record": 15789,
+      "relative_ms": 417780.0,
+      "parameter_length": 5,
+      "first_parameter_hex": "00",
+      "response": {
+        "record": 15790,
+        "event": "Command Complete",
+        "event_code": "0x0E",
+        "status_hex": "00",
+        "delay_ms": 3.0
+      }
+    },
+    "0xFD4B": {
+      "count": 68,
+      "parameter_length_counts": {
+        "33": 68
+      },
+      "nearest_record": 16684,
+      "nearest_relative_to_fd02_ms": 11108.0
+    },
+    "requested_opcode_counts": {
+      "0xFD02": 1,
+      "0xFD4B": 68,
+      "0xFDEE": 0,
+      "0xFD7C": 0,
+      "0xFD7D": 0,
+      "0xFD5F": 0,
+      "0xFE50": 0,
+      "0xFF77": 0,
+      "0xFF78": 0,
+      "0xFF79": 0,
+      "0xFF7A": 0,
+      "0xFF7C": 0,
+      "0xFF8E": 0,
+      "0xFF92": 0,
+      "0xFD31": 0,
+      "0xFFB3": 0
+    }
+  },
+  "lmp_observation": {
+    "dedicated_records": 0,
+    "wireshark_dissected_packets": 0,
+    "interpretation": "No captured/dissected LMP; does not establish absence of over-the-air LMP."
+  },
+  "controlled_windows": [
+    {
+      "phase": "stereo_builtin_input",
+      "window_seconds": 41.81,
+      "active_client": "Sound settings input meter",
+      "active_input": "built-in microphone",
+      "airpods_output_rate_hz": 48000,
+      "record_count": 3192,
+      "record_types": {
+        "acl_received": 45,
+        "acl_sent": 1401,
+        "hci_command": 110,
+        "hci_event": 1636
+      }
+    },
+    {
+      "phase": "airpods_input",
+      "window_seconds": 37.299,
+      "active_client": "Sound settings input meter",
+      "active_input": "AirPods microphone",
+      "airpods_output_rate_hz": 24000,
+      "record_count": 5157,
+      "record_types": {
+        "acl_received": 119,
+        "acl_sent": 160,
+        "hci_command": 86,
+        "hci_event": 379,
+        "sco_received": 2205,
+        "sco_sent": 2208
+      }
+    },
+    {
+      "phase": "stereo_restored_builtin_input",
+      "window_seconds": 30.005,
+      "active_client": "Sound settings input meter",
+      "active_input": "built-in microphone",
+      "airpods_output_rate_hz": 48000,
+      "record_count": 2598,
+      "record_types": {
+        "acl_received": 42,
+        "acl_sent": 891,
+        "hci_command": 165,
+        "hci_event": 1187,
+        "sco_received": 169,
+        "sco_sent": 144
+      }
+    }
+  ],
+  "synchronous_connection": {
+    "completion_record": 10672,
+    "event_code": "0x2C",
+    "status_hex": "00",
+    "link_type": 2,
+    "link_type_name": "eSCO",
+    "airpods_peer_matched_locally": true
+  },
+  "interpretation_limits": [
+    "Counts include controller-wide traffic, not only the AirPods.",
+    "Opcode meanings in the Mac Broadcom firmware are not established by the earbud firmware.",
+    "Missing commands do not establish lack of ULLA support.",
+    "PacketLogger error items remain uninvestigated; parsing does not establish capture completeness.",
+    "Raw captures are private; public readers cannot independently reproduce the extraction from these summaries alone."
+  ]
+}
