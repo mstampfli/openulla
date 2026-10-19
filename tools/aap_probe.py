@@ -111,6 +111,75 @@ def drain(transport, seconds, label):
     return got
 
 
+def predictions():
+    """The mode bytes to try, and what each answer would mean. [protocol.md 2.4, 6, 5.9]
+
+    The control runs first for the same reason tools/ulla_probe.py sends an opcode nobody
+    implements first: without it, silence cannot be told from refusal.
+    """
+    return [
+        (0, "the control: the documented path, which a real pair answers with status 0"),
+        (2, "the lite mode has a name and a value in the firmware; whether a host may ask "
+            "for it is not established"),
+        (7, "nothing validates this byte and neither name table bounds its index, so the "
+            "prediction is that it is accepted exactly like 0"),
+    ]
+
+
+def open_channel(args, wait, ver_a, ver_b):
+    """One fresh channel with the service open on it, because a start needs an idle manager.
+
+    Closing the channel resets the earbud's session state [protocol.md 2.4, measurements 3],
+    so each prediction gets its own channel or the second start is ignored in silence and
+    reads as a refusal when it is only a busy manager.
+    """
+    if args.simulate:
+        transport = SinkTransport(Sink(), DEFAULT_PEER)
+    else:
+        transport = L2capTransport.connect(args.device)
+    transport.send(aap.open_request(aap.SERVICE_ULLA, ver_a, ver_b))
+    drain(transport, wait, "open")
+    return transport
+
+
+def run_predictions(args, wait, ver_a, ver_b):
+    """Try each mode byte on its own channel and say what the answers mean together."""
+    answers = {}
+    for mode, meaning in predictions():
+        print("\n== mode %d: %s" % (mode, meaning))
+        try:
+            transport = open_channel(args, wait, ver_a, ver_b)
+        except OSError as exc:
+            print("  connect failed: %s" % exc)
+            return 1
+        command = aap.start_session(mode)
+        print("  -> start ULLA session, mode %d: %s" % (mode, command.hex(" ")))
+        transport.send(command)
+        got = drain(transport, wait if args.simulate else max(wait, 4.0), "mode%d" % mode)
+        answers[mode] = got
+        transport.close()
+
+    control = answers.get(0, 0)
+    print("\nthe control answered with %d frame(s)." % control)
+    if not control:
+        print("Nothing came back for mode 0 either, so this run says nothing about the other "
+              "two: either no pair is connected, or the earbud's own app and sibling had not "
+              "got there yet. Against --simulate that is expected, because the simulator does "
+              "not raise the earbud's internal events; tools/ulla_demo.py is the one that "
+              "walks a whole session.")
+        return 0
+    for mode, _ in predictions()[1:]:
+        if answers[mode] == control:
+            print("  mode %d was answered exactly like the control, so it is accepted." % mode)
+        elif answers[mode] == 0:
+            print("  mode %d got nothing while the control was answered: that byte IS "
+                  "validated somewhere this project has not found." % mode)
+        else:
+            print("  mode %d answered differently from the control, which is the interesting "
+                  "case: report the frames above." % mode)
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", help="AirPods address, AA:BB:CC:DD:EE:FF")
@@ -126,6 +195,9 @@ def main():
     ap.add_argument("--seq", help="comma list of commands to send in one channel: "
                                   "start, start:MODE, subscribe, subscribe:CLASS, "
                                   "stream-start, stream-stop or stop")
+    ap.add_argument("--predict", action="store_true",
+                    help="run the mode-byte predictions, each on its own channel, control "
+                         "first (changes the earbud's state and resets it again)")
     args = ap.parse_args()
     if not args.simulate:
         if not args.device:
@@ -139,6 +211,11 @@ def main():
     # The simulator answers inside the send, so the only wait it needs is enough for the
     # drain loop to take what is already queued.
     wait = 0.05 if args.simulate else args.wait
+
+    if args.predict:
+        where = "openulla.sink" if args.simulate else args.device
+        print("running the mode-byte predictions against %s, each on its own channel" % where)
+        return run_predictions(args, wait, ver_a, ver_b)
 
     if args.simulate:
         transport = SinkTransport(Sink(), DEFAULT_PEER)

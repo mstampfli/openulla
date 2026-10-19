@@ -488,6 +488,9 @@ link keys and other people's device addresses.
   L2CAP. Opens the service, can ask them to start a ULLA session, subscribe to
   their report streams, or stop a session, and prints every frame that comes
   back. Every constant in it cites the firmware address that proves it.
+  `--predict` runs the mode-byte predictions, each on its own channel because a
+  start is only taken while the manager is idle, control first so that silence
+  can be told from a refusal.
 - `tools/bt_link_state.py`: prints what is actually established for a device,
   the kernel's own link handles beside the transports and the profile, because
   a profile name is not evidence of a link.

@@ -174,3 +174,54 @@ def test_the_probe_names_every_status_it_can_print():
     assert "success" in ulla_probe.read(0x00)
     assert "COMMAND_DISALLOWED" in ulla_probe.read(0x0C)
     assert "unnamed" in ulla_probe.read(0xEE)
+
+
+def test_the_mode_predictions_read_their_own_answers_correctly(capsys, monkeypatch):
+    """The verdict logic, driven through every branch: the run itself needs earbuds."""
+    import aap_probe
+
+    class Args:
+        simulate = True
+        device = None
+
+    def answers(counts):
+        order = iter(counts)
+
+        def fake_drain(transport, seconds, label):
+            return 0 if label == "open" else next(order)
+
+        return fake_drain
+
+    # Control answered, and both exotic modes answered the same way: accepted.
+    monkeypatch.setattr(aap_probe, "drain", answers([1, 1, 1]))
+    assert aap_probe.run_predictions(Args(), 0.01, 1, 2) == 0
+    printed = capsys.readouterr().out
+    # The verdict sentence, not the prediction's own wording, which also says "accepted".
+    assert printed.count("so it is accepted.") == 2
+
+    # Control answered, one mode silent: that byte is validated after all.
+    monkeypatch.setattr(aap_probe, "drain", answers([1, 0, 1]))
+    aap_probe.run_predictions(Args(), 0.01, 1, 2)
+    printed = capsys.readouterr().out
+    assert "IS validated somewhere" in printed
+
+    # Control answered, one mode answered differently: the interesting case.
+    monkeypatch.setattr(aap_probe, "drain", answers([1, 1, 3]))
+    aap_probe.run_predictions(Args(), 0.01, 1, 2)
+    assert "the interesting case" in capsys.readouterr().out
+
+    # No control: the run says nothing about the others rather than guessing.
+    monkeypatch.setattr(aap_probe, "drain", answers([0, 0, 0]))
+    aap_probe.run_predictions(Args(), 0.01, 1, 2)
+    assert "says nothing about the other two" in capsys.readouterr().out
+
+
+def test_the_predictions_are_control_first_and_cover_the_published_modes():
+    import aap_probe
+
+    from openulla.codes import Mode
+
+    modes = [mode for mode, _ in aap_probe.predictions()]
+    assert modes[0] == 0, "the control has to run first or silence cannot be read"
+    assert int(Mode.ULLA_LITE_ON) in modes, "the lite mode is one of the three the firmware names"
+    assert any(m not in set(int(x) for x in Mode) for m in modes), "no out-of-range byte tried"
