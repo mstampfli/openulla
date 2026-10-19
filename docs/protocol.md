@@ -1697,7 +1697,17 @@ document already names:
 
 That is a real constraint on an implementation and not a detail: **the band messages are refused
 unless the link is in procedure 0x2F**, whatever the feature bits say, and 6.1's command family
-is a separate gate again. The other 31 numbers belong to procedures this document does not name;
+is a separate gate again.
+
+**And this is where 0x24 comes from, which is worth knowing before you debug one.** One function
+is the last thing called before that refusal: it takes the link and the PDU, reads the link's
+procedure number and its +0x80, and logs them together with the PDU's own opcode, choosing a
+richer format for an opcode of 0x7B or above [fw acib 0x3f858 to 0x3f884]. It is called at
+**37 sites, and 30 of them load 0x24 in the very next instruction**. The specification's name
+for 0x24 is LMP PDU Not Allowed, which `openulla/codes.py` already uses, and the mechanism says
+what it means in practice here: **a PDU that earns 0x24 arrived in the wrong procedure, not with
+the wrong bytes.** An implementation that gets 0x24 should look at what procedure the link is
+running, not at its own encoding. The other 31 numbers belong to procedures this document does not name;
 the collision checks are where they surface, and each message's check lists the procedures it
 conflicts with. 0x7B/0x1F's does so for 0x3A, 0x09 and 0x1C, answering 0x23 and 0x2A, the two
 transaction-collision codes [fw acib 0x2113c, 0x21140, 0x2115a, 0x2115e, 0x21162]; the

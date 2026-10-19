@@ -124,4 +124,8 @@ class HciError(IntEnum):
     UNSUPPORTED_FEATURE = 0x11
     INVALID_PARAMETERS = 0x12
     REPEATED_ATTEMPTS = 0x17
+    # The specification's name. What earns it here is arriving in the wrong procedure rather
+    # than being malformed: one logger prints the link's procedure number and the PDU's opcode
+    # and 30 of its 37 call sites refuse with this in the next instruction [fw acib 0x3f858;
+    # docs/protocol.md 5.15].
     LMP_PDU_NOT_ALLOWED = 0x24
