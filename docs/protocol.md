@@ -1655,7 +1655,8 @@ attributed to an arm that merely sits before it.
 | 0x1C | 0x3bfc2 | 0x29b38 | the band ranges (6.5) |
 | 0x1F | 0x3c070 | 0x2111c | a fourteen-byte body (5.7), unmapped |
 | 0x20, 0x21 | 0x3c294, 0x3bff4 | 0x21c44, 0x21fc8 | a halfword pair, both gated on the link's +0x185 reading 0xF0 [fw acib 0x21c4e, 0x21fdc] |
-| 0x22, 0x23, 0x25, 0x26 | 0x3c058, 0x3c016, 0x3c0e2, 0x3c00e | 0x309c4, 0x3173c, 0x31e58, 0x32064 | four neighbouring functions, each handed the raw PDU, unmapped |
+| 0x22, 0x23, 0x25 | 0x3c058, 0x3c016, 0x3c0e2 | 0x309c4, 0x3173c, 0x31e58 | neighbouring functions handed the raw PDU, unmapped |
+| 0x26 | 0x3c00e | 0x32064 | read as a byte, a word at +1 and a byte at +5, below |
 | 0x27 | 0x3c2b8 | none | logs and joins the common exit |
 
 The consumers cluster, and the clusters are modules rather than coincidence: 0x2919c, 0x29318
@@ -1684,15 +1685,26 @@ the path the arm falls through, which is not the same as no consumer; 0x14 is th
 difference shows. The arms whose consumer is given were followed along that path on purpose,
 because a scan that follows branches cannot tell which arm it has wandered into.
 
-**0x22, 0x23, 0x25 and 0x26 resisted the same approach, and the reason is worth recording.**
-Their four consumers are neighbours and all four read the same two globals, which looked like a
+**0x26 is read as three fields, and it is gated on a global rather than on the link.** Its
+consumer wants the byte at 0x1000329C+1 to read 2 and the one at +4 to read 6, and otherwise
+logs and returns without touching the message [fw acib 0x32082 to 0x3209a]. Past that it reads
+the body as **a byte whose low nibble it keeps, a word at +1 and a byte at +5** [fw acib
+0x320a4, 0x320aa, 0x320ae, 0x320b6]. That is six bytes, which matches the eight-byte total 5.7
+gives, but 5.7's *transmit* layout for the same message is a word and a halfword: the same
+length split into different fields each way, which 5.7 already warns of in general and this is
+an instance of.
+
+**0x22, 0x23 and 0x25 resisted the same approach, and the reason is worth recording.** Their
+consumers are neighbours of 0x26's and all four read the same two globals, which looked like a
 module until the globals were counted: 0x1000329C is referenced 206 times in this payload and
 the hardware aperture three of them read is referenced 142 times. Shared use of the most-used
-addresses in an image is not evidence of anything, so nothing is claimed from it. What is left
-is one real asymmetry, and it is this document's own: **0x22, 0x23 and 0x25 have no builder at
-all** (5.7), so they are messages this end accepts and never sends, while 0x26 has one. That
-belongs with the observation 5.6 already makes about 0x24 and 0x28, and points the same way:
-the other end of this link implements more of the space than the earbud does.
+addresses in an image is not evidence of anything, so nothing is claimed from it, and following
+their fields needs each consumer read by hand rather than scanned, because the pointer is moved
+between registers and reassigned. What is left is one real asymmetry, and it is this document's
+own: **0x22, 0x23 and 0x25 have no builder at all** (5.7), so they are messages this end accepts
+and never sends, while 0x26 has one. That belongs with the observation 5.6 already makes about
+0x24 and 0x28, and points the same way: the other end of this link implements more of the space
+than the earbud does.
 
 **0x15 and 0x16 are a band request and its answer.** 0x15's consumer replies with escape 0x7B
 extended opcode **0x16** [fw acib 0x29a2a, 0x29a2c]. 0x16's consumer requires the same 0x2F and
