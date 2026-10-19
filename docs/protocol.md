@@ -782,7 +782,17 @@ Two of those rows matter for anyone driving this from a host. The band family ne
 and **the mode procedure needs 0xFDF3**: bit 6 is in the 0x56 group, so without that command
 the controller's own half of 0xFE50's gate is zero and the non-zero path is refused (6, and
 the gate at acib 0x1db5e). 0xFF78 says the same thing from the other side by refusing outright
-while bit 5 is clear [fw acib 0x19348]. The 0xA9 and 0x56 masks are complementary, so that
+while bit 5 is clear [fw acib 0x19348].
+
+The earbud sets its own bit 5 the same way, through its manager's queued sender: a one-byte
+call that sends command id 0x377 [fw rkof 0x249b4, the send at 0x249d0], reached from the
+diagnostic CLI's `control_ubo` and from a configuration path that enables it when bit 5 of a
+configuration word is set [fw rkof 0x663fc and 0x8a3fc]. Nothing in either image sends
+0xFDF3, and that fits what bit 6 gates: only 0xFE50's non-zero path, which this build's own
+manager never takes (3.6 and 6). So the earbud enables what it uses and leaves the rest, and a
+source has to enable the rest itself.
+
+The 0xA9 and 0x56 masks are complementary, so that
 byte really is two groups of four bits, and the identity check below reduces an advertised copy
 to the first group. The three other opcodes in that table were resolved the same way as
 0xFDF3, by finding the handler the store belongs to and reading its key [fw acib handler table
