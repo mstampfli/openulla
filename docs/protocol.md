@@ -1737,8 +1737,15 @@ the audio graph reads from. Both sides of that transfer are named; only its cont
 establishes no key material (section 5.4), but whether the radio keeps applying the ordinary
 link cipher after the mode change is a hardware question these files cannot answer.
 
-**[open] The maximum ULLA packet size.** The firmware carries a message about it, but only
-through a numbered trace mechanism whose text table ships separately.
+**[open] The maximum ULLA packet size.** The firmware carries a message about it - it is one of
+the entries in the format-string table of 5.9 - but nothing in the image references that entry,
+so the constant behind it is not reachable. Two things that look like the answer are not, and
+they were checked rather than left to tempt the next reader: the only two comparisons against
+0x400 anywhere in the audio transmit path test bits 8 to 15 of a word for the value 4, not a
+length against 1024 [fw acib 0xdae42 and 0xdaf82, both masking with 0xFF00 first], and the one
+comparison against 8000 there is a signed threshold on a computed value rather than a size
+[fw acib 0xda0c4]. What 7.2 does give is a hard bound of a different kind: a ten-bit length
+field, so no single buffer above 1023 bytes.
 
 ## 8. What an implementation can do today
 
