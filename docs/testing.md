@@ -11,8 +11,8 @@ about which:
 | if you have | you can answer | you cannot answer |
 |---|---|---|
 | an Apple host that drives the link (Vision Pro, possibly a Mac) | whether anything other than a Vision Pro drives it, with what parameters, and whether "HRB" is this protocol | nothing about non-Apple sources |
-| a Bluetooth controller whose firmware you can patch | whether the **negotiation** completes from non-Apple silicon, and what the earbuds answer when it does not | whether audio follows: the HDR radio modes are not in commodity silicon, so the mode change cannot succeed there |
-| a wideband software radio | what the air format actually is | anything about the host or controller interfaces |
+| a Nexus 5 or a CYW920735Q60EVB-01, the two parts that can inject these opcodes (section 2) | whether the **negotiation** completes from non-Apple silicon, and what the earbuds answer when it does not | whether audio follows: the HDR radio modes are not in commodity silicon, so the mode change cannot succeed there |
+| a software radio with 20 MHz of bandwidth reaching 5.2 and 5.8 GHz | what the air format actually is, out of the one packet in four that lands in its window | anything about the host or controller interfaces |
 | no hardware at all | whether this project's own bytes and tables are right | anything new about the device |
 
 A result that contradicts what is written here is as valuable as one that confirms it, and a
@@ -44,8 +44,8 @@ ends advertise. Then the vendor command's parameters against the ones the earbud
 sends (6.0). Then the band mask and the per-band channel ranges (6.2, 6.5).
 
 **What each outcome means.** If the band-change command is **0xFE50** with the seven-byte
-parameter shape of section 6 — a connection handle, a flag byte, a two-byte configuration word,
-a flag byte, a mode byte — then HRB is this protocol and the question is settled. If it is a
+parameter shape of section 6 (a connection handle, a flag byte, a two-byte configuration word,
+a flag byte, a mode byte) then HRB is this protocol and the question is settled. If it is a
 different vendor opcode, the question is settled the other way, which is just as useful.
 
 **What not to do.** Do not try to answer this by asking the earbuds from a second host while an
@@ -58,7 +58,7 @@ outcomes apart ([measurements.md](measurements.md) section 8).
 
 **The question.** Can the link-manager exchange of protocol.md section 5 be driven from
 non-Apple silicon, and what do the earbuds answer when it is? The exchange needs **no key and no
-challenge of any kind** — that is established from the firmware, and it is why this is worth
+challenge of any kind**, which is established from the firmware, and it is why this is worth
 trying at all.
 
 Be clear about the ceiling before you start: commodity controllers do not implement Apple's HDR
@@ -76,9 +76,9 @@ It sends an opcode nobody implements first, learns your controller's blanket ref
 then reads the real answers against it. That control is not optional: an Intel AX211 answers
 **0x0C to every unimplemented vendor opcode**, which is the same code section 6.6 documents for
 a session command whose gate fails, so "it refused with 0x0C" is not evidence of anything by
-itself (measurements.md section 10). The two discriminators are the **event** — the firmware
+itself (measurements.md section 10). The two discriminators are the **event** (the firmware
 answers these commands with Command Complete carrying its own status byte, an unimplementing
-controller with Command Status — and **command 0xFE55**, whose word is bounded to the signed
+controller with Command Status) and **command 0xFE55**, whose word is bounded to the signed
 range -800 to +800 and answers 0x11 outside it, giving three distinguishable outcomes instead
 of two.
 
@@ -88,21 +88,73 @@ anything else.
 **Then the exchange itself.** `openulla/` builds every PDU in the order a source must send them
 (protocol.md 8.1), and `tools/ulla_sink.py` answers as an earbud on a real L2CAP channel, so the
 host half of an implementation can be exercised before it touches earbuds. What to report: the
-earbuds' answer to the setup request — accepted, or which of the refusal reasons of 5.4, since
+earbuds' answer to the setup request: accepted, or which of the refusal reasons of 5.4, since
 the receiver's four checks and their codes are documented and one of them (0x24) is a code the
 firmware's own formatter cannot even name.
 
-Whether any current chip is supported by InternalBlue-class tooling is **unverified here**; that
-is part of what a contributor with one would be telling us.
+**Which parts can actually send these PDUs.** The setup request is LMP opcode 0x73 and the
+extended PDUs ride escape 0x7B (protocol.md 5.1, 5.7). Neither is a standard LMP opcode, and the
+opcode and length check sits in the *controller firmware*, not in the host tool: InternalBlue
+offers "arbitrary valid LMP messages (opcode and length must be standard compliant)", while its
+`fuzzlmp` "installs a hook to sendlmp that skips checking opcodes and lengths inside firmware"
+(`doc/features.md` and `internalblue/cli.py` in seemoo-lab/internalblue). That hook,
+`FUZZLMP_ASM_CODE`, is defined for exactly two firmware targets in that tree:
+
+| target | chip | devices |
+|---|---|---|
+| `fw_0x6109` | BCM4335C0 | Nexus 5, Xperia Z3 Compact, Galaxy Note 3, LG G4 |
+| `fw_0x4208` | CYW20735B1 | CYW920735Q60EVB-01 evaluation board |
+
+Plain `sendlmp` is defined for those plus `fw_0x240f` (BCM4358A3: Nexus 6P, Galaxy S6), but
+plain is not enough for these opcodes. The one further firmware constraint that tree names is the
+32-byte buffer from `lm_allocLmpBlock`; the longest PDU documented here is eleven bytes
+([interop/vectors.txt](../interop/vectors.txt)), so every one of them fits with room to spare.
+
+Two caveats on what you would see. Monitoring LMP needs that project's Android H4 driver patch,
+which its own feature list says "still needs to be integrated into BlueZ", so a rooted Nexus 5
+is the configuration that both injects and sees the earbuds' reply, while from Linux you would
+be injecting half-blind, with only the mode-change vendor event of section 6.0 coming back over
+HCI. And that project notes Broadcom disabled `Write_RAM` on chips from about 2020, so newer
+silicon is worse for this, not better.
 
 ## 3. A software radio: the air format
 
 The air format is the largest thing still open, and the firmware cannot answer it:
-protocol.md section 7 says why. The link hops 79 channels at Bluetooth timing, so capturing the
-whole band and un-hopping in software is the realistic approach rather than chasing hops. The
-modulation and packet family are known from Apple's own FCC measurements — pi/4 DQPSK in
-DH5-shaped five-slot packets at 4 and 8 Mbit/s (ulla.md 2.3, 2.4) — so a capture has a known
-shape to match against.
+protocol.md section 7 says why. The modulation and packet family are known from Apple's own FCC
+measurements, pi/4 DQPSK in DH5-shaped five-slot packets at 4 and 8 Mbit/s (ulla.md 2.3, 2.4),
+so a capture has a known shape to match against.
+
+**You do not need to cover the whole band.** 79 channels across the 88 MHz of 5157 to 5245 MHz
+is about 1 MHz of spacing, so a 20 MHz capture holds roughly twenty of them, and a five-slot
+packet stays on one hop frequency for its whole duration, so about one packet in four lands in
+the window intact. Recovering a format needs many whole packets, not every packet. The
+assumption to check first is that a multi-slot packet keeps one frequency as it does in standard
+Bluetooth, which is unverified for this link.
+
+**And you may not need the 5 GHz bands at all.** Apple declares HDR4 and HDR8 in the ordinary
+2.4 GHz band as well, and measured them there (ulla.md 2.3); a contributor observed an Apple N1
+Mac sending exactly those packets to these earbuds in ordinary use (ulla.md section 8). The same
+DH5-shaped family carries ULLA's audio, so capturing HDR at 2.4 GHz from an Apple host is the
+cheapest route to the packet format, and it needs no ULLA session and no Vision Pro.
+
+**Why not the Wi-Fi radio of a combo chip?** Three separate things block it and none of them is
+firmware. A Wi-Fi transmitter is handed bits, not samples: the OFDM encoder is hardware and
+there is no arbitrary-waveform path, so it cannot produce GFSK or pi/4 DQPSK at all. It cannot
+hop 79 channels at a 625 us slot rate, because retuning takes orders of magnitude longer and the
+MAC holds no hop sequence. And it arbitrates by CSMA with backoff rather than acting as a
+slotted slave to another device's clock. The Bluetooth core of the same module cannot stand in
+for it either: that core's synthesiser and filters are 2.4 GHz parts, which is silicon and not
+firmware. What a patched Wi-Fi radio might still be good for is listening, since spectral-scan
+bins would show energy and burst timing in these bands without demodulating anything, but that
+is unverified here.
+
+**And why a patched Bluetooth controller cannot carry HDR in either band.** Apple's own
+measurements put HDR4 at 2.557 to 2.559 MHz occupied and HDR8 at 5.072 to 5.101 MHz (ulla.md
+2.3), against Bluetooth's 1 MHz channel spacing; and 4 and 8 Mbit/s of pi/4 DQPSK is 2 and 4
+Msym/s, which is arithmetic on Apple's own declared rate and modulation, against the 1 Msym/s a
+standard controller clocks. A modem's symbol rate and channel filters are hardware. This is the
+same wall as the band plan, and it is why a negotiation that succeeds on patched silicon is
+expected to be followed by silence rather than audio.
 
 ## 4. No hardware: check our bytes
 

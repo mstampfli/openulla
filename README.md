@@ -351,8 +351,8 @@ settle, what to run, and what each outcome would mean. The short version:
 | if you have | the one thing to do |
 |---|---|
 | an Apple host that drives the link (Vision Pro, possibly a Mac) | capture HCI **across a connection setup**, not a steady stream, and look for a seven-byte 0xFE50 |
-| a controller whose firmware you can patch | `sudo python3 tools/ulla_probe.py` first, then drive the setup exchange of section 5 and report what the earbuds answer |
-| a wideband software radio | capture the whole band and un-hop in software; the modulation and packet family are known |
+| a Nexus 5 or a CYW920735Q60EVB-01, the two parts that can inject these opcodes | `sudo python3 tools/ulla_probe.py` first, then drive the setup exchange of section 5 and report what the earbuds answer |
+| a software radio with 20 MHz of bandwidth | capture a slice, not the whole band: one packet in four lands in it whole, and HDR is in the 2.4 GHz band too |
 | no hardware at all | implement a layer against [interop/](interop/) and report a mismatch |
 
 Three things worth knowing before you spend time on it, all of them learned the
