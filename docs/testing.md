@@ -149,10 +149,12 @@ bins would show energy and burst timing in these bands without demodulating anyt
 is unverified here.
 
 **And why a patched Bluetooth controller cannot carry HDR in either band.** Apple's own
-measurements put HDR4 at 2.557 to 2.559 MHz occupied and HDR8 at 5.072 to 5.101 MHz (ulla.md
-2.3), against Bluetooth's 1 MHz channel spacing; and 4 and 8 Mbit/s of pi/4 DQPSK is 2 and 4
-Msym/s, which is arithmetic on Apple's own declared rate and modulation, against the 1 Msym/s a
-standard controller clocks. A modem's symbol rate and channel filters are hardware. This is the
+measurements settle it, because one of its reports measures all three modes with one instrument:
+1.248 to 1.252 MHz for ordinary DH5, 2.776 to 2.800 for 4-DH5 and 5.340 to 5.355 for 8-DH5
+(ulla.md 2.4). HDR is two and four times the channel width of the Bluetooth packet it is named
+after. The symbol rate follows from Apple's own declared rate and modulation: 4 and 8 Mbit/s of
+pi/4 DQPSK is 2 and 4 Msym/s, against the 1 Msym/s a standard controller clocks. A modem's
+symbol rate and channel filters are hardware. This is the
 same wall as the band plan, and it is why a negotiation that succeeds on patched silicon is
 expected to be followed by silence rather than audio.
 
