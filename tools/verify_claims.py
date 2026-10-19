@@ -411,6 +411,17 @@ STREAM_CODE_INDEX = (
     (0x11D97E, 0x11D9CE, "ullt", 4),
 )
 STREAM_CODE_ERROR = (0x11D9AE, 0xE00002C2)  # what an unknown code answers
+# The proxy is a node in a property framework: a 35-slot virtual table bracketed by zero words,
+# of which it implements three. Two of those three are a pair handling one property.
+PROXY_VTABLE = (0x1CFE14, 35)
+PROXY_VTABLE_BRACKETS = (0x1CFE0C, 0x1CFE10, 0x1CFEA0)  # offset-to-top, typeinfo, and the end
+PROXY_SLOTS = ((6, 0x121658), (18, 0x12165C), (19, 0x1216E0))
+PROXY_PROPERTY = 0x190
+# (where, the halfword pair) for `cmp.w r1, #0x190` in each of the pair's two methods.
+PROXY_PROPERTY_TESTS = ((0x12166A, 0xF5B1, 0x7FC8), (0x1216EE, 0xF5B1, 0x7FC8))
+# Each refuses a buffer of seven or fewer; the second states the transfer length outright.
+PROXY_LENGTH_TESTS = ((0x121672, 0x2907), (0x1216F4, 0x2B07))
+PROXY_TRANSFER = (0x121700, 0x2208)  # movs r2, #8
 LINK_AUDIO_NAMES = (
     (0x1E4BCB, "HeadsetSequenceManager.cpp", 0x118D62),
     (0x1E4C53, "encConfig", 0x119180),
@@ -2180,6 +2191,29 @@ def check_the_codec_question(acib, rkof, ctab, sbd1, phyb):
             )
     if literal_word(rkof, STREAM_CODE_ERROR[0]) != STREAM_CODE_ERROR[1]:
         return False, f"rkof 0x{STREAM_CODE_ERROR[0]:x} is no longer the unknown-code error"
+    # The proxy's virtual table, and the one property its own methods handle.
+    base, slots = PROXY_VTABLE
+    for where in PROXY_VTABLE_BRACKETS:
+        if u32(rkof, where) != 0:
+            return False, f"rkof 0x{where:x} is not a zero word, so the table is not bracketed"
+    for index in range(slots):
+        word = u32(rkof, base + 4 * index)
+        if not word & 1 or (word & ~1) >= len(rkof):
+            return False, f"vtable slot {index} is 0x{word:x}, not a Thumb address in the image"
+    for index, target in PROXY_SLOTS:
+        got = u32(rkof, base + 4 * index) & ~1
+        if got != target:
+            return False, f"vtable slot {index} is 0x{got:x}, not the proxy's 0x{target:x}"
+    for where, first, second in PROXY_PROPERTY_TESTS:
+        if (u16(rkof, where), u16(rkof, where + 2)) != (first, second):
+            return False, (
+                f"rkof 0x{where:x} no longer tests property 0x{PROXY_PROPERTY:x}"
+            )
+    for where, encoding in PROXY_LENGTH_TESTS:
+        if u16(rkof, where) != encoding:
+            return False, f"rkof 0x{where:x} no longer bounds the buffer below eight"
+    if u16(rkof, PROXY_TRANSFER[0]) != PROXY_TRANSFER[1]:
+        return False, f"rkof 0x{PROXY_TRANSFER[0]:x} no longer moves eight as the length"
     # And the link's own configuration path, each name reached from its own literal load.
     for where, text, load_at in LINK_AUDIO_NAMES:
         actual = rkof[where:where + 48].split(b"\x00")[0].decode("latin-1")
@@ -2194,8 +2228,10 @@ def check_the_codec_question(acib, rkof, ctab, sbd1, phyb):
         f"{len(CODEC_NAMES_IN_DSP)} codec names in the DSP each reached from its own site, "
         f"{len(CODEC_COMMANDS)} codec commands beside A2DP and HFP, the link's own "
         f"configuration path as {len(LINK_AUDIO_NAMES)} names of one module with its DSP proxy, "
-        f"and {len(STREAM_CODE_INDEX)} stream codes resolving to slots 0 to "
-        f"{max(index for *_, index in STREAM_CODE_INDEX)} with the link owning two"
+        f"{len(STREAM_CODE_INDEX)} stream codes resolving to slots 0 to "
+        f"{max(index for *_, index in STREAM_CODE_INDEX)} with the link owning two, and the "
+        f"proxy's {PROXY_VTABLE[1]}-slot table implementing {len(PROXY_SLOTS)} of them with one "
+        f"eight-byte property 0x{PROXY_PROPERTY:x}"
     )
 
 

@@ -2960,6 +2960,26 @@ link shares with the decoders and not with the encoders.
 What a slot's twenty bytes hold is not established, and neither is how this function is
 entered: no branch anywhere in the payload targets it and no word holds its address.
 
+**The proxy itself is a node in a property framework, and it exposes exactly one property.**
+Its methods live in a virtual table of **35 slots**, bracketed above and below by zero words -
+the null offset-to-top and null type information of a class compiled without run-time type
+support, which is also why the class cannot be named from the image [fw rkof the table at
+0x1cfe14 with its brackets at 0x1cfe0c, 0x1cfe10 and 0x1cfea0]. Three of the 35 are the
+proxy's own, the other 32 being inherited implementations elsewhere in the payload: slots 6, 18
+and 19 [fw rkof 0x121658, 0x12165c and 0x1216e0, each naming `UllaRxClientMgrProxy.cpp` in its
+own diagnostics, where slot 34 names `TimerPropertyHIDDeviceNode.cpp` instead]. Slot 6 is a
+one-instruction thunk.
+
+**Slots 18 and 19 are a pair, and both handle the single property id 0x190.** Each tests that
+id and then refuses a buffer of seven bytes or fewer with 0xE00002C2, and the second states the
+size outright by moving **8** as its transfer length [fw rkof 0x12166a and 0x1216ee the two id
+tests, 0x121672 and 0x1216f4 the two length bounds, 0x121700 the length]. So the link's proxy
+carries **one eight-byte property in two directions**, which is a second data point for the
+property interface section 7 reaches from the DSP side, where the node's own switch answers
+0x258, 0x259 and 0x25A. What the eight bytes contain is not established, and which of the two
+methods reads and which writes is not either: they take their length from different places, one
+from the first word of a structure and one from a separate argument.
+
 The addresses above are every one of them a literal load, an instruction or a page-relative
 pair rather than a string offset, because two readings of this material were wrong by one byte
 before they were measured, and a one-byte error in a string offset turns a reference into an
