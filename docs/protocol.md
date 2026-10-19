@@ -2907,7 +2907,38 @@ ordinary one and the lite one [fw sbd1 `UllaRxClientMgr.cpp` at 0x10cbd5 and
 `UllaLiteRxClientMgr.cpp` at 0x10c841], and an encode node whose strings are `ULLA 1.0`,
 `ULLA 1.1`, `processBufferUllav11` and a generic `_prepareCodec` [fw sbd1 0x10cd11 onwards].
 So the DSP does name a codec, for another path, and names none for this one, which is what the
-paragraph above would predict of a format handed over at runtime.
+paragraph above would predict of a format handed over at runtime. Opus is not merely named
+there either: its connector is **called**, from a site that names it beside
+`_inputFramesAvailable` [fw sbd1 the page-relative pair at 0x98700 and 0x98714, and the second
+pair at 0x98704 and 0x98718 for the other name]. That makes the absence of any codec name on
+the ULLA path a sharper statement rather than a weaker one, because the comparison is now
+between a codec this firmware implements and a path for which it implements none.
+
+**And the link's audio has a configuration path on the host side of the DSP, which this
+document had not reached.** Three names in the RTKitOS image place it. The link's decoder is
+configured from `HeadsetSequenceManager.cpp`, the same module that configures the standard
+encoders, and the two method names sit side by side in its string table: `encConfig` and
+**`ullaDecConfig`** [fw rkof the module name at 0x1e4bcb loaded at 0x118d62, `encConfig` at
+0x1e4c53 loaded at 0x119180, `ullaDecConfig` at 0x1e4c65 loaded at 0x11919e]. A third method
+in the same module reads the version out, `outULLAVersion` [fw rkof 0x1e4d0b loaded at
+0x11c132], which is the host-side counterpart of the `ULLA 1.0` and `ULLA 1.1` strings the DSP
+prints. And the module reaches the DSP's receive manager through a proxy of its own,
+`UllaRxClientMgrProxy.cpp` [fw rkof 0x1e4de7, loaded at five sites from 0x121696 to 0x12174c].
+
+Two things follow, and the second is a caution. **The link is configured alongside the standard
+codecs and separately from them**: one module drives both, with a distinct method for this
+path, so whatever `ullaDecConfig` sets is not what `encConfig` sets. And the same image carries
+a debug command table that configures the standard codecs by name - `cfga2dp`, `cfghfp` and
+`cfgopus`, the last taking a mode argument the help text gives as `<1 = HS, 2 = NonSiri>`,
+with `a2dptest`, `opustest` and `hfptest` beside them [fw rkof 0x1e452c, 0x1e4549, 0x1e456b,
+0x1e4588, 0x1e45cb, 0x1e45e2]. That table is where somebody will look for a codec answer, and
+Opus's place in it is with the voice and A2DP paths. **None of this establishes the link's
+codec**; what it establishes is that the link has its own configuration entry point and that
+the one codec this firmware implements is configured elsewhere.
+
+The addresses above are every one of them a literal load or a page-relative pair rather than
+a string offset, because two readings of this material were wrong by one byte before they were
+measured, and a one-byte error in a string offset turns a reference into an absence.
 
 The same group of names settles what the "ADMA" of 7.1 is: the DSP side carries
 `admac_rx_src1`, `admac_rx_src4`, `admac_rx_src5` and a `DMAController.cpp` with

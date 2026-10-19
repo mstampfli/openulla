@@ -210,7 +210,7 @@ still works: Apple's catalog served build 9A348 as `A3048.zip`, 11,455,085 bytes
 beginning `a04ff3f0d74e47e4`, the same asset [ulla.md](ulla.md) section 1 names. The
 `firmware.uarp` inside it, SHA-256 beginning `78171265810972c3`, is byte for byte the file
 every address in this repository was read from, and the five payloads extracted from that
-download pass **33 of 33 claims**. If your own download gives those two prefixes, you have the
+download pass **34 of 34 claims**. If your own download gives those two prefixes, you have the
 same bytes; if it does not, Apple has published a new build and the tool will tell you which
 claims moved.
 
@@ -274,7 +274,8 @@ python3 tools/payload_survey.py --payloads payloads
   PASS  prose-only citations             48 prose citations hold their instruction
   PASS  citations are instructions       775 acib citations, none of them a literal-pool word, with 1 allowed as data
   PASS  the radio PHY image              a 48-word table ending at the info block with 41 live entries, 11 reserved slots on one handler and SVCall/PendSV on another, vector 15 a tick counter, msr of MSP, PSP and BASEPRI, '[BTP]: (version:' its own name, and of 25 populated IRQs 13 bare bx lr, 9 trampolines, 3 bodies
-33 of 33 claims hold
+  PASS  the codec question               2 codec names in the DSP each reached from its own site, 6 codec commands beside A2DP and HFP, and the link's own configuration path as 5 names of one module with its DSP proxy
+34 of 34 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows

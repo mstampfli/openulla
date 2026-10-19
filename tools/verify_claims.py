@@ -380,6 +380,31 @@ PHY_OWNER_TEXT = "[BTP]"
 # The floor on how much of the image is non-zero. The real payload is 42.7 per cent filled;
 # this is well below that and far above a file hollowed out to satisfy the targeted checks.
 PHY_MIN_FILLED = 0.25
+# The codec question: what the DSP implements, and each name's own call site.
+CODEC_NAMES_IN_DSP = ((0x10CC3F, "OpusEncodeConnector"), (0x10CD2B, "_prepareCodec"))
+# (adrp, the add that completes it, what it reaches, its name). The Opus pair is five
+# instructions apart with three unrelated movs between, which is what defeated the first
+# instrument used here.
+CODEC_REFERENCES = (
+    (0x98700, 0x98714, 0x10CC3F, "OpusEncodeConnector"),
+    (0x9CED8, 0x9CEE4, 0x10CD2B, "_prepareCodec"),
+    (0x9E070, 0x9E078, 0x10CD7F, "processBufferUllav11"),
+)
+# And where the firmware does configure a codec: a debug command table beside A2DP and HFP.
+CODEC_COMMANDS = ((0x1E452C, "cfga2dp"), (0x1E4549, "cfghfp"), (0x1E456B, "cfgopus"),
+                  (0x1E4588, "<1 = HS, 2 = NonSiri>"), (0x1E45CB, "opustest"),
+                  (0x1E45E2, "hfptest"))
+# The link's own configuration path, in rkof: method names of one module, each reached from its
+# own literal load, and the proxy that carries them to the DSP. `ullaDecConfig` sitting beside
+# `encConfig` in the same module is the point - the link is configured alongside the standard
+# codecs and separately from them.
+LINK_AUDIO_NAMES = (
+    (0x1E4BCB, "HeadsetSequenceManager.cpp", 0x118D62),
+    (0x1E4C53, "encConfig", 0x119180),
+    (0x1E4C65, "ullaDecConfig", 0x11919E),
+    (0x1E4D0B, "outULLAVersion", 0x11C132),
+    (0x1E4DE7, "UllaRxClientMgrProxy.cpp", 0x121696),
+)
 # 0x7B/0x14's three gates: the length, a link bit, and feature bit 0. [5.15]
 GATE_14_LENGTH = (0x3C02C, 0x2804)  # cmp r0, #4 on the whole PDU length
 GATE_14_LENGTH_ERROR = (0x3C31E, 0x2019)  # movs r0, #0x19
@@ -2082,6 +2107,55 @@ def check_phy_image(acib, rkof, ctab, sbd1, phyb):
     )
 
 
+def check_the_codec_question(acib, rkof, ctab, sbd1, phyb):
+    """Which codec this firmware implements, and that nothing ties it to the link. [ulla.md 6]
+
+    Somebody will find `OpusEncodeConnector` in the DSP image two hundred bytes from the string
+    `ULLA 1.0` and conclude they have found the link's codec. This is what the firmware
+    actually supports: the DSP **does** implement an Opus encode connector, named at a call site
+    beside `_inputFramesAvailable`, and the firmware configures Opus from a debug command table
+    that sits beside A2DP and HFP and has no entry for the link at all. So Opus is real here and
+    is a neighbour of the voice and A2DP paths; what puts it on the link is nothing.
+
+    Every reference is asserted at its own site rather than as mere presence somewhere, because
+    the first version of this check claimed these names were unreferenced and was wrong: the
+    scan it used matched a register name as a substring of an immediate's text, so it stopped
+    looking four instructions early. Its control passed anyway, the control being an easier
+    case than the thing it controlled.
+    """
+    for where, text in CODEC_NAMES_IN_DSP:
+        actual = sbd1[where:where + 40].split(b"\x00")[0].decode("latin-1")
+        if actual != text:
+            return False, f"sbd1 0x{where:x} is {actual!r}, not {text!r}"
+    for adrp_at, add_at, target, what in CODEC_REFERENCES:
+        reached = a64_page_target(sbd1, adrp_at, within=(add_at - adrp_at) // 4)
+        if reached != target:
+            return False, (
+                f"the pair at sbd1 0x{adrp_at:x} and 0x{add_at:x} reaches "
+                f"{reached and hex(reached)}, not {what} at 0x{target:x}"
+            )
+    # The command table that does configure a codec.
+    for where, text in CODEC_COMMANDS:
+        actual = rkof[where:where + 40].split(b"\x00")[0].decode("latin-1")
+        if actual != text:
+            return False, f"rkof 0x{where:x} is {actual!r}, not the command {text!r}"
+    # And the link's own configuration path, each name reached from its own literal load.
+    for where, text, load_at in LINK_AUDIO_NAMES:
+        actual = rkof[where:where + 48].split(b"\x00")[0].decode("latin-1")
+        if actual != text:
+            return False, f"rkof 0x{where:x} is {actual!r}, not {text!r}"
+        if literal_word(rkof, load_at) != where:
+            got = literal_word(rkof, load_at)
+            return False, (
+                f"rkof 0x{load_at:x} loads {got and hex(got)}, not {text!r} at 0x{where:x}"
+            )
+    return True, (
+        f"{len(CODEC_NAMES_IN_DSP)} codec names in the DSP each reached from its own site, "
+        f"{len(CODEC_COMMANDS)} codec commands beside A2DP and HFP, and the link's own "
+        f"configuration path as {len(LINK_AUDIO_NAMES)} names of one module with its DSP proxy"
+    )
+
+
 def check_ctab_manifest(acib, rkof, ctab, sbd1, phyb):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
@@ -2167,6 +2241,7 @@ CHECKS = (
     ("prose-only citations", check_prose_citations),
     ("citations are instructions", check_instruction_citations),
     ("the radio PHY image", check_phy_image),
+    ("the codec question", check_the_codec_question),
 )
 
 
