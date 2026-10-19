@@ -243,10 +243,21 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
   against the link, and every ULLA message is gated on the AND of the two: one
   bit for the band family, another for the mode procedure. An implementation
   that never answers it is sent nothing at all, which makes answering it the
-  first thing a source has to do. [docs/protocol.md](docs/protocol.md) 5.8.
+  first thing a source has to do. Its own half of that AND is set by two
+  one-byte vendor commands, and without the second one the mode procedure is
+  gated off however well it negotiates.
+  [docs/protocol.md](docs/protocol.md) 5.8.
+- **Each controller runs the exchange as a state machine, and there are three of
+  them** - one per role, with their own dispatchers and tables, the second half
+  of each being the teardown. The firmware's own strings call them transactions
+  and name two of the roles. [docs/protocol.md](docs/protocol.md) 5.9 and 5.10.
+- **The host interface is eleven commands, not one.** 0xFE50 starts the mode
+  change; ten more reach an ULLA session, five of them sharing one gate chain
+  that answers 0x0C while no session is active.
+  [docs/protocol.md](docs/protocol.md) 6.6.
 - **The implementation exists**, in `openulla/`, with a simulated earbud, a
   decoder, a capture reader, an L2CAP sink server and a verifier that
-  re-derives ten groups of claims from a firmware image. See
+  re-derives fifteen groups of claims from a firmware image. See
   [docs/implementation.md](docs/implementation.md).
 - **A Linux laptop can start a ULLA session and be told it succeeded.** Sending
   seven bytes over an ordinary Bluetooth channel moves the earbuds' session
@@ -389,8 +400,11 @@ link keys and other people's device addresses.
 - `tools/verify_claims.py`: re-derives what the docs and the code claim from a
   firmware image on your own machine, one line per claim: the session manager's
   whole transition table, the band plan, the command table with every handler
-  address, the PDU lengths, both dispatch tables, the event's shape, the reason
-  names and the stream endpoints. It fails on a single changed byte.
+  address, the PDU lengths, both dispatch tables, every body builder, the
+  event's shape, the code names and their tables' bounds, all three procedures'
+  state tables, the property getter table, the session commands and the two
+  feature-bit commands, and the stream endpoints. It fails on a single changed
+  byte.
 - `tools/ulla_demo.py`: runs a whole setup against the simulated earbud and
   prints every frame and PDU of it, with no hardware involved. `--reject`
   makes the peer controller refuse at one of its four checks.
