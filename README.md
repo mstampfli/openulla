@@ -324,7 +324,12 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
 ## What is open
 
 The audio layer, and now with a reason rather than a shrug. The over-the-air
-packet format is produced by radio hardware whose registers are undocumented.
+packet format is produced by radio hardware whose registers are undocumented,
+though no longer entirely closed: the six packet types, their payload maxima,
+their baseband TYPE codes and the payload header's twelve-bit length field have
+all been recovered from the firmware (sections 5.13 and 7.3). What is still
+missing is everything below that header, the access code, the header coding, the
+guard and trailer and the hopping sequence.
 The sample rate, frame size and bit depth are not constants in the DSP image at
 all: no rate value appears in its audio-node region, its log texts ship outside
 the payload, and the data that ships beside the code is filter coefficients and
@@ -382,7 +387,7 @@ settle, what to run, and what each outcome would mean. The short version:
 |---|---|
 | an Apple host that drives the link (Vision Pro, possibly a Mac) | capture HCI **across a connection setup**, not a steady stream, and look for a seven-byte 0xFE50 |
 | a Nexus 5 or a CYW920735Q60EVB-01, the two parts that can inject these opcodes | `sudo python3 tools/ulla_probe.py` first, then drive the setup exchange of section 5 and report what the earbuds answer |
-| a software radio with 20 MHz of bandwidth | capture a slice, not the whole band: one packet in four lands in it whole, and HDR is in the 2.4 GHz band too |
+| a software radio with 20 MHz of bandwidth | capture a slice, not the whole band: one packet in four lands in it whole, HDR is in the 2.4 GHz band too, and a decoder now has the TYPE codes, the payload maxima and the twelve-bit length field to match against |
 | no hardware at all | implement a layer against [interop/](interop/) and report a mismatch |
 
 Three things worth knowing before you spend time on it, all of them learned the

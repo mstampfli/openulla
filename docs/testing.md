@@ -119,10 +119,25 @@ silicon is worse for this, not better.
 
 ## 3. A software radio: the air format
 
-The air format is the largest thing still open, and the firmware cannot answer it:
-protocol.md section 7 says why. The modulation and packet family are known from Apple's own FCC
-measurements, pi/4 DQPSK in DH5-shaped five-slot packets at 4 and 8 Mbit/s (ulla.md 2.3, 2.4),
-so a capture has a known shape to match against.
+The air format is the largest thing still open, but it is no longer entirely closed, and a
+capture now has far more to match against than when this page was written. The modulation and
+packet family come from Apple's own FCC measurements, pi/4 DQPSK in DH5-shaped five-slot packets
+at 4 and 8 Mbit/s (ulla.md 2.3, 2.4). Three things have since been recovered from the firmware
+(protocol.md 5.13 and 7.3), and all three are things a demodulated capture can be checked
+against directly:
+
+- **Six packet types with their exact payload maxima**, 112, 242, 703, 1288, 1416 and 2586
+  bytes, in three slot lengths at two rates.
+- **Their baseband TYPE codes**, which are the specification's own: 0x4 and 0x8 for one slot,
+  0xA and 0xB for three, 0xE and 0xF for five. So the four TYPE bits of a captured packet header
+  mean something known.
+- **The payload header**, whose length field is **twelve bits at bit offset 3**, not the
+  specification's ten. A decoder that assumes ten will mis-read every multi-slot Apple packet,
+  and that is the single most likely reason for a capture that demodulates but does not parse.
+
+What is still missing is everything below the payload header: the access code, the header
+coding, the guard and trailer, and the hopping sequence. A capture is still the only way to
+those.
 
 **You do not need to cover the whole band.** 79 channels across the 88 MHz of 5157 to 5245 MHz
 is about 1 MHz of spacing, so a 20 MHz capture holds roughly twenty of them, and a five-slot
@@ -198,6 +213,11 @@ Measured here already, with the bytes in [measurements.md](measurements.md):
   has no bit for 4-DH5 or 8-DH5 (section 9).
 - An Intel AX211 implements none of the vendor commands documented here, and answers 0x0C to
   every unimplemented opcode in that group (section 10).
+- **How HDR is selected, and what its packets are** (protocol.md 5.13, 6.8, 7.3). Apple's own
+  LMP request negotiates a third packet-type table; six packet types live in it with known
+  payload maxima and TYPE codes; vendor command 0xFD02's mode byte configures the controller for
+  either the basic-rate five-slot packet or the 8 Mbit/s one; and the payload header's length
+  field is twelve bits rather than ten. None of that needs re-deriving.
 - **HDR is announced nowhere a standard host can see it.** All three of the earbuds' LMP feature
   pages were read off the air: 54 bits set, every one of them a defined Bluetooth feature, every
   reserved position zero (section 13). They announce EDR 2 and 3 Mb/s in page 0 bits 25 and 26,
