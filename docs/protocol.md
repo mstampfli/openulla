@@ -243,7 +243,24 @@ That is 56 bytes, the length type 0's listener asks for, and it fixes the messag
 well: the sender passes 0x3C to the allocator and 4 + 56 is 0x3C [fw acib 0x11e30, and
 0xc2aaa..0xc2ab8 for the two counts and the three offsets]. Sending is gated twice over: a byte
 at the object's +0x62 must be set, and a counter at its +0x5C is compared against a limit at
-its +0x58, so most calls return without sending anything [fw acib 0xc2a88..0xc2a98].
+its +0x58, which defaults to 4000, so most calls return without sending anything [fw acib
+0xc2a88..0xc2a98, and 0xc27ec for the default].
+
+**But no type 0 report goes out in this build.** The object at 0x10029964 is touched from one
+module only, ten literal loads inside acib 0xc2790 to 0xc2b4c, and its counters are filled by
+one function: a classifier that takes a single 32-bit word, tests a phase byte at the object's
++0x61, decodes the word's bit fields and bumps the counters [fw acib 0xc2830, with the writes
+at 0xc29c6, 0xc29e8, 0xc29f8 and 0xc2a2e]. Two paths lead into the sender, that classifier and
+a force entry [fw acib 0xc2b12], and **nothing in the image reaches either**: the classifier's
+only call site is a three-line wrapper [fw acib 0xdaff8] that no call site branches to in a
+linear disassembly and that no word of the image points at, at any alignment, and the force
+entry has no call site either. The id itself is stamped in exactly one place in the whole
+image, which is what the verifier checks, and among the other Thumb payloads (aopf, rtpf, apmu,
+nerf, rkos) not one loads it at all. The earbud's own subscribe path says the same from the
+other side: it registers **only 0xE910 and 0xE911**, and type 0's listener is registered at the
+other site alone [fw rkof 0x27f60 against 0x27bb0]. So a host should expect types 1 and 2; type
+0's 56-byte form is complete in the firmware and unreachable. The one way this reading could
+still be wrong is a computed branch into that wrapper, which these searches cannot exclude.
 
 What the fields *mean* is still not established, for any of the three types: they are counters
 in a controller block, nothing in rkof reads one, and **no site in acib loads 0xE911 as an

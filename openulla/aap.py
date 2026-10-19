@@ -43,11 +43,15 @@ CLASS_ULLA_REPORTS = 0x00200000
 # payload} to the entry that stamps the type [fw rkof 0x27cb4 and 0x27f42 for 0, 0x27ce0 and
 # 0x27f38 for 1, 0x27d0c and 0x27e84 for 2]; and the notification dispatcher declares the same
 # lengths, logging a mismatch rather than truncating [fw rkof 0x258f2, 0x25bb2, 0x25bf4].
+# Type 0 is here because the firmware describes it completely, not because it arrives: nothing
+# in this build reaches the two paths into its producer, and the subscribe path registers only
+# the other two listeners [fw acib 0xc2830 and 0xc2b12 against rkof 0x27f60; protocol.md 2.6].
 REPORTS = {
     0: (0x0A08, 56),
     1: (0xE910, 185),
     2: (0xE911, 61),
 }
+REPORTS_A_HOST_SEES = (1, 2)  # which of them a subscriber of this build is actually sent
 VERSION_PAIR_WIDE_CLASS = 0x00010001  # above this, the wrapper's class field is four bytes
 
 

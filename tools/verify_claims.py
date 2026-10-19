@@ -168,6 +168,10 @@ SENDER_OBJECT = (0xC2AFC, 0x10029964)
 SENDER_COUNTS = ((0xC2AB2, 0x2109), (0xC2AB4, 0x2304))  # movs r1, #9 and movs r3, #4
 SENDER_OFFSETS = ((0xC2AAE, 0x44), (0xC2AB8, 0x20))  # add.w r2, r5, #0x44 and r0, r5, #0x20
 SENDER_HALFWORD = (0xC2AAA, 0xF8B5, 0x0056)  # ldrh.w r0, [r5, #0x56], the last word of the 56
+# Type 0's id is stamped in exactly one place in the whole image, which is the positive form of
+# "only this sender produces it" [2.6]. The encoding is Thumb-2 MOVW of 0x0A08 into any low
+# register: first halfword 0xF640, second 0x2008 with the register in bits 8 to 11.
+SENDER_ID_ENCODING = (0xF640, 0x2008)
 SCHEDULER_BASE_LOAD = 0x3DBA6  # movw r0, #0xfcd0: the id the index counts from, 5.11
 SCHEDULER_BASE_ID = 0xFCD0
 SCHEDULER_BOUND_AT = 0x3DBAC  # cmp r0, #0x58
@@ -745,6 +749,14 @@ def check_report_producer(acib, rkof, ctab):
     at, first, second = SENDER_HALFWORD
     if (u16(acib, at), u16(acib, at + 2)) != (first, second):
         return False, f"0x{at:x} no longer reads the halfword at the object's +0x56"
+    head, tail = SENDER_ID_ENCODING
+    stamps = [
+        at
+        for at in range(0, len(acib) - 3, 2)
+        if u16(acib, at) == head and u16(acib, at + 2) & 0xF0FF == tail
+    ]
+    if stamps != [SENDER_ID[0]]:
+        return False, f"type 0's id is stamped at {[hex(at) for at in stamps]}"
     return True, (
         f"0x{PRODUCER:x}: id 0x{PRODUCER_ID_BASE[1] + 3:x}, {PRODUCER_LENGTH[1] - 4} payload "
         f"bytes, blocks at +0x45 and +0x85 copied 0x{PRODUCER_COPY_SIZE:x} at a time; "
