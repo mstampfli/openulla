@@ -171,3 +171,11 @@ def test_the_bound_on_0xfe16s_value():
     assert hci.session_command(0xFE16, bytes((1,)) + high.to_bytes(4, "little")) == (
         bytes.fromhex("16 fe 05 01 10 27 00 00")
     )
+
+
+def test_the_three_refusals_the_session_commands_use():
+    """Not uniform, which matters for a host. [protocol.md 6.6]"""
+    assert HciError.NO_CONNECTION == 2
+    assert {HciError.NO_CONNECTION, HciError.COMMAND_DISALLOWED, HciError.UNSUPPORTED_FEATURE} <= {
+        int(code) for code in HciError
+    }

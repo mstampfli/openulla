@@ -119,6 +119,7 @@ class HciError(IntEnum):
     own reason formatter has no name for it [fw acib 0x6783c, protocol.md 5.10].
     """
 
+    NO_CONNECTION = 0x02
     COMMAND_DISALLOWED = 0x0C
     UNSUPPORTED_FEATURE = 0x11
     INVALID_PARAMETERS = 0x12

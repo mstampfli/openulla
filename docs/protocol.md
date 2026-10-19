@@ -1400,7 +1400,7 @@ anywhere else in this document:
 |---|---|---|---|
 | 0xFE16 | acib 0x1ebf4 | a byte and a word, bounded below | yes, five bytes: 1, then a word of its own state [fw rkof 0x27c08] |
 | 0xFE4C | acib 0x1d6cc | a halfword [fw acib 0x1d6d6] | no |
-| 0xFE4E | acib 0x1e7b8 | a byte [fw acib 0x1e7ce] | no |
+| 0xFE4E | acib 0x1e7b8 | a byte, 0 or 1, and three more bytes when it is 1 | no |
 | 0xFE50 | acib 0x1da40 | the seven bytes of section 6 | yes, the mode change of section 6 |
 | 0xFE52 | acib 0x1dd88 | none at all | yes, with none [fw rkof 0x26940] |
 | 0xFE53 | acib 0x1de62 | none at all | no |
@@ -1426,13 +1426,29 @@ the note: its handler reads none, although the manager sends four zero bytes wit
 3. then the link's **role byte** decides which of two branches runs [fw acib 0x2f566], the
    same test again from 5.2.
 
-What each branch does is a different call into the session module, and three of them are
-property writes on the session object with the ids 0x1B0 to 0x1B3 [fw acib 0x4883c, 0x4870e,
-0x486f8 and 0x48722]. 0xFE58's branch writes 0x1B3 and then reports to the host [fw acib
-0x48722 into 0x11e8c], and 0xFE53's other path reports too [fw acib 0x11f04]. So this is a
-family of commands for a session that already exists, gated on the session being active, which
-is the same division 5.2 found on the air: 0x73 creates, and 0x74 to 0x76 are for a session
-that is there.
+What each one does on that path is a different call into the session module, and most of them
+are one property of the session object:
+
+| command | on the session path | the status when a gate fails |
+|---|---|---|
+| 0xFE4C | one call with the halfword [fw acib 0x48938] | **2** when the session is not active, 0x0C on the role branch |
+| 0xFE4E | its own pair of handlers, by the first parameter [fw acib 0x1e688, 0x1e88c] | - |
+| 0xFE52 | property **0x1B0** or **0x1B2**, the role deciding which [fw acib 0x4883c, 0x4870e] | 0x0C |
+| 0xFE53 | **reads** property **0x1AF** and reports it to the host [fw acib 0x48856 into 0x11f04] | 0x0C |
+| 0xFE55 | writes property id **2** with the word, and answers **0x11** if that write fails [fw acib 0x79448 at 0x1de0e] | 2, or 0x0C |
+| 0xFE57 | property **0x1B1** with the word [fw acib 0x486f8] | 0x0C |
+| 0xFE58 | property **0x1B3**, then reports to the host [fw acib 0x48722 into 0x11e8c] | 0x0C |
+| 0xFE7B | property **0x1AB** with the byte, and no role branch at all [fw acib 0x1d47c] | - |
+
+So four properties, 0x1B0 to 0x1B3, are driven by three of these commands, one command reads a
+fifth and one writes a sixth; and the refusals are not uniform, which matters for a host: 2
+(no connection), 0x0C (command disallowed) and 0x11 all appear. This is a family of commands
+for a session that already exists, gated on the session being active, which is the same
+division 5.2 found on the air: 0x73 creates, and 0x74 to 0x76 are for a session that is there.
+
+0xFE4E is the one whose parameters change shape: its first byte has to be 0 or 1, and when it
+is 1 the handler reads a halfword and a byte after it [fw acib 0x1e7ce to 0x1e810], so the
+command is one byte long or four.
 
 **0xFE16 is the one whose parameters are fully readable**, and it is worth the detail because
 its bound is a measurement rather than a guess. It takes a byte and a 32-bit value, which is
