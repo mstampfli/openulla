@@ -192,6 +192,18 @@ WIDE_HEADER_FUNCTION = (0x1465C, 0x14AE8)  # the builder that uses the twelve-bi
 WIDE_HEADER_TABLE_TEST = 0x14A66  # cmp r0, #2, on the link's active packet-type table
 WIDE_HEADER_MASK_TEST = 0x14A92  # ands r1, r1, #0x3f0000, Apple's six mask bits
 NARROW_HEADER_WRITERS = (0xB407E, 0xBC822, 0xBE012, 0xD2DCE, 0xD5D82)
+# The five procedures Apple's space mirrors: one function each picks which form to send. [5.14]
+# Each row is (what it is, the specification's escape and extended opcode sites, Apple's).
+PAIRED_PROCEDURES = (
+    ("channel classification request", (0x22D98, 0x22D92, 0x10), (0x22D72, 0x22D6C, 0x19)),
+    ("power control request", (0x28F90, 0x28F8A, 0x1F), (0x28F9E, 0x28F98, 0x0E)),
+    ("power control request, second sender", (0x29050, 0x29044, 0x1F), (0x29064, 0x29058, 0x0E)),
+    ("power control response", (0x29220, 0x29222, 0x20), (0x29228, 0x2922A, 0x0F)),
+    ("channel classification", (0x4600A, 0x46004, 0x11), (0x45FD6, 0x45FD2, 0x1A)),
+)
+# The three answers the responder gives, which are one two-bit code five times. [5.11, 5.14]
+POWER_RESPONSE_PAIRS = ((0x15, 5), (0x2A, 10), (0x3F, 15))
+POWER_RESPONSE_MASKS = (0x9009, 0x504)  # the receiver's two classes over the four-bit code
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
@@ -1354,6 +1366,40 @@ def check_payload_header_width(acib, rkof, ctab, sbd1):
     )
 
 
+def check_paired_procedures(acib, rkof, ctab, sbd1):
+    """The five procedures with two forms, and that the power answers are one code five times.
+
+    The immediates are checked in the image; the five-field reading is checked as arithmetic,
+    because that is what it is, and a reading that only held for some of the three answers
+    would not be a reading at all. [5.14]
+    """
+    for name, specified, apple in PAIRED_PROCEDURES:
+        for (escape_at, ext_at, ext), escape in ((specified, lmp.ESCAPE_7F),
+                                                 (apple, lmp.ESCAPE_7B)):
+            if u16(acib, escape_at) != 0x2100 | escape:
+                return False, f"{name}: 0x{escape_at:x} no longer sets escape 0x{escape:02x}"
+            if u16(acib, ext_at) != 0x2200 | ext:
+                return False, f"{name}: 0x{ext_at:x} no longer sets extended 0x{ext:02x}"
+    for value, code in POWER_RESPONSE_PAIRS:
+        if value >> 6:
+            return False, f"0x{value:02x} uses more than the six bits of three fields"
+        if code >> 4:
+            return False, f"the code {code} uses more than four bits"
+        fields = [(value >> (2 * i)) & 3 for i in range(3)]
+        fields += [(code >> (2 * i)) & 3 for i in range(2)]
+        if len(set(fields)) != 1:
+            return False, f"0x{value:02x}/{code} is not one two-bit code repeated: {fields}"
+    both, maxed = POWER_RESPONSE_MASKS
+    if sorted(v for v in range(16) if both & (1 << v)) != [0, 3, 12, 15]:
+        return False, "the first mask no longer selects the codes whose two fields are 0 or 3"
+    if sorted(v for v in range(16) if maxed & (1 << v)) != [2, 8, 10]:
+        return False, "the second mask no longer selects the codes with a 2 in a field"
+    return True, (
+        f"{len(PAIRED_PROCEDURES)} senders choose between the two forms, the three power "
+        "answers are one two-bit code five times"
+    )
+
+
 def check_ctab_manifest(acib, rkof, ctab, sbd1):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
@@ -1433,6 +1479,7 @@ CHECKS = (
     ("the packet-type table", check_packet_type_table),
     ("shared host commands", check_shared_host_commands),
     ("payload header width", check_payload_header_width),
+    ("the five paired procedures", check_paired_procedures),
 )
 
 

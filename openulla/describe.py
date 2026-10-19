@@ -172,8 +172,13 @@ def describe_lmp(data: bytes) -> list[str]:
         ]
     elif isinstance(parsed, lmp.ValueAndCode):
         where = parsed.code_class()
+        same = parsed.uniform()
         lines += [
             f"  a value and a code (0x7B/0x0F): value 0x{parsed.value:02x}, code {parsed.code}",
+            "    Apple's form of the power control response, protocol.md 5.14",
+            "    its five two-bit fields: "
+            + ", ".join(str(field) for field in parsed.fields())
+            + (f"; all {same}" if same is not None else "; they differ"),
             "    the three pairs this firmware answers with are "
             + ", ".join(f"0x{v:02x}/{c}" for v, c in lmp.ValueAndCode.PAIRS),
             "    the receiver's masks put this code in "

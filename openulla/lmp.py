@@ -404,6 +404,13 @@ class SelectorRequest:
     The receiver switches on the selector against 0, 1 and 2, asks the controller property
     0xB9 about the link with the parameter 0, 1 or 4, and answers [fw acib 0x291b0 onwards,
     protocol.md 5.11]. The names here are ours: nothing in the firmware names this message.
+
+    **What it is**: Apple's form of the specification's power control request. One function
+    sends either this or 0x7F/0x1F depending on the link [fw acib 0x28fa8 and 0x2906a, where
+    both escape opcodes are set on the way in], the two are the same length, and the selector's
+    range of 0, 1 and 2 is that request's own [protocol.md 5.14]. The structural name is kept
+    because the identification, however direct, is this project's reading and not a string in
+    the firmware; the same choice is made for the packet types in `packets.py`.
     """
 
     selector: int
@@ -436,6 +443,12 @@ class ValueAndCode:
     with two masks [fw acib 0x29332 onwards]. The same message goes out as 0x7F/0x20 instead
     when the feature bits say so, which is a sender's decision and not part of the layout
     [fw acib 0x29204, protocol.md 5.11].
+
+    **What it is**: Apple's form of the specification's power control response, which packs
+    three two-bit fields into one byte, one per modulation. This form adds a second byte bounded
+    to four bits, so **five** such fields. Read that way the three pairs are one code repeated
+    five times, which is why they looked like a 1:2:3 family, and the receiver's two masks fall
+    exactly on two-bit boundaries. `fields()` does that decomposition [protocol.md 5.14].
     """
 
     value: int
@@ -470,6 +483,26 @@ class ValueAndCode:
         if self.code in self.SECOND_CLASS:
             return 2
         return None
+
+    def fields(self) -> tuple[int, int, int, int, int]:
+        """The five two-bit fields: three from the value byte, two from the four-bit code.
+
+        The specification's power control response carries three such fields, one per
+        modulation; this form carries five [protocol.md 5.14]. The value byte's top two bits
+        are not part of them, and the three answers this firmware gives have all five equal.
+        """
+        return (
+            self.value & 3,
+            (self.value >> 2) & 3,
+            (self.value >> 4) & 3,
+            self.code & 3,
+            (self.code >> 2) & 3,
+        )
+
+    def uniform(self) -> int | None:
+        """The one code all five fields carry, or None when they differ."""
+        seen = set(self.fields())
+        return seen.pop() if len(seen) == 1 else None
 
 
 @dataclass(frozen=True)

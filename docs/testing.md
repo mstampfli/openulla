@@ -2,7 +2,7 @@
 
 Everything the AirPods' own firmware can answer has been answered: the setup protocol is
 documented field by field in [protocol.md](protocol.md), an implementation of it is in
-`openulla/`, and `tools/verify_claims.py` re-derives twenty-seven groups of claims from the
+`openulla/`, and `tools/verify_claims.py` re-derives twenty-eight groups of claims from the
 firmware image itself. What is left needs hardware this project does not have.
 
 Two different kinds of hardware answer two different questions, and it is worth being precise

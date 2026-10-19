@@ -143,3 +143,30 @@ def test_the_header_refuses_what_it_cannot_express():
     for name in ("2-DH1", "3-DH1"):
         entry = next(e for e in packets.TABLE if e.name == name)
         assert packets.length_bits(entry) == packets.LENGTH_BITS_SPECIFIED
+
+
+def test_the_power_answers_are_one_two_bit_code_five_times():
+    """What 5.11 called a 1:2:3 family is one code repeated [protocol.md 5.14]."""
+    for value, code in lmp.ValueAndCode.PAIRS:
+        answer = lmp.ValueAndCode(value=value, code=code)
+        assert len(answer.fields()) == 5
+        assert answer.uniform() is not None, (value, code)
+        assert set(answer.fields()) == {answer.uniform()}
+    # The three answers use three different codes, which is why they looked like a ratio.
+    assert sorted(lmp.ValueAndCode(value=v, code=c).uniform()
+                  for v, c in lmp.ValueAndCode.PAIRS) == [1, 2, 3]
+    # A mixed answer is representable and reported as mixed rather than forced into a code.
+    mixed = lmp.ValueAndCode(value=0b000110, code=0b0010)
+    assert mixed.uniform() is None
+    assert mixed.fields() == (2, 1, 0, 2, 0)
+    # The value byte's top two bits are outside the three fields, so they do not leak in.
+    assert lmp.ValueAndCode(value=0xC0, code=0).fields() == (0, 0, 0, 0, 0)
+
+
+def test_the_receivers_masks_fall_on_two_bit_boundaries():
+    """The independent confirmation: both classes are sets of two-bit field patterns."""
+    for code in lmp.ValueAndCode.FIRST_CLASS:
+        assert set((code >> (2 * i)) & 3 for i in range(2)) <= {0, 3}, code
+    for code in lmp.ValueAndCode.SECOND_CLASS:
+        assert 2 in [(code >> (2 * i)) & 3 for i in range(2)], code
+    assert lmp.ValueAndCode.FIRST_CLASS & lmp.ValueAndCode.SECOND_CLASS == frozenset()

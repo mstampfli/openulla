@@ -59,6 +59,7 @@ firmware from us.
   - [5.11 One extended pair, traced end to end](#511-one-extended-pair-traced-end-to-end)
   - [5.12 One of those escape spaces is Bluetooth's own, and it closes every standard road](#512-one-of-those-escape-spaces-is-bluetooths-own-and-it-closes-every-standard-road)
   - [5.13 Apple's own packet-type table, and the six packets in it](#513-apples-own-packet-type-table-and-the-six-packets-in-it)
+  - [5.14 Apple's space mirrors five standard procedures, one function each](#514-apples-space-mirrors-five-standard-procedures-one-function-each)
 - [6. Controller interface: HCI vendor commands](#6-controller-interface-hci-vendor-commands)
   - [6.0 What a source actually puts in those seven bytes](#60-what-a-source-actually-puts-in-those-seven-bytes)
   - [6.1 Which bands are allowed: command 0xFF79](#61-which-bands-are-allowed-command-0xff79)
@@ -1357,10 +1358,12 @@ firmware's own builder writes one byte, so the request it would send is shorter 
 it reads a selector out of at +0x10; the directions of these messages are not symmetric, which
 5.7 already says in general.
 
-What the numbers mean stays open. A value of 21, 42 or 63 with a code of 5, 10 or 15, chosen
-per link by a controller property, is a 1:2:3 family and nothing in these payloads names it.
-It is the most concrete lead left for anyone with a capture: those six bytes are recognisable
-on sight.
+**What the numbers mean is answered in 5.14, and this paragraph used to say it was open.** The
+short version: this pair is Apple's form of the specification's power control request and
+response, the one-byte selector of 0, 1 and 2 is that request's own range, and the value with
+its four-bit code is **five two-bit modulation fields** where the specification packs three. The
+three answers are one code repeated five times, which is why they looked like a 1:2:3 family.
+Those six bytes are still recognisable on sight in a capture, and now they are also readable.
 
 **The same three bits gate one more message.** The function that sends 0x7B/0x10, whose body
 is one halfword (5.7), opens with the identical test: bit 2 of the AND of the two first
@@ -1534,6 +1537,57 @@ negotiation allows three.
 
 `openulla/packets.py` holds the eighteen entries and reproduces the chooser, and
 `tools/verify_claims.py` checks all three arrays against a firmware image.
+
+### 5.14 Apple's space mirrors five standard procedures, one function each
+
+The packet-type table of 5.13 is not a special case. Scanning every call of the send builder
+for sites where **both** escape opcodes are set on the way in finds six, and they cover five
+distinct link-management procedures. In each one a single function picks the specification's
+form or Apple's, and the two forms are the same length or **exactly one byte longer**:
+
+| the specification's | its length | Apple's | its length | the deciding site |
+|---|---|---|---|---|
+| 0x7F/0x0B, packet-type-table request | 3 | 0x7B/0x0D | 3 | acib 0x29e66 |
+| 0x7F/0x1F, power control request | 3 | 0x7B/0x0E | 3 | acib 0x28fa8 and 0x2906a |
+| 0x7F/0x20, power control response | 3 | 0x7B/0x0F | 4 | acib 0x29236 |
+| 0x7F/0x10, channel classification request | 7 | 0x7B/0x19 | 8 | acib 0x22d9e |
+| 0x7F/0x11, channel classification | 12 | 0x7B/0x1A | 13 | acib 0x46014 |
+
+The lengths come from 5.7's own table, which was written before any of this was known, so the
+agreement is not circular. 0x7B/0x1A is the clearest case of the pattern: "one byte, then ten
+bytes from block+0x11", where the specification's channel classification is the same ten-byte
+channel map with no byte in front of it.
+
+**This answers what 5.11 left open.** That section describes a pair it could only call a
+selector request and a value with a four-bit code, and ends by saying that a value of 21, 42 or
+63 with a code of 5, 10 or 15 is a 1:2:3 family nothing in the payloads names. It is not a
+1:2:3 family. The specification's power control response packs **three two-bit fields into one
+byte, one per modulation**, and Apple's form adds a second byte bounded to four bits, which is
+**two more fields of the same two bits**. Read that way, the three answers are one code repeated:
+
+| what 5.11 recorded | as five two-bit fields |
+|---|---|
+| value 0x15, code 5 | 1, 1, 1, 1, 1 |
+| value 0x2A, code 10 | 2, 2, 2, 2, 2 |
+| value 0x3F, code 15 | 3, 3, 3, 3, 3 |
+
+So the two numbers are "the same two numbers at one, two and three times" for the plain reason
+that the same two-bit code fills both of them, and the three cases are three of the four values
+the specification gives such a field. **Five modulation fields where the specification has
+three** is exactly what a radio with two more rates needs, and 5.13 found six packet types at
+two rates beyond the specification's three modulations.
+
+Three things confirm it independently, and all three were already in 5.11 before they had a
+name. The request's handler switches on a selector of **0, 1 and 2**, which is the full range
+of the specification's power control request. Each of its branches asks the radio layer one
+boolean, which is what a controller must do to answer whether it can still step power. And the
+receiver's two masks over the four-bit code, 0x9009 and 0x504, select exactly the codes whose
+two extra fields are each 0 or 3 (0, 3, 12 and 15) and exactly those with a 2 in one or both
+(2, 8 and 10). A mask that falls on two-bit boundaries is reading two-bit fields.
+
+What stays open is narrower than before: the specification assigns a meaning to each of the four
+values, and this document does not claim which of Apple's five fields belongs to which rate.
+The structure is recovered; the per-field mapping is not.
 
 ## 6. Controller interface: HCI vendor commands
 

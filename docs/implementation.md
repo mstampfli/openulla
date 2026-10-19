@@ -209,7 +209,7 @@ still works: Apple's catalog served build 9A348 as `A3048.zip`, 11,455,085 bytes
 beginning `a04ff3f0d74e47e4`, the same asset [ulla.md](ulla.md) section 1 names. The
 `firmware.uarp` inside it, SHA-256 beginning `78171265810972c3`, is byte for byte the file
 every address in this repository was read from, and the four payloads extracted from that
-download pass **27 of 27 claims**. If your own download gives those two prefixes, you have the
+download pass **28 of 28 claims**. If your own download gives those two prefixes, you have the
 same bytes; if it does not, Apple has published a new build and the tool will tell you which
 claims moved.
 
@@ -254,7 +254,8 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  the packet-type table            18 entries, all twelve specified payloads present, 6 more at mask bits 16 to 21, Apple's request bounded to 2
   PASS  shared host commands             7 of their twelve present and 5 absent, 0xFD02 mode 1 -> 2586 bytes, otherwise 339
   PASS  payload header width             ten-bit length at bit 3 under mask 0xe007, twelve-bit under 0x8007, the wide builder tests table 2 and mask 0x3f0000
-27 of 27 claims hold
+  PASS  the five paired procedures       5 senders choose between the two forms, the three power answers are one two-bit code five times
+28 of 28 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows
