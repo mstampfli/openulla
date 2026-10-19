@@ -207,3 +207,37 @@ def test_the_counted_band_block_carries_its_own_length():
         lmp.BandBlock.from_bytes(bytes((0xF6, 0x15, 0x03, 0x01)))
     with pytest.raises(lmp.ProtocolError):
         lmp.BandBlock.from_bytes(bytes((0xF6, 0x15)))
+
+
+def test_the_counted_block_is_a_tlv_list_with_the_length_in_the_high_nibble():
+    """Each item is type in the low nibble, length in the high one [protocol.md 5.15]."""
+    built = lmp.BandBlock.from_items([(0, b"\x5b\x00"), (1, b"\x11\x22"), (2, b"\x7f")])
+    assert built.block == bytes.fromhex("205b00 211122 127f".replace(" ", ""))
+    assert built.items() == ((0, b"\x5b\x00"), (1, b"\x11\x22"), (2, b"\x7f"))
+    # Through the wire and back.
+    assert lmp.parse(built.to_bytes()).items() == built.items()
+    # An unknown type is skipped by its own declared length rather than ending the walk, which
+    # is what makes the format extensible [fw acib 0x298ba to 0x298c4].
+    odd = lmp.BandBlock(block=bytes.fromhex("37aabbcc") + bytes.fromhex("205b00"))
+    assert odd.items() == ((7, b"\xaa\xbb\xcc"), (0, b"\x5b\x00"))
+    assert 7 not in lmp.BandBlock.ITEM_FIELDS
+    with pytest.raises(lmp.ProtocolError):
+        lmp.BandBlock.from_items([(0x10, b"")])
+    with pytest.raises(lmp.ProtocolError):
+        lmp.BandBlock.from_items([(0, bytes(16))])
+
+
+def test_the_firmware_reply_block_and_the_halfword_pair_agree():
+    """One value, two messages, one field: the cross-check behind both readings.
+
+    The reply this firmware builds opens with a type 0 item carrying 0x005B, and type 0 writes
+    the link's +0x62; the halfword pair's own answer carries 0x5B to the same +0x62. Two
+    functions building two messages that agree on a value and a destination is not what a
+    misreading of either produces [protocol.md 5.15].
+    """
+    opening = lmp.BandBlock(block=lmp.BandBlock.REPLY_OPENS_WITH).items()
+    assert len(opening) == 1
+    kind, value = opening[0]
+    assert kind == 0
+    assert int.from_bytes(value, "little") == lmp.LinkHalfword.SEEN_IN_REPLY
+    assert lmp.BandBlock.ITEM_FIELDS[kind] == 0x62

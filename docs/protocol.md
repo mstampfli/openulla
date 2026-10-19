@@ -1746,7 +1746,30 @@ extended opcode **0x16** [fw acib 0x29a2a, 0x29a2c]. 0x16's consumer requires th
 1, then tests **bit 5** of the link's +0x47 ANDed with the first byte of 0x10003290 and gives up
 when it is set [fw acib 0x29a78 to 0x29a96]. Bit 5 is the band family bit this document already
 names in 5.8, which is what puts these two in section 6's family rather than anywhere else.
-Their body is a counted byte block, N bytes behind a count (5.7); what the block holds is open.
+**Their counted block is a TLV list, and it is self-describing.** Both consumers hand the block
+to one parser, which takes the count from the block's +0x10, points past it, and walks it
+[fw acib 0x29c50, then 0x29810]. Each item's **first byte carries a four-bit type in its low
+nibble and a four-bit length in its high nibble**, and the parser advances by one plus that
+length, which is how it skips an item it does not know [fw acib 0x2983a the type, 0x298ba to
+0x298c4 the skip]. Four types are handled:
+
+| type | carries | lands at |
+|---|---|---|
+| 0 | a halfword | the link's +0x62 [fw acib 0x2984e, 0x29854] |
+| 1 | a halfword | the link's +0x64 [fw acib 0x29864, 0x29868] |
+| 2 | one byte, logged as its two nibbles | the link's +0x68 [fw acib 0x2986e, 0x29876] |
+| 0xF | a halfword | the link's +0x66, and below 2 it also pokes two globals and calls on [fw acib 0x2988a, 0x2988e, 0x29896, 0x298c6 to 0x298de] |
+
+Anything else is logged and skipped by its own declared length, so the format is extensible by
+design. When the walk finishes it sets the link's +0x3E [fw acib 0x298ea].
+
+**One number crosses two messages and confirms both readings.** The reply this firmware builds
+starts its block with a count of 0x0B and then the bytes `20 5b 00` [fw acib the word at
+0x29a68, stored at 0x29a34]. Read as TLV, `0x20` is type 0 with length 2, and the halfword that
+follows is **0x005B**, which type 0 puts at the link's **+0x62**. That is the same value and the
+same field as the halfword pair above, whose own answer carries 0x5B to +0x62. Two different
+messages built by two different functions carry one value to one place, which is not something
+a misreading of either would produce.
 
 **And the procedure a link is running decides which of these are legal at all.** The link's
 +0x7D holds a procedure number, and an anchored sweep of every function in this payload finds

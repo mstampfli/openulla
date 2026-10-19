@@ -163,9 +163,17 @@ def describe_lmp(data: bytes) -> list[str]:
             % (parsed.ext_opcode, len(parsed.block)),
             "    the " + ("answer" if parsed.reply else "request")
             + f", gated on the band feature bit {lmp.BandBlock.FEATURE_BIT}, protocol.md 5.15",
-            "    contents: " + (parsed.block.hex(" ") if parsed.block else "empty")
-            + " (what they hold is open)",
         ]
+        if not parsed.block:
+            lines += ["    the block is empty"]
+        for item_type, item_value in parsed.items():
+            where: int | None = lmp.BandBlock.ITEM_FIELDS.get(item_type)
+            shown: str = item_value.hex(" ") if item_value else "-"
+            lines += [
+                f"    item type 0x{item_type:X}, {len(item_value)} bytes: {shown}"
+                + (f", to the link's +0x{where:02x}" if where is not None
+                   else ", a type this firmware skips by its own length"),
+            ]
     elif isinstance(parsed, lmp.PacketTableRequest):
         selectable = parsed.selectable()
         names = {0: "the basic-rate packets", 1: "the EDR packets"}

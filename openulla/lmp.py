@@ -25,6 +25,7 @@ length: the sender copies three bytes per triple and reports 3n + 2, and the rec
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from . import octets, packets
 from .errors import ProtocolError, Refused
@@ -394,7 +395,10 @@ class BandBlock:
     0x29a70 to 0x29a96 for the reply; protocol.md 5.15].
 
     The body is a count byte followed by that many bytes [5.7's builder for 0x15, 0x16 and
-    0x24]. What those bytes hold is open, which is why this carries them as bytes.
+    0x24], and those bytes are a **TLV list**: each item's first byte carries a four-bit type in
+    its low nibble and a four-bit length in its high nibble, and a reader advances by one plus
+    that length, so an unknown type is skipped rather than fatal [fw acib 0x29810 the parser,
+    0x2983a the type, 0x298ba to 0x298c4 the skip; protocol.md 5.15].
     """
 
     block: bytes = b""
@@ -402,6 +406,11 @@ class BandBlock:
     tid: int = 0
 
     FEATURE_BIT = 5  # the band family bit its reply is gated on, the same as FEATURE_BIT_BANDS
+    # The four types this firmware handles, and the per-link field each one writes.
+    ITEM_FIELDS: ClassVar[dict[int, int]] = {0: 0x62, 1: 0x64, 2: 0x68, 0xF: 0x66}
+    # What this firmware's own reply opens with: count 0x0B, then type 0 of length 2 carrying
+    # 0x005B, which is the value the halfword pair carries to the same field [fw acib 0x29a68].
+    REPLY_OPENS_WITH = bytes.fromhex("205b00")
 
     @property
     def ext_opcode(self) -> int:
@@ -433,6 +442,36 @@ class BandBlock:
             reply=head.ext_opcode == EXT_BAND_BLOCK_REPLY,
             tid=head.tid,
         )
+
+    def items(self) -> tuple[tuple[int, bytes], ...]:
+        """Walk the block as TLV, the way the firmware's parser does.
+
+        A trailing item whose declared length runs past the end is returned with the bytes that
+        are actually there, because that is what the firmware would read; it bounds its walk by
+        the count and not by each item.
+        """
+        out: list[tuple[int, bytes]] = []
+        at = 0
+        while at < len(self.block):
+            head_byte = self.block[at]
+            kind, length = head_byte & 0x0F, head_byte >> 4
+            out.append((kind, self.block[at + 1: at + 1 + length]))
+            at += 1 + length
+        return tuple(out)
+
+    @classmethod
+    def from_items(cls, items: list[tuple[int, bytes]], reply: bool = False,
+                   tid: int = 0) -> BandBlock:
+        """Build a block from (type, value) pairs, each one its own length."""
+        block = bytearray()
+        for kind, value in items:
+            if not 0 <= kind <= 0x0F:
+                raise ProtocolError("the item type is four bits")
+            if len(value) > 0x0F:
+                raise ProtocolError("the item length is four bits, so at most 15 bytes")
+            block.append((len(value) << 4) | kind)
+            block += value
+        return cls(block=bytes(block), reply=reply, tid=tid)
 
 
 @dataclass(frozen=True)

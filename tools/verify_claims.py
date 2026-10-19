@@ -240,6 +240,13 @@ PAIR_IMMEDIATES = (
     ("0x18 copies fifteen bytes", 0x23266, 0x220F),
 )
 PACKET_TABLE_PROCEDURE_AT = 0x29E0E  # cmp r0, #0x20 on the link's +0x7D, in its sender
+# The TLV parser behind the counted block, and the block this firmware's own reply opens with.
+TLV_TYPE_MASK_AT = 0x2983A  # and r1, r2, #0xf, the low nibble is the type
+TLV_DEFAULT_STEP = (0x298E4, 0x2003)  # movs r0, #3, one plus a length of two
+TLV_SHORT_STEP = (0x29886, 0x2002)  # movs r0, #2, type 2's one-byte value
+TLV_SKIP_ONE = (0x298BE, 0x2101)  # movs r1, #1
+TLV_SKIP_SHIFT = (0x298C0, 0xEB01, 0x1010)  # add.w r0, r1, r0, lsr #4
+TLV_REPLY_BLOCK_AT = 0x29A68  # the literal, as count then the first item
 # 0x7B/0x14's three gates: the length, a link bit, and feature bit 0. [5.15]
 GATE_14_LENGTH = (0x3C02C, 0x2804)  # cmp r0, #4 on the whole PDU length
 GATE_14_LENGTH_ERROR = (0x3C31E, 0x2019)  # movs r0, #0x19
@@ -1497,6 +1504,26 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
     writes = dict((at, want) for _, at, want in SEQUENCE_GATES)
     if writes[0x31ECE] & 0xFF != writes[0x3208A] & 0xFF:
         return False, "0x25 no longer writes the value 0x26 waits for"
+
+    # The TLV parser: the type nibble, the two known steps and the skip by the length nibble.
+    if u16(acib, TLV_TYPE_MASK_AT) != 0xF002 or u16(acib, TLV_TYPE_MASK_AT + 2) != 0x010F:
+        return False, f"0x{TLV_TYPE_MASK_AT:x} no longer masks the type to four bits"
+    for at, want in (TLV_DEFAULT_STEP, TLV_SHORT_STEP, TLV_SKIP_ONE):
+        if u16(acib, at) != want:
+            return False, f"0x{at:x} is 0x{u16(acib, at):04x}, not 0x{want:04x}"
+    at, first, second = TLV_SKIP_SHIFT
+    if (u16(acib, at), u16(acib, at + 2)) != (first, second):
+        return False, f"0x{at:x} no longer skips by one plus the length nibble"
+    # And the block the firmware's own reply opens with, read as TLV by the library.
+    opening = acib[TLV_REPLY_BLOCK_AT: TLV_REPLY_BLOCK_AT + 4]
+    if opening[0] != len(lmp.BandBlock.REPLY_OPENS_WITH) + 8:
+        return False, f"the reply block's count is now {opening[0]}"
+    if opening[1:] != lmp.BandBlock.REPLY_OPENS_WITH:
+        return False, f"the reply block now opens with {opening[1:].hex(' ')}"
+    items = lmp.BandBlock(block=lmp.BandBlock.REPLY_OPENS_WITH).items()
+    carried = int.from_bytes(items[0][1], "little")
+    if items[0][0] != 0 or carried != lmp.LinkHalfword.SEEN_IN_REPLY:
+        return False, f"its first item is type {items[0][0]} carrying 0x{carried:x}"
     both, maxed = POWER_RESPONSE_MASKS
     if sorted(v for v in range(16) if both & (1 << v)) != [0, 3, 12, 15]:
         return False, "the first mask no longer selects the codes whose two fields are 0 or 3"
@@ -1505,7 +1532,8 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
     return True, (
         f"{len(PAIRED_PROCEDURES)} senders choose between the two forms on bits "
         f"{sorted(tested)}, the three power answers are one two-bit code five times, "
-        f"{len(PAIR_IMMEDIATES)} pair immediates hold, {len(SEQUENCE_GATES)} sequence gates"
+        f"{len(PAIR_IMMEDIATES)} pair immediates hold, {len(SEQUENCE_GATES)} sequence gates, "
+        f"the TLV reply opens with type 0 carrying 0x{carried:x}"
     )
 
 
