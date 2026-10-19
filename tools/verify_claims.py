@@ -133,8 +133,6 @@ PROCEDURE_LITERAL = 0x682FC  # where the dispatcher loads that address from
 GETTER_TABLE = 0xF7D60  # 534 property getters, one-based, 6.6
 GETTER_TABLE_LITERAL = 0xE42C4
 GETTERS = {
-    0x12: 0xCF9AC,  # 0x74's word: a bx lr stub, 5.2
-    0x13: 0xCF9AE,  # 0x74's halfword: the same
     0x63: 0xDC9C0,  # 0x73's 32-bit field: the hardware read with retries, 5.1
     0xB9: 0xE0AC4,  # the three queries of 5.11
     0x1AF: 0xDC35C,  # the six ULLA session properties of 6.6
@@ -143,6 +141,23 @@ GETTERS = {
     0x1B2: 0xDC1B4,
     0x1B3: 0xDC200,
     0x1AB: 0xDC168,
+}
+# The numbers that are not property ids: they ride in property 0x20D's input block and reach a
+# second dispatcher of 54 entries [5.2, 6.6]. Each row: the id, its arm, what the arm calls.
+INNER_PROPERTY = 0x20D
+INNER_PROPERTY_FN = 0xE42D8  # what the table holds for it, and it just calls the dispatcher
+INNER_DISPATCH = 0xDE8D0
+INNER_BOUND_AT = 0xDE8E6  # cmp r5, #0x35
+INNER_BOUND = 0x35
+INNER_TABLE = 0xDE8F2
+INNER_IDS = {
+    0x02: (0xDEA46, 0xC9DDC),  # 0xFE55's word, 6.6
+    0x12: (0xDEAB2, 0xC1F10),  # 0x74's 32-bit value, 5.2
+    0x13: (0xDE99A, 0xC1F6C),  # 0x74's halfword, 5.2
+    0x19: (0xDEA30, 0xDA8B4),  # 0xFE52 on a live link, the other role
+    0x1A: (0xDEB0A, 0xDA904),  # 0xFE58 on a live link
+    0x25: (0xDE972, 0xDB6A8),  # 0xFE52 on a live link, the source
+    0x2B: (0xDE96A, 0xDB9AC),  # 0xFE53 on a live link
 }
 # The link-up half of the five gated session commands [6.6]
 GATE = 0x1DFE0  # the "is the link already up" gate each of them calls first
@@ -578,7 +593,12 @@ def check_dma_descriptor(acib, rkof, ctab):
 
 
 def check_getter_table(acib, rkof, ctab):
-    """The property getter table: one-based, and the two ids whose getters we already cite."""
+    """How a number becomes a function: the 534-entry table, and the 54-entry one behind 0x20D.
+
+    Both halves are here because telling them apart is the correction 5.2 records: a number
+    passed in r0 is a table id, a number passed in an input block is an id of the dispatcher
+    that property 0x20D calls.
+    """
     if u32(acib, GETTER_TABLE_LITERAL) != GETTER_TABLE:
         return False, f"the dispatcher no longer loads 0x{GETTER_TABLE:x} from its literal"
     for ident, getter in sorted(GETTERS.items()):
@@ -587,7 +607,30 @@ def check_getter_table(acib, rkof, ctab):
             return False, (
                 f"id 0x{ident:x} now resolves to 0x{entry & 0x7FFFFFFE:x}, not 0x{getter:x}"
             )
-    return True, f"{len(GETTERS)} ids checked against the table at acib 0x{GETTER_TABLE:x}"
+    entry = u32(acib, GETTER_TABLE + 4 * (INNER_PROPERTY - 1))
+    if entry & 0x7FFFFFFE != INNER_PROPERTY_FN:
+        return False, f"property 0x{INNER_PROPERTY:x} resolves to 0x{entry & 0x7FFFFFFE:x}"
+    if not any(
+        wide_branch(acib, INNER_PROPERTY_FN + 2 * step) == INNER_DISPATCH for step in range(8)
+    ):
+        return False, f"0x{INNER_PROPERTY_FN:x} no longer calls 0x{INNER_DISPATCH:x}"
+    bound = u16(acib, INNER_BOUND_AT)
+    if bound != 0x2D00 | INNER_BOUND:
+        return False, f"the inner bound at 0x{INNER_BOUND_AT:x} is 0x{bound:04x}"
+    for ident, (arm, target) in sorted(INNER_IDS.items()):
+        at = INNER_TABLE + 2 * u16(acib, INNER_TABLE + 2 * ident)
+        if at != arm:
+            return False, f"inner id 0x{ident:x} now branches to 0x{at:x}, not 0x{arm:x}"
+        if not any(
+            wide_branch(acib, arm + 2 * step, link=link) == target
+            for step in range(4)
+            for link in (True, False)
+        ):
+            return False, f"inner id 0x{ident:x}'s arm no longer reaches 0x{target:x}"
+    return True, (
+        f"{len(GETTERS)} ids in the table at acib 0x{GETTER_TABLE:x}, "
+        f"{len(INNER_IDS)} behind property 0x{INNER_PROPERTY:x}"
+    )
 
 
 def check_session_commands(acib, rkof, ctab):

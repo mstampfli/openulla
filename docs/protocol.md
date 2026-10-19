@@ -577,8 +577,24 @@ context's offset 0x10 [fw acib 0x685cc..0x685d2 and section 5.5].
 | 1 | 4 | configuration value, read by id from the controller's parameter table |
 | 5 | 2 | configuration value, read by id from the controller's parameter table |
 
-In the build examined, the two parameter getters for these ids are stubs that return nothing
-[fw acib 0xcf9ac, 0xcf9ae], so this firmware contributes zeroes for both. The receiver checks
+**Both values are computed, and an earlier version of this section had that wrong.** The two
+ids, 0x12 for the word and 0x13 for the halfword, are not indexes into the getter table of 6.6:
+they travel as the first word of property **0x20D**'s input block, and that property's function
+simply calls a second dispatcher with them [fw acib 0xe42d8, which reads the block's two words
+and calls 0xde8d0]. That dispatcher bounds its id at 0x35 and branches through a 54-entry table
+[fw acib 0xde8d0..0xde8ee, the table at 0xde8f2], where
+
+- **0x12 reaches acib 0xc1f10**: it takes the link index from its argument, asks 0xdf3a4 what
+  kind of link it is, reads a byte from either a per-link record of 0x13C bytes at 0x10005b58
+  or from 0xd9d00's own record at +0x10, converts it through 0x6fea8, adds the halfword the
+  caller passed at its argument's +1, and clears the top six bits, so the word is a **26-bit
+  quantity**.
+- **0x13 reaches acib 0xc1f6c**: it copies the word at 0x10001cc4, calls method +0x14 of entry
+  6 of the table at 0x10026 0d0 with it, and returns that result **less 0x57**, sign-extended
+  to 16 bits. An offset of 87 on a signed quantity is the shape of a dBm conversion, which is
+  a reading rather than a proof.
+
+So this firmware sends two measured values here, not zeroes. The receiver checks
 nothing of its own: it reads the word and the halfword and hands both, with the procedure
 object, to the slot at +0xC8 of the module block [fw acib 0x6352c]. That slot is the one 5.9
 and 5.10 map, so **receiving a 0x74 is what posts event 3** to a responder's procedure, and
@@ -1607,7 +1623,7 @@ are one property of the session object:
 | 0xFE4E | its own pair of handlers, by the first parameter [fw acib 0x1e688, 0x1e88c] | - |
 | 0xFE52 | property **0x1B0** or **0x1B2**, the role deciding which [fw acib 0x4883c, 0x4870e] | 0x0C |
 | 0xFE53 | **reads** property **0x1AF** and reports it to the host [fw acib 0x48856 into 0x11f04] | 0x0C |
-| 0xFE55 | writes property id **2** with the word, and answers **0x11** if that write fails [fw acib 0x79448 at 0x1de0e] | 2, or 0x0C |
+| 0xFE55 | passes the word to id **2** of the second dispatcher below, and answers **0x11** if that call fails [fw acib 0x79448 at 0x1de0e] | 2, or 0x0C |
 | 0xFE57 | property **0x1B1** with the word [fw acib 0x486f8] | 0x0C |
 | 0xFE58 | property **0x1B3**, then reports to the host [fw acib 0x48722 into 0x11e8c] | 0x0C |
 | 0xFE7B | property **0x1AB** with the byte, and no role branch at all [fw acib 0x1d47c] | - |
@@ -1620,31 +1636,48 @@ refusals:
 
 | command | source role | the other role |
 |---|---|---|
-| 0xFE52 | property **0x25**, after one call with (the module block's +0x64 == 1) [fw acib 0x66b58] | property **0x19** [fw acib 0x63294] |
-| 0xFE53 | answers the host, then property **0x2B** into a buffer whose word at +8 and byte at +0xC it reads back [fw acib 0x1de72..0x1de86] | **refused, 0x0C** [fw acib 0x1deae] |
+| 0xFE52 | id **0x25** of the second dispatcher below, after one call with (the module block's +0x64 == 1) [fw acib 0x66b58] | id **0x19** [fw acib 0x63294] |
+| 0xFE53 | answers the host, then id **0x2B** into a buffer whose word at +8 and byte at +0xC it reads back [fw acib 0x1de72..0x1de86] | **refused, 0x0C** [fw acib 0x1deae] |
 | 0xFE55 | the session path's own tail, with the role coming from this test instead [fw acib 0x1ddf2 into 0x1de06] | the same |
 | 0xFE57 | **refused, 0x0C** [fw acib 0x1d93a] | one call, then property **0x1A4** with the command's word [fw acib 0x1d914..0x1d920] |
-| 0xFE58 | **refused, 0x0C** [fw acib 0x1d982] | answers the host, then property **0x1A**, and on a 1 the host report builder [fw acib 0x6329a] |
+| 0xFE58 | **refused, 0x0C** [fw acib 0x1d982] | answers the host, then id **0x1A**, and on a 1 the host report builder [fw acib 0x6329a] |
 
 So on a live link **0xFE53 is the source's to use and 0xFE57 and 0xFE58 are the other role's**,
 while 0xFE52 serves both with different ids. That matters for section 7.1: the stream's address
 command goes to a different property depending on whether a ULLA link is up, 0x1A4 rather than
 0x1B1, and on the source side it is refused outright.
 
-Those five ids resolve through the same table as the rest: 0x19 to acib 0xc79dc, 0x1A to
-0xc7cd4, 0x25 to 0xc7dcc, 0x2B to 0xc80ec and 0x1A4 to 0xda944. The first four are one module
-of their own, which reads a record out of an index and acts on it; what each one does there is
-open, and this document does not guess.
+Only one of those numbers is a property id: **0x1A4**, which resolves to acib 0xda944 in the
+534-entry table. The other four go through property 0x20D into the second dispatcher, and the
+table below this one says what each of them reaches. What those functions do is open, and this
+document does not guess.
 
 "Property" is this document's word for them, and they are not opaque: **every id resolves to a
 function in this image.** The call packs the id with an input and an output pointer
 [fw acib 0x79454, the wrappers 0x7951a and 0x79522] and the dispatcher looks the id up in a
 **534-entry table of getter functions at acib 0xf7d60**, one-based, valid for ids 1 to 0x216,
 with bit 31 of each entry masked off before the call [fw acib 0xe422c, the range check at
-0xe423a, the entry read at 0xe425a and the mask at 0xe427c]. Two claims elsewhere in this
-document are the proof that the indexing is right: id 0x63 resolves to the hardware read with
-retries that fills 0x73's 32-bit field (5.1), and ids 0x12 and 0x13, which fill 0x74, resolve
-to the two `bx lr` stubs that make this firmware contribute zeroes (5.2).
+0xe423a, the entry read at 0xe425a and the mask at 0xe427c]. The proof that the indexing is
+right is elsewhere in this document: id 0x63 resolves to the hardware read with retries that
+fills 0x73's 32-bit field (5.1), and ids 0x1AF to 0x1B3 resolve to the stream functions of 7.1,
+one of which logs the firmware's own ADMA assert.
+
+**Not every number this document used to call a property id is one.** Four of the wrappers put
+the number in r0, and those are table ids [fw acib 0x7951a, 0x79522, 0x79510]. Two others,
+0x7944c and 0x79448, call 0x79414, which puts the number in an input block and asks for
+property **0x20D** instead [fw acib 0x79414..0x7943a]; so does 0x793a4, after checking that its
+pointer is in one of the two address windows of 7.2 [fw acib 0x793ac..0x793d0]. The numbers
+those three carry - **2, 0x12, 0x13, 0x19, 0x1A, 0x25 and 0x2B** in this document - are ids of
+a second dispatcher of 54 entries, not of the 534-entry table, and 5.2 says what two of them
+really resolve to. The rest:
+
+| id | arm | what it calls |
+|---|---|---|
+| 2 | acib 0xdea46 | 0xc9ddc with the argument |
+| 0x19 | acib 0xdea30 | 0xda8b4 |
+| 0x1A | acib 0xdeb0a | 0xda904 |
+| 0x25 | acib 0xde972 | 0xdb6a8 |
+| 0x2B | acib 0xde96a | 0xdb9ac with the argument |
 
 So the ids these commands drive can be followed, and here is where each one lands:
 

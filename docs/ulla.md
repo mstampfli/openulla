@@ -433,6 +433,7 @@ Not recovered, and not to be filled in until it is:
   lite mode.
 - The eight codec-specific bytes of the Apple vendor A2DP capability (4.6). The
   bytes themselves are recorded; their field layout is not established.
-- The two setup fields whose values come from a runtime hardware read or from
-  parameter getters that are stubs in this build (protocol.md sections 5.1,
-  5.2). They do not affect acceptance, only the radio configuration.
+- The two setup fields whose values come from a runtime hardware read and from
+  the two computed values of protocol.md 5.2, one a 26-bit quantity built from a
+  per-link byte and one a module's own measurement less 0x57. What they measure
+  is open; they do not affect acceptance, only the radio configuration.

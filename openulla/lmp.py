@@ -134,8 +134,11 @@ class SetupRequest:
 class Configuration:
     """Opcodes 0x74 and 0x75, two values read by id from the controller's parameter table.
 
-    In this build both getters are stubs that return nothing [fw acib 0xcf9ac, 0xcf9ae], so
-    this firmware sends zeroes. 0x74's receiver stores them without checking
+    Both values are computed, not zero: the ids go through property 0x20D into a second
+    dispatcher of 54 entries, where the word's id reaches a 26-bit quantity built from a
+    per-link byte and the halfword's reaches a module's own measurement less 0x57
+    [fw acib 0xde8f2 the table, 0xc1f10 and 0xc1f6c; docs/protocol.md 5.2]. 0x74's receiver
+    stores them without checking
     [fw acib 0x6352c]; 0x75 has the same seven bytes, because the sender's case serves both
     opcodes [fw acib 0x3a832], but its own receiver drops a halfword above 7499 and requires
     an active session on the link whose role byte is zero [fw acib 0x487a0, 0x2f550, 0x2f566,
