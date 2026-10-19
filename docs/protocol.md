@@ -72,6 +72,7 @@ firmware from us.
 - [7. The audio layer, and what is not known](#7-the-audio-layer-and-what-is-not-known)
   - [7.1 The stream's control path, which is not open any more](#71-the-streams-control-path-which-is-not-open-any-more)
   - [7.2 The buffer descriptor the stream module programs](#72-the-buffer-descriptor-the-stream-module-programs)
+  - [7.3 One piece of the air format: the payload header is wider](#73-one-piece-of-the-air-format-the-payload-header-is-wider)
 - [8. What an implementation can do today](#8-what-an-implementation-can-do-today)
   - [8.1 The order to implement it in](#81-the-order-to-implement-it-in)
 
@@ -2225,7 +2226,52 @@ function are in that aperture - where the descriptor is read from, where a buffe
 and where the channel is handed over - which is the layer this document stops at: what the DMA
 carries is the open question below, not where it is pointed.
 
-**[open] The over-the-air packet format.** The air packet is produced by radio hardware
+### 7.3 One piece of the air format: the payload header is wider
+
+The six packet types of 5.13 cannot use the specification's multi-slot payload header, and that
+follows from their own size before any firmware is read. That header is sixteen bits: two of
+LLID, one of FLOW, a **ten-bit** length at bit 3, and three bits above it the specification
+leaves undefined. Ten bits hold 1023. The five-slot entry of Apple's table carries **2586**.
+
+The firmware has the wider header, and keeps both. A block of leaf accessors covers every form:
+
+| what it touches | read | write |
+|---|---|---|
+| the low three bits, LLID and FLOW | acib 0x78cca | acib 0x78cdc |
+| a **five-bit** length, the one-slot header | | acib 0x78cbe |
+| a **ten-bit** length at bit 3 | acib 0x78cd0 | acib 0x78ce2 |
+| a **twelve-bit** length at bit 3 | acib 0x78cd6 | acib 0x78cee |
+
+The two writers' masks say exactly where each field sits, because each clears its own field and
+keeps the rest. The ten-bit writer masks with **0xE007**, preserving bits 0 to 2 and 13 to 15,
+so its length is bits 3 to 12 with the specification's three undefined bits left alone. The
+twelve-bit writer masks with **0x8007**, preserving bits 0 to 2 and bit 15 only, so its length
+is bits 3 to 14. **Apple's payload header takes two of the three bits the specification leaves
+undefined** and spends them on length, which is the minimum that 2586 needs.
+
+Which header goes with which packet is visible in one function, acib 0x1465c to 0x14ae8. It
+reads the link's active packet-type table and compares it with 2 [fw acib 0x1494c, 0x1496c,
+0x14a66]; it tests the allowed mask against **0x3F0000**, which is exactly the six mask bits of
+5.13 and nothing else [fw acib 0x14a92]; and it contains the twelve-bit writer and the one-slot
+writer and no ten-bit writer at all [fw acib 0x14aca, 0x14ac0]. All five callers of the ten-bit
+writer are in other functions [fw acib 0xb407e, 0xbc822, 0xbe012, 0xd2dce, 0xd5d82].
+
+Two separately recovered things agree here, which is worth saying because nothing made them:
+the payload maxima come from the table of 5.13 and the field widths from this block of
+accessors, and **every entry can express its own maximum**. The check is in
+`tests/test_packets.py` and it earns its place, because the first version of the width rule
+failed it: 2-DH1 was given the five-bit one-slot field, and its 54 bytes do not fit. The
+one-byte header belongs to the basic-rate one-slot packets alone, since every EDR packet carries
+the two-byte header whatever its slot count.
+
+So the air format is not entirely out of reach after all. The modulation and the framing above
+the payload header remain hardware, but the payload header's own layout is recovered, and it
+tells a software implementation the one thing it could not have guessed: the length field is
+twelve bits wide, not ten, whenever the link is running Apple's packet-type table. Eleven bits
+would also have held 2586, so twelve is a choice rather than a deduction, and the mask is what
+says it is twelve.
+
+**[open] The rest of the over-the-air packet format.** The air packet is produced by radio hardware
 configured through registers, and the register semantics are not public, so it is not
 recoverable from the firmware alone. The PHY payload is worth being exact about, because
 "no strings" was too strong: it carries about two dozen, and what they are about settles the

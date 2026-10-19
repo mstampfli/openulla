@@ -85,6 +85,60 @@ APPLE_MASK_BITS = (16, 17, 18, 19, 20, 21)
 APPLE_RATES = (4, 8)
 
 
+# The payload header. The specification's one-slot form is eight bits, two of LLID, one of FLOW
+# and a five-bit length; its multi-slot form is sixteen, with a ten-bit length at bit 3 and
+# three bits above it left undefined. Apple's table uses a twelve-bit length at the same offset,
+# spending two of those three, which is the least that 2586 needs. The two writers' masks are
+# what fix the positions [fw acib 0x78ce2 masks 0xE007 for ten bits, 0x78cee masks 0x8007 for
+# twelve; docs/protocol.md 7.3].
+LENGTH_SHIFT = 3
+LENGTH_BITS_ONE_SLOT = 5
+LENGTH_BITS_SPECIFIED = 10
+LENGTH_BITS_APPLE = 12
+HEADER_MASK_SPECIFIED = 0xE007  # bits 0 to 2 and 13 to 15 are not the length
+HEADER_MASK_APPLE = 0x8007  # bits 0 to 2 and bit 15 are not the length
+
+
+def length_bits(entry: PacketType) -> int:
+    """How many bits of payload header length this packet type's header carries.
+
+    The one-byte header with its five-bit length belongs to the basic-rate one-slot packets
+    alone: every EDR packet carries the two-byte header whatever its slot count, which is why
+    2-DH1 and 3-DH1 are not in that case despite being one slot. Their 54 and 83 bytes would
+    not fit five bits, and `test_every_payload_fits_its_own_length_field` is what says so.
+    """
+    if entry.slots == 1 and TABLE_BASIC in entry.tables:
+        return LENGTH_BITS_ONE_SLOT
+    if entry.tables == (TABLE_APPLE,):
+        return LENGTH_BITS_APPLE
+    return LENGTH_BITS_SPECIFIED
+
+
+def payload_header(entry: PacketType, length: int, llid: int = 2, flow: int = 1) -> int:
+    """Build the payload header for one packet of this type.
+
+    LLID and FLOW occupy the low three bits in every form, and the length follows at bit 3 in a
+    field whose width depends on the type. A length the field cannot express is an error here
+    rather than a silently truncated header, which is the failure this layout exists to avoid.
+    """
+    if not 0 <= llid <= 3:
+        raise ValueError("LLID is two bits")
+    if flow not in (0, 1):
+        raise ValueError("FLOW is one bit")
+    bits = length_bits(entry)
+    if not 0 <= length <= entry.payload:
+        raise ValueError(f"{entry.name} carries at most {entry.payload} bytes")
+    if length >= 1 << bits:
+        raise ValueError(f"{entry.name}'s length field is {bits} bits, so {length} will not fit")
+    return llid | (flow << 2) | (length << LENGTH_SHIFT)
+
+
+def payload_length(entry: PacketType, header: int) -> int:
+    """Read the length back out of a payload header of this packet type's form."""
+    bits = length_bits(entry)
+    return (header >> LENGTH_SHIFT) & ((1 << bits) - 1)
+
+
 def by_mask_bit(bit: int) -> PacketType:
     """The entry a given allowed-mask bit selects."""
     for entry in TABLE:

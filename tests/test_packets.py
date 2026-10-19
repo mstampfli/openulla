@@ -99,3 +99,47 @@ def test_apples_request_admits_one_more_table_than_the_specifications():
         lmp.PacketTableRequest.from_bytes(bytes((0xF6, 0x0D)))
     with pytest.raises(lmp.ProtocolError):
         lmp.PacketTableRequest.from_bytes(bytes((0xF6, 0x17, 0x00)))
+
+
+def test_every_payload_fits_its_own_length_field():
+    """A cross-check between two separately recovered things, and it caught a real error.
+
+    The payload maxima come from one firmware table and the header widths from a block of leaf
+    accessors; nothing makes them agree by construction. Every entry must be able to express its
+    own maximum, and the first version of `length_bits` failed this on 2-DH1, whose 54 bytes do
+    not fit the five-bit field it was given [protocol.md 7.3].
+    """
+    for entry in packets.TABLE:
+        bits = packets.length_bits(entry)
+        assert entry.payload < (1 << bits), (entry.name, entry.payload, bits)
+        header = packets.payload_header(entry, entry.payload)
+        assert packets.payload_length(entry, header) == entry.payload, entry.name
+
+
+def test_the_wider_field_is_exactly_what_the_largest_packet_needs():
+    """Ten bits cannot hold 2586 and twelve can, which is why the field is twelve."""
+    largest = max(packets.for_table(packets.TABLE_APPLE), key=lambda e: e.payload)
+    assert largest.payload == 2586
+    assert largest.payload >= 1 << packets.LENGTH_BITS_SPECIFIED
+    assert largest.payload < 1 << packets.LENGTH_BITS_APPLE
+    assert packets.length_bits(largest) == packets.LENGTH_BITS_APPLE
+    # Eleven bits would also have held it, so twelve is a choice; the mask is the evidence.
+    assert packets.HEADER_MASK_APPLE == 0x7 | (1 << 15)
+    assert packets.HEADER_MASK_SPECIFIED == 0x7 | (0x7 << 13)
+
+
+def test_the_header_refuses_what_it_cannot_express():
+    """A truncated length field is the failure this layout exists to avoid."""
+    dh5 = next(e for e in packets.TABLE if e.name == "DH5")
+    assert packets.payload_header(dh5, 339, llid=2, flow=1) == 2 | (1 << 2) | (339 << 3)
+    with pytest.raises(ValueError):
+        packets.payload_header(dh5, 2586)  # above DH5's own maximum
+    with pytest.raises(ValueError):
+        packets.payload_header(dh5, 10, llid=4)
+    with pytest.raises(ValueError):
+        packets.payload_header(dh5, 10, flow=2)
+    dm1 = next(e for e in packets.TABLE if e.name == "DM1")
+    assert packets.length_bits(dm1) == packets.LENGTH_BITS_ONE_SLOT
+    for name in ("2-DH1", "3-DH1"):
+        entry = next(e for e in packets.TABLE if e.name == name)
+        assert packets.length_bits(entry) == packets.LENGTH_BITS_SPECIFIED

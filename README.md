@@ -280,7 +280,7 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
   [docs/protocol.md](docs/protocol.md) 2.6.
 - **The implementation exists**, in `openulla/`, with a simulated earbud, a
   decoder, a capture reader, an L2CAP sink server and a verifier that
-  re-derives twenty-six groups of claims from a firmware image, the audio
+  re-derives twenty-seven groups of claims from a firmware image, the audio
   DSP's own node among them. See
   [docs/implementation.md](docs/implementation.md).
 - **A Linux laptop can start a ULLA session and be told it succeeded.** Sending

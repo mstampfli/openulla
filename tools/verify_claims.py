@@ -179,6 +179,19 @@ SIZE_COMMAND_HDR = 0x160F0  # movw r0, #0xa1a, the five-slot payload of Apple's 
 SIZE_COMMAND_HDR_BUFFER = 0x160FA  # movw r1, #0xa28
 SIZE_COMMAND_BASIC = 0x16108  # movw r0, #0x153, DH5's payload
 SIZE_COMMAND_BASIC_BUFFER = 0x16112  # mov.w r1, #0x160
+# The payload header accessors, and the one function that picks the wide one. [7.3]
+HEADER_READ_10 = (0x78CD0, 0xF3C0, 0x00C9)  # ubfx r0, r0, #3, #10
+HEADER_READ_12 = (0x78CD6, 0xF3C0, 0x00CB)  # ubfx r0, r0, #3, #12
+HEADER_WRITE_10 = (0x78CE8, 0xF361, 0x00CC)  # bfi r0, r1, #3, #10
+HEADER_WRITE_12 = (0x78CF4, 0xF361, 0x00CE)  # bfi r0, r1, #3, #12
+HEADER_MASK_10_AT = 0x78CE2  # movw r2, #0xe007: bits 0 to 2 and 13 to 15 preserved
+HEADER_MASK_12_AT = 0x78CEE  # movw r2, #0x8007: bits 0 to 2 and 15 preserved
+HEADER_MASK_10 = 0xE007
+HEADER_MASK_12 = 0x8007
+WIDE_HEADER_FUNCTION = (0x1465C, 0x14AE8)  # the builder that uses the twelve-bit form
+WIDE_HEADER_TABLE_TEST = 0x14A66  # cmp r0, #2, on the link's active packet-type table
+WIDE_HEADER_MASK_TEST = 0x14A92  # ands r1, r1, #0x3f0000, Apple's six mask bits
+NARROW_HEADER_WRITERS = (0xB407E, 0xBC822, 0xBE012, 0xD2DCE, 0xD5D82)
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
@@ -411,6 +424,19 @@ def thumb_expand(value):
     rotation = value >> 7
     unrotated = 0x80 | (value & 0x7F)
     return ((unrotated >> rotation) | (unrotated << (32 - rotation))) & 0xFFFFFFFF
+
+
+def data_imm(img, off):
+    """The constant a wide data-processing instruction carries, expanded the same way.
+
+    `mov_imm` only accepts MOV and `wide_imm` only ADD, SUB and MVN; AND, ORR and the rest
+    carry the field in the same place, which is what this reads.
+    """
+    first, second = u16(img, off), u16(img, off + 2)
+    if first & 0xF800 != 0xF000 or second & 0x8000:
+        return None
+    field = (((first >> 10) & 1) << 11) | (((second >> 12) & 7) << 8) | (second & 0xFF)
+    return thumb_expand(field)
 
 
 def mov_imm(img, off):
@@ -1296,6 +1322,38 @@ def check_shared_host_commands(acib, rkof, ctab, sbd1):
     )
 
 
+def check_payload_header_width(acib, rkof, ctab, sbd1):
+    """Both payload-header length fields, and that only the wide builder tests Apple's bits. [7.3]
+
+    The two masks are the evidence for where each field sits, so they are decoded rather than
+    described, and the builder is pinned by the two tests that make it Apple's.
+    """
+    for at, first, second in (HEADER_READ_10, HEADER_READ_12, HEADER_WRITE_10, HEADER_WRITE_12):
+        if (u16(acib, at), u16(acib, at + 2)) != (first, second):
+            return False, f"0x{at:x} is no longer the bitfield instruction published for it"
+    for at, want in ((HEADER_MASK_10_AT, HEADER_MASK_10), (HEADER_MASK_12_AT, HEADER_MASK_12)):
+        got = movw(acib, at)
+        if got != want:
+            return False, f"0x{at:x} masks with {got and hex(got)}, not 0x{want:04x}"
+    # The field positions the masks imply: ten bits at 3 leaves three above it, twelve leaves one.
+    if HEADER_MASK_10 != 0x7 | (0x7 << 13) or HEADER_MASK_12 != 0x7 | (0x1 << 15):
+        return False, "the two masks no longer describe a ten-bit and a twelve-bit field at 3"
+    start, end = WIDE_HEADER_FUNCTION
+    if u16(acib, WIDE_HEADER_TABLE_TEST) != 0x2802 | 0:  # cmp r0, #2
+        return False, f"0x{WIDE_HEADER_TABLE_TEST:x} no longer tests the table against 2"
+    if data_imm(acib, WIDE_HEADER_MASK_TEST) != 0x3F0000:
+        return False, f"0x{WIDE_HEADER_MASK_TEST:x} no longer masks Apple's six mask bits"
+    expected = sum(1 << bit for bit in packets.APPLE_MASK_BITS)
+    if expected != 0x3F0000:
+        return False, f"Apple's mask bits are now 0x{expected:x}"
+    if any(start <= at < end for at in NARROW_HEADER_WRITERS):
+        return False, "a ten-bit writer is inside the wide builder after all"
+    return True, (
+        f"ten-bit length at bit 3 under mask 0x{HEADER_MASK_10:04x}, twelve-bit under "
+        f"0x{HEADER_MASK_12:04x}, the wide builder tests table 2 and mask 0x3f0000"
+    )
+
+
 def check_ctab_manifest(acib, rkof, ctab, sbd1):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
@@ -1374,6 +1432,7 @@ CHECKS = (
     ("no standard road to a new rate", check_standard_rate_roads),
     ("the packet-type table", check_packet_type_table),
     ("shared host commands", check_shared_host_commands),
+    ("payload header width", check_payload_header_width),
 )
 
 
