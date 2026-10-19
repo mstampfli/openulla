@@ -1157,6 +1157,23 @@ this message go out" has the same answer here as in a textbook link manager: whe
 pending-procedure number comes round. It is also why a list of senders read off the call sites
 is a floor and not a ceiling (5.6).
 
+**And a procedure number is a 16-bit id, not a small integer.** The scheduler subtracts a base
+of **0xFCD0** from the id and refuses anything above 0x58, so the ids run 0xFCD0 to 0xFD28 and
+the arm that sends 0x7B/0x10 is id **0xFCEA** [fw acib 0x3dba6 the base, 0x3dbac the bound,
+0x3dbb2 the table branch]. The id a link is running is a halfword at the link's +0x10, written
+as the scheduler goes [fw acib 0x3db40]. Posting one is a two-argument call, (link, id) [fw
+acib 0x3d958], and 41 sites reach it; the ids they post as immediates are 0xFCD0, 0xFCD2,
+0xFCD4, 0xFCD5, 0xFCD8, 0xFCDA, 0xFCDE, 0xFCEB, 0xFCFD, 0xFD13, 0xFD14, 0xFD16 to 0xFD19,
+0xFD1C, 0xFD1E and 0xFD25, plus one id of another class entirely, 0x415.
+
+**0xFCEA is not among them.** No site in this payload posts the 0x7B/0x10 procedure from a
+literal. The sites that do not pass a constant pass a computed or a stored id, among them one
+that forms it as 0xFCE0 plus a byte at +6 of the message object it is handling, which is how a
+selector value of 0x0A would reach that arm, and two that read an id back out of an object [fw
+acib 0x36b9a to 0x36ba6, 0x4aa6a, 0x55d0c]. So the message is real, its sender is reachable
+and its gate is known, but what decides to run that procedure is not in these files: the same
+shape of answer as the source's third state in 5.9, and recorded here for the same reason.
+
 ## 6. Controller interface: HCI vendor commands
 
 The source's host starts the whole thing with vendor command **0xFE50** [fw acib table at

@@ -144,6 +144,15 @@ GETTERS = {
     0x1B3: 0xDC200,
     0x1AB: 0xDC168,
 }
+SCHEDULER_BASE_LOAD = 0x3DBA6  # movw r0, #0xfcd0: the id the index counts from, 5.11
+SCHEDULER_BASE_ID = 0xFCD0
+SCHEDULER_BOUND_AT = 0x3DBAC  # cmp r0, #0x58
+SCHEDULER_BOUND = 0x58
+SCHEDULER_BRANCH = 0x3DBB2  # tbh [pc, r0, lsl #1]
+SCHEDULER_TABLE = 0x3DBB6  # its halfword table, one entry per id
+SCHEDULER_ARMS = 40  # distinct arms over the 0x59 entries
+SCHEDULER_SENDERS = {0x19: 0x293D0, 0x1A: 0x296A0}  # 0x1A is the one that sends 0x7B/0x10
+MOV_R0_R8 = 0x4640  # what every one of those arms starts with
 SINK_TABLE = 0xF2628  # the sink's eight, 5.10
 SINK_LITERAL = 0x67370
 THIRD_TABLE = 0xF2648  # the third role's seven, 5.10
@@ -207,6 +216,37 @@ def u16(img, off):
 
 def u32(img, off):
     return struct.unpack_from("<I", img, off)[0]
+
+
+def movw(img, off):
+    """The 16-bit immediate of a Thumb-2 MOVW, decoded from its two halfwords (imm4:i:imm3:imm8)."""
+    first, second = u16(img, off), u16(img, off + 2)
+    if first & 0xFBF0 != 0xF240:
+        return None
+    return (
+        ((first & 0xF) << 12)
+        | (((first >> 10) & 1) << 11)
+        | (((second >> 12) & 7) << 8)
+        | (second & 0xFF)
+    )
+
+
+def bl_target(img, off):
+    """Where a Thumb-2 BL at this address goes: S:I1:I2:imm10:imm11, doubled, from off + 4."""
+    first, second = u16(img, off), u16(img, off + 2)
+    if first & 0xF800 != 0xF000 or second & 0xD000 != 0xD000:
+        return None
+    sign = (first >> 10) & 1
+    first_j = 1 - (((second >> 13) & 1) ^ sign)
+    second_j = 1 - (((second >> 11) & 1) ^ sign)
+    value = (
+        (sign << 24)
+        | (first_j << 23)
+        | (second_j << 22)
+        | ((first & 0x3FF) << 12)
+        | ((second & 0x7FF) << 1)
+    )
+    return off + 4 + (value - (1 << 25) if sign else value)
 
 
 def cstring(img, off, limit=128):
@@ -553,6 +593,39 @@ def check_name_table_bounds(acib, rkof, ctab):
     return True, f"{len(Mode)} modes then {past_modes!r}, {len(Result)} results then a null"
 
 
+def check_procedure_scheduler(acib, rkof, ctab):
+    """The per-link procedure scheduler: its id space, its table and two of its arms. [5.11]
+
+    Decoded from the instructions rather than read off a table, because the two numbers that
+    matter are immediates: the id the index counts from and the highest index allowed.
+    """
+    base = movw(acib, SCHEDULER_BASE_LOAD)
+    if base != SCHEDULER_BASE_ID:
+        return False, f"the base id is now {base and hex(base)}, not 0x{SCHEDULER_BASE_ID:x}"
+    bound = u16(acib, SCHEDULER_BOUND_AT)
+    if bound != 0x2800 | SCHEDULER_BOUND:
+        return False, f"the bound at 0x{SCHEDULER_BOUND_AT:x} is now 0x{bound:04x}"
+    if (u16(acib, SCHEDULER_BRANCH), u16(acib, SCHEDULER_BRANCH + 2)) != (0xE8DF, 0xF010):
+        return False, f"0x{SCHEDULER_BRANCH:x} is no longer tbh [pc, r0, lsl #1]"
+    arms = {}
+    for index in range(SCHEDULER_BOUND + 1):
+        at = SCHEDULER_TABLE + 2 * u16(acib, SCHEDULER_TABLE + 2 * index)
+        arms.setdefault(at, []).append(index)
+    if len(arms) != SCHEDULER_ARMS:
+        return False, f"{len(arms)} distinct arms, not {SCHEDULER_ARMS}"
+    for index, sender in SCHEDULER_SENDERS.items():
+        at = SCHEDULER_TABLE + 2 * u16(acib, SCHEDULER_TABLE + 2 * index)
+        if u16(acib, at) != MOV_R0_R8:
+            return False, f"index 0x{index:x}'s arm at 0x{at:x} does not open with mov r0, r8"
+        goes = bl_target(acib, at + 2)
+        if goes != sender:
+            return False, f"index 0x{index:x} calls {goes and hex(goes)}, not 0x{sender:x}"
+    return True, (
+        f"{SCHEDULER_BOUND + 1} ids from 0x{base:x}, {len(arms)} arms, "
+        f"0x1a -> 0x{SCHEDULER_SENDERS[0x1A]:x}"
+    )
+
+
 def check_ctab_manifest(acib, rkof, ctab):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
@@ -621,6 +694,7 @@ CHECKS = (
     ("feature bit commands", check_feature_bit_commands),
     ("procedure state tables", check_procedure_tables),
     ("A2DP stream endpoints", check_a2dp_endpoints),
+    ("procedure scheduler", check_procedure_scheduler),
     ("ctab is the table again", check_ctab_manifest),
 )
 
