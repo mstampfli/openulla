@@ -299,3 +299,60 @@ def test_the_status_reader_finds_the_reply_among_volunteered_frames():
     assert aap_probe.status_of([noise, aap.status_reply(0), noise]) == 0
     assert aap_probe.status_of([aap.status_reply(0x1776)]) == 0x1776
     assert aap_probe.status_of([b"\x00\x01"]) is None  # a short frame is not a reply
+
+
+def test_the_payload_survey_reports_the_control_beside_every_count(tmp_path, capsys, monkeypatch):
+    """The control is the tool's whole reason to exist, so it is what gets tested.
+
+    A two-byte pattern occurs by chance about once per 64 KB, so counting a vendor opcode in a
+    megabyte payload finds it a dozen times whether or not that payload has ever heard of it.
+    The first pass at this question was fooled exactly that way. These two synthetic payloads
+    are the two outcomes: one that genuinely carries the material, and one of random bytes that
+    carries nothing but will still score hits.
+    """
+    import random
+    import struct
+
+    import payload_survey
+
+    from openulla import hci
+
+    rng = random.Random(20261019)
+    noise = bytearray(rng.randrange(256) for _ in range(300_000))
+    (tmp_path / "noise.bin").write_bytes(bytes(noise))
+
+    # A payload that really does hold the material: the name, and the table signature.
+    real = bytearray(rng.randrange(256) for _ in range(60_000))
+    real[1000:1016] = b"\x00ULLA 1.1 here\x00\x00"
+    for offset, value in ((2000, 2586), (2050, 1416), (2100, 1288)):
+        struct.pack_into("<H", real, offset, value)
+    (tmp_path / "real.bin").write_bytes(bytes(real))
+
+    monkeypatch.setattr("sys.argv", ["payload_survey.py", "--payloads", str(tmp_path)])
+    assert payload_survey.main() == 0
+    printed = capsys.readouterr().out
+
+    # The name and the table signature are found where they are, and not where they are not.
+    assert "The link is named in 1 of 2 payloads: real." in printed
+    assert "signature appears in 1: real." in printed
+    # Every payload gets a verdict, and random bytes must not read as carrying opcodes.
+    assert printed.count("indistinguishable from chance") == 2, printed
+    assert "ABOVE the control" not in printed
+
+    # And the control really is the discriminator: the noise payload does score opcode hits,
+    # so a tool that printed counts alone would have reported them as findings.
+    hits = sum(bytes(noise).count(struct.pack("<H", op)) for op in payload_survey.DOCUMENTED)
+    assert hits > 0, "the noise payload scored no hits, so this proves nothing"
+    assert hci.OPCODE_PACKET_SIZE in payload_survey.DOCUMENTED
+    assert not set(payload_survey.DOCUMENTED) & set(payload_survey.CONTROL)
+
+
+def test_the_survey_needs_a_nul_on_both_sides_to_call_something_a_string():
+    """Two `bx lr` instructions read as "pGpG"; a run inside code is not a string table."""
+    import payload_survey
+
+    code = b"\x70\x47" * 40  # forty bx lr, which is printable and is not text
+    assert payload_survey.readable_strings(code) == []
+    assert payload_survey.readable_strings(b"\x00AppleAOPVoice\x00") == ["AppleAOPVoice"]
+    # Too short to count, so a stray fragment cannot inflate the figure an absence rests on.
+    assert payload_survey.readable_strings(b"\x00short\x00") == []

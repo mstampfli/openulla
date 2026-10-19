@@ -399,6 +399,41 @@ eight bytes are confirmed as what the device advertises and not only as what the
 the other half: offering a configuration with altered fields and seeing which ones the earbuds
 refuse, which is what would turn the layout from a hypothesis into a reading.
 
+### 4.7 Which payloads hold the link's material, and which hold none of it
+
+Every firmware claim in these documents comes from three payloads: `acib`, `rkof` and `sbd1`.
+That could be where the looking happened rather than where the material is, so it was checked
+against the whole build - **all 47 payloads**, which is the 46 entries of the `FTAB` table less
+the empty `sbd2`, plus `NERF`, which is a SuperBinary payload in its own right rather than an
+`FTAB` entry. `tools/payload_survey.py` is the check and it scans whatever is in the directory.
+
+- **The link is named in those three and in none of the other 44.** `ULLA` in any case occurs
+  in `acib`, `rkof` and `sbd1` only. For three of the silent payloads the absence is a result
+  rather than a gap, because they have string tables of their own to be silent in: `NERF` with
+  734 NUL-delimited strings of twelve characters or more, `aopf` with 266 and `rtpf` with 151.
+  For the rest it says less and the survey does not pretend otherwise: `rkos` has 41, `phyb`
+  32, `apmu` one, and most of the remainder are not code at all - sixteen of them are RIFF
+  files. `phyb` is separately accounted for in [protocol.md](protocol.md) 7.4, and `aopf`
+  identifies itself in its own strings as the always-on voice-trigger controller.
+- **The packet-type table exists once.** Searching every payload for three of Apple's payload
+  maxima within 256 bytes of one another finds them only in `acib`, in the two array regions
+  [protocol.md](protocol.md) 5.13 already documents, and nowhere else at all.
+- **Every occurrence of `hdr` in any payload is the word "header"**, in strings like `rx hdr`,
+  `raw length %u < hdr` and `Clog hdr len`. None of them is Apple's HDR.
+
+**One method note, because this check nearly produced the opposite answer.** Counting
+occurrences of a vendor opcode as a two-byte pattern says nothing in this firmware. A given
+halfword occurs by chance about once per 64 KB, so the larger payloads contain any value you
+care to name a dozen times or more, and a first pass at this question duly "found" five of the
+documented opcodes in payloads that know nothing about them. Measured against a control - ten
+halfwords in the same 0xFD to 0xFF range that this project does **not** document - the six it
+does document occur no more often than the controls in **any** of the 47, and in most of them
+less often. **A byte count would have reported hits in 20 of the 47**, among them sixteen RIFF
+audio files, which certainly do not implement a vendor command. What is evidence is a handler
+in a dispatch table, which is how section 6 of [protocol.md](protocol.md) reaches every opcode
+it names, and `tools/payload_survey.py` prints the control beside every count for exactly that
+reason.
+
 ## 5. Measured on a non-Apple host
 
 - The SDP record lists Audio Sink, AVRCP, Handsfree, PnP and two vendor GATT

@@ -227,6 +227,17 @@ python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
 python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     payload CTAB payloads/ctab.bin
 python3 tools/verify_claims.py --payloads payloads
+
+# Optional, and only for the question of whether anything was looked for in the wrong place:
+# the whole build rather than the five payloads above. No claim here rests on these, and
+# tools/payload_survey.py scans whatever is in the directory [ulla.md 4.7]. Note that NERF is a
+# SuperBinary payload in its own right and not an FTAB entry, so it needs the other subcommand.
+U=firmware/*/AssetData/Firmware.acsw/firmware.uarp
+python3 tools/ftab.py $U list --payload FTAB | awk '$3 != "size=0" {print $1}' | while read tag; do
+    python3 tools/ftab.py $U extract "$tag" "payloads/$tag.bin" --payload FTAB
+done
+python3 tools/ftab.py $U payload NERF payloads/NERF.bin
+python3 tools/payload_survey.py --payloads payloads
 ```
 
 ```

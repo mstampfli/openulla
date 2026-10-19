@@ -501,6 +501,13 @@ link keys and other people's device addresses.
   manifest of the compressed copy the container carries of itself, and the
   DSP's own ULLA node, which is AArch64 rather than Thumb. It fails on a single
   changed byte.
+- `tools/payload_survey.py`: answers whether this project looked in the wrong
+  place, by scanning every payload of the build rather than the three its
+  claims come from. The link is named in exactly three of 47 and the
+  packet-type table appears in one. It prints an undocumented control beside
+  every opcode count, because in a firmware image a two-byte pattern turns up
+  by chance roughly once per 64 KB: counting alone would have reported hits in
+  20 of the 47, sixteen of them RIFF audio files.
 - `tools/ulla_demo.py`: runs a whole setup against the simulated earbud and
   prints every frame and PDU of it, with no hardware involved. `--reject`
   makes the peer controller refuse at one of its four checks.
