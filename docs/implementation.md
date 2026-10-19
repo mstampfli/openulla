@@ -29,7 +29,7 @@ fill it in; it says so, and the tests say so too.
 | `transport.py` | a real L2CAP channel, or a pair of queues |
 | `serve.py` | the frames-in, frames-out half of answering a channel as the earbud |
 | `octets.py` | reading and writing this protocol's integers, and the one place that says they are little-endian |
-| `describe.py` | one place for the wording of every decode |
+| `describe.py` | one place for the wording of every decode, over all five layers |
 | `capture.py` | finds this protocol's frames in a btsnoop capture, learning the channel from the L2CAP signalling |
 
 ## Running it
@@ -50,6 +50,7 @@ python3 -m pytest                  # the whole suite, no hardware, no dependenci
 python3 tools/ulla_demo.py         # the whole setup, every byte, against the simulator
 python3 tools/ulla_demo.py --reject busy    # and the same with the peer refusing
 python3 tools/ulla_decode.py f6 17 e6       # decode one frame, PDU, command or event
+python3 tools/ulla_vectors.py --check       # the interop vectors still match the library
 python3 tools/capture_decode.py air.btsnoop # find this protocol's frames in a capture
 python3 tools/ulla_sink.py                  # answer as an earbud on a real L2CAP channel
 ```
@@ -58,6 +59,14 @@ The last one is the sink half: it listens on PSM 0x1001 and answers with `openul
 a source implementation can be driven against it over real Bluetooth. It supplies the
 internal events a real pair raises by itself, printing each one by name, and the last five of
 those stand in for a controller and a DSP that are not there.
+
+There is also a corpus for somebody who is not writing Python at all. `interop/vectors.txt`
+holds every message this project documents, as bytes, with the section that defines it and this
+package's own decode of it; `tools/ulla_vectors.py --check` fails if the file and the library
+have drifted apart, and `tests/test_vectors.py` runs that check, requires each layer's decoder
+to recognise its own vectors, and requires no two vectors of one layer to decode to the same
+words. An implementation in another language can encode each message and compare bytes, or
+decode each line and compare field names.
 
 The decoder is the other way to use the library: give it hex and it names the fields, says
 whether an earbud of this build would dispatch or refuse an extended PDU, and turns an

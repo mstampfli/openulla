@@ -47,6 +47,12 @@ MANAGER_CONFIG_WORD = 0x0096
 MANAGER_FLAGS_MODE_ONE = 0x04
 MANAGER_FLAGS_OTHERWISE = 0x0F
 OPCODE_FEATURE_GROUP = 0xFDF3  # four bits of the feature byte, bit 6 among them
+# The stream's control path of protocol.md 7.1, named here so that the senders below and
+# openulla/describe.py agree on which opcode is which.
+OPCODE_STREAM_DMA_ADDRESS = 0xFE57
+OPCODE_STREAM_START = 0xFE52
+OPCODE_STREAM_STOP = 0xFE58
+OPCODE_STREAM_DESCRIPTOR = 0xFE53
 ULLA_SESSION_COMMANDS: dict[int, int] = {
     0xFE16: 0x1EBF4,
     0xFE4C: 0x1D6CC,
@@ -221,12 +227,12 @@ def stream_dma_address(address: int) -> bytes:
     """
     if not 0 <= address <= 0xFFFFFFFF:
         raise ProtocolError("the address is a 32-bit value")
-    return command(0xFE57, address.to_bytes(4, "little"))
+    return command(OPCODE_STREAM_DMA_ADDRESS, address.to_bytes(4, "little"))
 
 
 def stream_start() -> bytes:
     """0xFE52: start the stream, with no parameters. [fw acib 0x1dd88, protocol.md 7.1]"""
-    return command(0xFE52)
+    return command(OPCODE_STREAM_START)
 
 
 def stream_stop() -> bytes:
@@ -235,12 +241,12 @@ def stream_stop() -> bytes:
     The earbud's own manager sends it with four zero bytes, although the handler reads none
     [fw rkof 0x26866, acib 0x1d952].
     """
-    return command(0xFE58, bytes(4))
+    return command(OPCODE_STREAM_STOP, bytes(4))
 
 
 def read_stream_descriptor() -> bytes:
     """0xFE53: reads property 0x1AF back to the host. [fw acib 0x1de62, protocol.md 7.1]"""
-    return command(0xFE53)
+    return command(OPCODE_STREAM_DESCRIPTOR)
 
 
 def session_command(opcode: int, params: bytes = b"") -> bytes:

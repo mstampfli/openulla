@@ -8,12 +8,19 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from . import aap, bands, hci, lmp
+from . import aap, bands, hci, lmp, sibling
 from .codes import HciError, SessionStatus, reason_name
 from .errors import ProtocolError
 
 OPCODE_NAMES = {int(op): op.name for op in aap.Opcode}
 EVENT_COMMAND_COMPLETE = 0x0E
+# The four of 7.1, named because a reader of a capture wants them named.
+STREAM_COMMAND_NAMES = {
+    hci.OPCODE_STREAM_DMA_ADDRESS: "the audio DMA address the start path requires",
+    hci.OPCODE_STREAM_START: "start",
+    hci.OPCODE_STREAM_STOP: "stop",
+    hci.OPCODE_STREAM_DESCRIPTOR: "read the four-word descriptor back",
+}
 
 
 def named(value: int, enum: type[IntEnum]) -> str:
@@ -221,6 +228,18 @@ def describe_hci_command(data: bytes) -> list[str]:
         lines.append(
             "  the band command family is switched " + ("on" if params[0] else "off")
         )
+    elif opcode == hci.OPCODE_FEATURE_GROUP and len(params) == 1:
+        lines.append(
+            "  the feature group that carries the mode procedure is switched "
+            + ("on" if params[0] else "off")
+        )
+    if opcode in STREAM_COMMAND_NAMES:
+        lines.append(f"  the stream's control path: {STREAM_COMMAND_NAMES[opcode]}")
+    elif opcode in hci.ULLA_SESSION_COMMANDS and opcode != hci.OPCODE_ULLA_SETUP:
+        lines.append(
+            f"  one of the eleven commands that reach the ULLA session, handler acib "
+            f"0x{hci.ULLA_SESSION_COMMANDS[opcode]:x}"
+        )
     return lines
 
 
@@ -252,8 +271,29 @@ def describe_hci_event(data: bytes) -> list[str]:
     return lines
 
 
+def describe_sibling(data: bytes) -> list[str]:
+    """One earbud-to-earbud frame, which rides AAP service 0x10 as client 5. [4]"""
+    parsed = sibling.parse_frame(data)
+    lines = [
+        f"sibling frame: client {parsed.client}"
+        f"{' (the session manager)' if parsed.client == sibling.CLIENT_SESSION_MANAGER else ''}"
+        f", message {named(parsed.message, sibling.Message)}, "
+        f"body {parsed.body.hex(' ') or 'empty'}"
+    ]
+    if parsed.message in sibling.EMPTY_BODY and parsed.body:
+        lines.append("  this message carries no body in the firmware, so these bytes are extra")
+    if parsed.message == sibling.Message.START_SESSION_REQ:
+        request = sibling.parse_start_session_request(data)
+        lines.append(
+            f"  start session for {request.address.hex(':')}, mode {request.mode}; "
+            "the six address bytes travel most significant first"
+        )
+    return lines
+
+
 DECODERS = {
     "aap": describe_aap,
+    "sibling": describe_sibling,
     "lmp": describe_lmp,
     "hci-command": describe_hci_command,
     "hci-event": describe_hci_event,
