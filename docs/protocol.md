@@ -2333,6 +2333,18 @@ reader of +0x730 in the payload, which is how the two fields are known to belong
 the companion byte's two values of 8 and 0x17 mean is still open; it is not a packet-type index,
 since that table has eighteen entries.
 
+**The earbud never sends this command to itself.** 0xFD02's command code 0x102 appears nowhere
+in the RTKitOS features image, and neither does the full opcode. The queued sender that image
+uses for commands has 64 call sites, 55 of which pass an identifier that can be read off the
+instructions, and 0x102 is not among them [fw rkof the sender at 0x23a60, which stores the
+identifier as a halfword in a queue entry at 0x23ac6]. The absence means something because the
+same sender is how the earbud sends commands this document already attributes to it, 0x250 for
+6.0's own mode-change command and 0x377 for 5.8's feature-bit one, so the path is in use.
+
+Put beside the boot default, that settles who sets the packet size: **the controller comes up at
+the 8 Mb/s five-slot maximum, its own software never changes it, and only an external host
+narrows it.**
+
 ## 7. The audio layer, and what is not known
 
 Once the mode change succeeds the radio carries the audio. The parts that are established:
