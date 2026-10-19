@@ -1563,6 +1563,12 @@ form or Apple's, and the two forms are the same length or **exactly one byte lon
 | 0x7F/0x10, channel classification request | 7 | 0x7B/0x19 | 8 | acib 0x22d9e |
 | 0x7F/0x11, channel classification | 12 | 0x7B/0x1A | 13 | acib 0x46014 |
 
+The last row's sender also confirms 5.7's body layout from the other side: before choosing a
+form it copies **ten bytes** into the message block at **+0x16**, which is exactly where 5.7
+says the builder for 0x7F/0x11 reads ten bytes from, and it puts the same ten into a per-entry
+slot with a stride of 0x50 [fw acib 0x45fee, 0x45ff8, 0x45fde]. 5.7's layout was read off the
+builder, so that is two independent reads agreeing.
+
 The lengths come from 5.7's own table, which was written before any of this was known, so the
 agreement is not circular. 0x7B/0x1A is the clearest case of the pattern: "one byte, then ten
 bytes from block+0x11", where the specification's channel classification is the same ten-byte
@@ -1633,7 +1639,7 @@ attributed to an arm that merely sits before it.
 | 0x14 | 0x3c01e | none in the arm | gated, and its body length is checked against 4 [fw acib 0x3c02c] |
 | 0x15, 0x16 | 0x3c0d4, 0x3c062 | 0x29a1c, 0x29a70 | a band request and its answer, below |
 | 0x17 | 0x3c004 | 0x29ab4 | the allowed-band mask (6.2) |
-| 0x18 | 0x3c120 | 0x23230 | fifteen bytes, in the same module as 0x1A and 0x1B |
+| 0x18 | 0x3c120 | 0x23230 | fifteen bytes, copied whole into the link's +0x36F [fw acib 0x23268] |
 | 0x19, 0x1A | 0x3c19c, 0x3c272 | 0x23680 | the channel classification pair (5.14) |
 | 0x1B | 0x3c266 | 0x238a4 | one byte, same module again |
 | 0x1C | 0x3bfc2 | 0x29b38 | the band ranges (6.5) |
