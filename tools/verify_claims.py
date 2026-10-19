@@ -31,7 +31,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla import bands, hci, lmp
+from openulla import a2dp, bands, hci, lmp
 from openulla.codes import (
     FIRMWARE_NAMES,
     REASON_FIRMWARE_NAMES,
@@ -287,11 +287,9 @@ REPORT_LISTENERS = {  # report type: (notification id, data length, listener, bu
 REPORT_SIZE_CHECKS = {0x0A08: 0x258F2, 0xE910: 0x25BB2, 0xE911: 0x25BF4}  # id, then size, in
 REPORT_BUILDER = 0x27E90  # the one builder all three entries tail-call
 A2DP_DESCRIPTORS = (0x1C14D0, 0x1C14E8, 0x1C1500)
-A2DP_CAPABILITIES = {
-    0xFF: bytes.fromhex("4c00000001800080008c0083e800"),
-    0x02: bytes.fromhex("c0018c83e800"),
-    0x00: bytes.fromhex("3fff0235"),
-}
+# The bytes themselves live in openulla/a2dp.py, because tools/bt_link_state.py compares the
+# same three against what the device advertises on the air.
+A2DP_CAPABILITIES = {codec: capability for codec, (_, capability) in a2dp.ENDPOINTS.items()}
 
 # ctab, the whole firmware table again, in one unframed LZ stream [docs/ulla.md 4.1]
 CTAB_MAGIC = b"rkosftab"

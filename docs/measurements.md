@@ -261,3 +261,26 @@ own status frames on the same channel - battery and state updates, opcode 0x0009
 frame arrived" says nothing about which one. The tool now finds the status reply by its opcode
 and compares that; the table above is from the corrected run, and the frame-counting version
 would have reported the same verdict for the wrong reason.
+
+## 12. The advertised capabilities are the firmware's own table, byte for byte
+
+Measured 2026-10-19 08:35 against real earbuds on 9A348, read out of BlueZ over D-Bus and
+compared with the bytes [ulla.md](ulla.md) section 4.6 publishes from the firmware image. All
+three endpoints the sink registers appear, and all three agree:
+
+| endpoint | codec | advertised | the firmware's table |
+|---|---|---|---|
+| sep1 | 0x00 SBC | `3f ff 02 35` | the same |
+| sep2 | 0x02 AAC | `c0 01 8c 83 e8 00` | the same |
+| sep3 | 0xFF Apple vendor | `4c 00 00 00 01 80 00 80 00 8c 00 83 e8 00` | the same |
+
+This is the cross-check those bytes had been waiting for. What was read out of the firmware at
+the addresses 4.6 cites is exactly what the device puts on the air, which is the strongest
+confirmation available for a table of this kind without a second implementation. The vendor
+endpoint's **eight codec-specific bytes** are therefore confirmed as `00 80 00 8c 00 83 e8 00`;
+what they *mean* is still open, and 4.6 says what can and cannot be read out of them.
+
+`tools/bt_link_state.py MAC` prints this comparison as part of its output, so it is one command
+and not a manual diff. The bytes it compares against live in `openulla/a2dp.py`, which is also
+what `tools/verify_claims.py` checks the image against, so there is one copy of them rather
+than two that could drift apart.

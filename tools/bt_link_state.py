@@ -16,10 +16,15 @@ seconds with ten dead ones. This tool prints the facts that settle it:
 The kernel link list needs privileges; without them the tool says so instead of
 guessing. Read-only: it changes nothing.
 """
+import os
 import re
 import shutil
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from openulla import a2dp
 
 MAC_RE = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
 
@@ -146,6 +151,64 @@ def card_profile(mac):
     return None
 
 
+def remote_endpoints(mac):
+    """What BlueZ says the device advertises, next to what the firmware's own table holds.
+
+    The firmware side is openulla/a2dp.py, so there is one copy of those bytes rather than two
+    that could disagree. Needs busctl; without it the caller is told, not guessed at.
+    """
+    if not shutil.which("busctl"):
+        return None, "busctl not installed"
+    path = "/org/bluez/hci0/dev_" + mac.upper().replace(":", "_")
+    rc, out = run(["busctl", "tree", "org.bluez"])
+    if rc != 0:
+        return None, "busctl tree failed"
+    # The tree lists a transport under its own endpoint as well, so both lines normalise to
+    # the same endpoint path and the set is what keeps each one once.
+    seps = set()
+    for line in out.splitlines():
+        if path + "/sep" not in line:
+            continue
+        seps.add(line[line.index(path):].split("/fd")[0].rstrip())
+    rows = []
+    for sep in sorted(seps):
+        codec = run(["busctl", "get-property", "org.bluez", sep,
+                     "org.bluez.MediaEndpoint1", "Codec"])
+        caps = run(["busctl", "get-property", "org.bluez", sep,
+                    "org.bluez.MediaEndpoint1", "Capabilities"])
+        if codec[0] != 0 or caps[0] != 0:
+            continue
+        try:
+            number = int(codec[1].split()[1])
+            advertised = bytes(int(x) for x in caps[1].split()[2:])
+        except (IndexError, ValueError):
+            continue
+        rows.append((sep.rsplit("/", 1)[-1], number, advertised))
+    return rows, None
+
+
+def print_endpoints(mac):
+    rows, why = remote_endpoints(mac)
+    print("\nremote A2DP endpoints, against the firmware's own table:")
+    if rows is None:
+        print("  %s" % why)
+        return
+    if not rows:
+        print("  none reported; BlueZ only lists them once the device has been connected")
+        return
+    for sep, codec, advertised in rows:
+        known = a2dp.ENDPOINTS.get(codec)
+        verdict = "not in the table"
+        if known is not None:
+            verdict = "matches the firmware" if advertised == known[1] else (
+                "DIFFERS from the firmware, which has %s" % known[1].hex(" "))
+        print("  %-5s %-13s %s" % (sep, a2dp.name(codec), advertised.hex(" ")))
+        print("        %s" % verdict)
+        if codec == 0xFF and known is not None and advertised == known[1]:
+            print("        its eight codec-specific bytes: %s (layout open, ulla.md 4.6)"
+                  % a2dp.vendor_specific(advertised).hex(" "))
+
+
 def main():
     if len(sys.argv) != 2 or not re.match(MAC_RE, sys.argv[1]):
         raise SystemExit("usage: bt_link_state.py AA:BB:CC:DD:EE:FF")
@@ -185,6 +248,8 @@ def main():
                                           describe_config(t["config"],
                                                           t.get("codec")))
             print(line)
+
+    print_endpoints(sys.argv[1])
 
     print("\nverdict:")
     voice = [link for link in (links or []) if link["kind"] in ("SCO", "eSCO")]

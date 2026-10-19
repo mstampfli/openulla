@@ -242,3 +242,29 @@ def test_a_two_byte_class_wrapper_still_decodes():
     """The narrow class field of an older version pair [protocol.md 2.6]."""
     narrow = aap.data_frame(aap.Opcode.WRAPPER, aap.wrapper(0, b"", width=2)[6:])
     assert "wrapper" in joined(describe.describe_aap(narrow))
+
+
+def test_the_a2dp_endpoints_are_one_table_with_the_vendor_split_out():
+    """The bytes two tools compare, so they live in one place [ulla.md 4.6]."""
+    from openulla import a2dp
+
+    assert set(a2dp.ENDPOINTS) == {0x00, 0x02, 0xFF}
+    assert a2dp.name(0xFF) == "Apple vendor" and "0x7f" in a2dp.name(0x7F)
+    vendor = a2dp.ENDPOINTS[0xFF][1]
+    assert len(vendor) == 14
+    assert int.from_bytes(vendor[:4], "little") == a2dp.APPLE_VENDOR_ID
+    assert int.from_bytes(vendor[4:6], "little") == a2dp.APPLE_VENDOR_CODEC
+    assert a2dp.vendor_specific(vendor) == vendor[6:] and len(vendor[6:]) == 8
+    with pytest.raises(ValueError):
+        a2dp.vendor_specific(vendor[:-1])
+
+
+def test_the_endpoint_table_is_what_the_verifier_checks():
+    """One copy: the verifier reads the firmware against this table, not its own."""
+    import verify_claims
+
+    from openulla import a2dp
+
+    assert verify_claims.A2DP_CAPABILITIES == {
+        codec: capability for codec, (_, capability) in a2dp.ENDPOINTS.items()
+    }

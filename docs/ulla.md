@@ -377,6 +377,13 @@ code that parses these bytes has been read, so that is a hypothesis to test and 
 The test is cheap from any Linux host: read the endpoint's capabilities, then try a
 configuration with altered fields and see which are refused.
 
+The first half of that has been done. All three capabilities above were read back out of BlueZ
+from real earbuds and **match this table byte for byte**, the vendor endpoint included, so the
+eight bytes are confirmed as what the device advertises and not only as what the image holds
+[measurements.md section 12; `tools/bt_link_state.py` prints the comparison]. What is left is
+the other half: offering a configuration with altered fields and seeing which ones the earbuds
+refuse, which is what would turn the layout from a hypothesis into a reading.
+
 ## 5. Measured on a non-Apple host
 
 - The SDP record lists Audio Sink, AVRCP, Handsfree, PnP and two vendor GATT
