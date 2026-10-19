@@ -199,3 +199,46 @@ def test_the_source_can_set_both_halves_of_the_gate():
     commands = source.ControllerCommands(handle=0x000B)
     assert commands.enable_band_commands() == bytes.fromhex("77 ff 01 01")
     assert commands.enable_mode_procedure() == bytes.fromhex("f3 fd 01 01")
+
+
+def test_the_sibling_decode_names_the_message_and_flags_a_body_that_should_be_empty():
+    """The layer the vectors added, including the two branches a happy frame does not take."""
+    request = sibling.start_session_request(bytes.fromhex("112233445566"), 1)
+    lines = joined(describe.describe_sibling(request))
+    assert "START_SESSION_REQ" in lines and "11:22:33:44:55:66" in lines and "mode 1" in lines
+
+    # A message the firmware sends empty, with bytes after it: the decode says so rather than
+    # inventing a field for them [protocol.md section 4].
+    padded = sibling.frame(sibling.Message.SESSION_STOPPED, b"\x01\x02")
+    assert "these bytes are extra" in joined(describe.describe_sibling(padded))
+
+    # And a client that is not the session manager is named as the number it is.
+    other = sibling.frame(sibling.Message.START_STREAM_REQ, client=9)
+    decoded = joined(describe.describe_sibling(other))
+    assert "client 9" in decoded and "session manager" not in decoded
+
+
+def test_a_number_with_no_name_decodes_to_its_hex():
+    """describe.named falls back rather than raising, which every decode relies on."""
+    assert describe.named(0x5A, Mode) == "0x5a"
+    assert describe.named(int(Mode.ULLA_ON), Mode).startswith("ULLA_ON")
+
+
+def test_the_configuration_decode_warns_where_0x75_would_drop_the_halfword():
+    over = lmp.Configuration(0, lmp.Configuration.MAX_VALUE16_FOR_75 + 1,
+                             opcode=lmp.OPCODE_ULLA_CONFIG_ALT)
+    assert "drops a halfword above" in joined(describe.describe_lmp(over.to_bytes()))
+
+
+def test_the_setup_decode_says_when_the_controller_would_refuse_it():
+    # On the procedure path the last parameter is a value 0 to 4, so five is refused with 0x12.
+    refused = hci.UllaSetup(handle=0x000B, extra_flags=0, config_word=0, flags=5, mode=9)
+    lines = joined(describe.describe_hci_command(hci.command(hci.OPCODE_ULLA_SETUP,
+                                                             refused.to_bytes())))
+    assert "would refuse this" in lines
+
+
+def test_a_two_byte_class_wrapper_still_decodes():
+    """The narrow class field of an older version pair [protocol.md 2.6]."""
+    narrow = aap.data_frame(aap.Opcode.WRAPPER, aap.wrapper(0, b"", width=2)[6:])
+    assert "wrapper" in joined(describe.describe_aap(narrow))

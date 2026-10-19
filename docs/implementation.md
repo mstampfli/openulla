@@ -39,10 +39,10 @@ Three gates run on every push, on Python 3.11, 3.12 and 3.13: the suite, `ruff c
 `strict` lets `Any` in from any untyped boundary and `struct.unpack` is one of those; that is
 why `openulla/octets.py` exists and why nothing in the package reads bytes through `struct`.
 
-The suite covers **97% of the library's statements**, measured rather than claimed
+The suite covers **98% of the library's statements**, measured rather than claimed
 (`coverage run --source=openulla -m pytest`). Of the remainder, the largest part is the real
 L2CAP socket code in `transport.py`, which needs a kernel and a peer rather than a test; the
-three state machines, the PDUs and the vendor commands are at 100%, including every branch
+three state machines, the vendor commands and every decode are at 100%, including every branch
 that refuses something.
 
 ```sh
