@@ -448,8 +448,12 @@ Not recovered, and not to be filled in until it is:
   correctly: a build tag, one source path under `WxBtPhy/firmware/w3`, the fault
   handlers, and digital-pre-distortion and analog-front-end logging. That is
   transmit-chain calibration, not framing, so the conclusion stands while the
-  earlier wording ("no symbols or strings") does not. Detail in
-  [protocol.md](protocol.md) section 7.
+  earlier wording ("no symbols or strings") does not. The payload's structure
+  now says the same thing independently of its strings: it is an ARMv7-M code
+  image for a third processor the firmware calls BTP, opening with an exception
+  vector table whose twenty-five device interrupts are thirteen unhandled stubs
+  and twelve handlers for the calibration blocks. Detail in
+  [protocol.md](protocol.md) sections 7 and 7.4.
 - The audio codec. The DSP payload `sbd1` names none on this path.
 - Whether the audio payload is encrypted. The setup establishes no key material
   of its own, but whether the radio keeps applying the ordinary link cipher

@@ -342,6 +342,23 @@ DATA_CITATIONS = {
 # words are the ones that prompted the check, each with the instruction that loads it; they are
 # no longer cited anywhere, so they cannot be satisfied by the documents.
 LITERAL_CONTROLS = {0x14584: 0x14548, 0x4A3B4: 0x4A362}
+# phyb, the radio PHY payload: an ARMv7-M image for the core the firmware calls BTP [7.5].
+PHY_SIZE = 74240
+PHY_VECTORS = 41  # words 0 to 40; 41 onwards are zero
+PHY_FIRST_IRQ = 16  # the architecture's first device interrupt vector
+PHY_STUB_COUNT = 13  # of the 25 IRQ vectors, this many are a bare bx lr
+# Every reserved exception slot shares one handler, which is the signature of a vector table
+# rather than a list of numbers: 2 to 10 are the faults and reserved words, 12 and 13 likewise.
+PHY_DEFAULT_SLOTS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13)
+THUMB_BX_LR = 0x4770
+# Vector 15 is SysTick and its handler is five instructions: load a pointer from the literal
+# pool, load the word, add one, store it back, return.
+PHY_TICK_BODY = [0x6801, 0x3101, 0x6001, 0x4770]  # ldr r1,[r0]; adds r1,#1; str r1,[r0]; bx lr
+# The reset handler writes both stack pointers, which is why vector word 0 is zero. SYSm 8 is
+# MSP and 9 is PSP, and those special registers exist only on ARMv7-M and above.
+PHY_STACK_WRITES = ((0x5B5C, 0x08), (0x5B64, 0x09))
+# The only two interrupts this image names in its own diagnostics, by IRQ number.
+PHY_NAMED_IRQS = ((16, "AFE_EL_CORR_DONE"), (20, "DPD_RAM_WR_AVAIL"))
 # 0x7B/0x14's three gates: the length, a link bit, and feature bit 0. [5.15]
 GATE_14_LENGTH = (0x3C02C, 0x2804)  # cmp r0, #4 on the whole PDU length
 GATE_14_LENGTH_ERROR = (0x3C31E, 0x2019)  # movs r0, #0x19
@@ -730,7 +747,7 @@ def cstring(img, off, limit=128):
     return img[off : end if end >= 0 else off + limit].decode("ascii", "replace")
 
 
-def check_band_table(acib, rkof, ctab, sbd1):
+def check_band_table(acib, rkof, ctab, sbd1, phyb):
     """The eight records of the band plan, byte for byte. [docs/protocol.md 6.3]"""
     for band in bands.BAND_TABLE:
         at = BAND_TABLE + band.index * bands.RECORD_SIZE
@@ -740,7 +757,7 @@ def check_band_table(acib, rkof, ctab, sbd1):
     return True, f"8 records of {bands.RECORD_SIZE} bytes at acib 0x{BAND_TABLE:x}"
 
 
-def check_transition_table(acib, rkof, ctab, sbd1):
+def check_transition_table(acib, rkof, ctab, sbd1, phyb):
     """Every row of the session manager's table, against openulla.session. [3.4]"""
     expected = {}
     for row in TRANSITIONS:
@@ -769,7 +786,7 @@ def check_transition_table(acib, rkof, ctab, sbd1):
     return True, f"{rows} rows over 15 states, events, both next states and handlers"
 
 
-def check_hci_command_table(acib, rkof, ctab, sbd1):
+def check_hci_command_table(acib, rkof, ctab, sbd1, phyb):
     """The command table, its ordering, and the handler of every command we send. [6.1, 6.4]"""
     keys = [u16(acib, HCI_KEYS + 2 * i) for i in range(HCI_KEY_COUNT)]
     masked = [k & HCI_KEY_MASK for k in keys]
@@ -797,7 +814,7 @@ def check_hci_command_table(acib, rkof, ctab, sbd1):
     )
 
 
-def check_pdu_lengths(acib, rkof, ctab, sbd1):
+def check_pdu_lengths(acib, rkof, ctab, sbd1, phyb):
     """The length each PDU declares, from the serializer's own constant. [5.1, 5.3]"""
     for at, (opcode, length) in SERIALIZER_LENGTHS.items():
         if u16(acib, at) != 0xF04F:
@@ -808,7 +825,7 @@ def check_pdu_lengths(acib, rkof, ctab, sbd1):
     return True, "accepted 2, not accepted 3, 0x74 7, 0x73 9, including the header byte"
 
 
-def check_receive_dispatch(acib, rkof, ctab, sbd1):
+def check_receive_dispatch(acib, rkof, ctab, sbd1, phyb):
     """Where the parser sends each opcode, with the table's own alignment. [5.3]"""
     for opcode, target in RECEIVE_TARGETS.items():
         got = RECEIVE_BASE + 2 * u16(acib, RECEIVE_TABLE + 2 * (opcode - 1))
@@ -817,7 +834,7 @@ def check_receive_dispatch(acib, rkof, ctab, sbd1):
     return True, f"table at acib 0x{RECEIVE_TABLE:x}, {len(RECEIVE_TARGETS)} opcodes checked"
 
 
-def check_escape_dispatch(acib, rkof, ctab, sbd1):
+def check_escape_dispatch(acib, rkof, ctab, sbd1, phyb):
     """Both escape spaces: the two messages we encode, and what each space refuses. [5.6]"""
     for ext, target in ESCAPE_7B_TARGETS.items():
         got = ESCAPE_7B_TABLE + 2 * u16(acib, ESCAPE_7B_TABLE + 2 * (ext - 1))
@@ -843,7 +860,7 @@ def check_escape_dispatch(acib, rkof, ctab, sbd1):
     )
 
 
-def check_transmit_builders(acib, rkof, ctab, sbd1):
+def check_transmit_builders(acib, rkof, ctab, sbd1, phyb):
     """Which body builder each extended opcode of each space uses. [5.7]"""
     covered, without = 0, 0
     for name, table, first, count, cases, stub in (
@@ -875,7 +892,7 @@ def check_transmit_builders(acib, rkof, ctab, sbd1):
     )
 
 
-def check_event_shape(acib, rkof, ctab, sbd1):
+def check_event_shape(acib, rkof, ctab, sbd1, phyb):
     """The constant word that gives the event its code, length and id. [6]"""
     got = u32(acib, EVENT_LITERAL)
     if got != EVENT_LITERAL_VALUE:
@@ -915,7 +932,7 @@ def reason_case(img, value):
     return table + 2 * img[table + index]
 
 
-def check_names(acib, rkof, ctab, sbd1):
+def check_names(acib, rkof, ctab, sbd1, phyb):
     """The mode, result and reason names, from the tables the firmware's own log indexes."""
     for mode in Mode:
         name = cstring(rkof, u32(rkof, MODE_NAMES + 4 * mode.value))
@@ -939,7 +956,7 @@ def check_names(acib, rkof, ctab, sbd1):
     return True, f"{len(Mode)} modes, {len(Result)} results, {checked} reasons, 2 unnamed"
 
 
-def check_dma_descriptor(acib, rkof, ctab, sbd1):
+def check_dma_descriptor(acib, rkof, ctab, sbd1, phyb):
     """The three bitfield extractions of 7.2, read as instructions. [7.2]"""
     for where, expect, what in (
         (0xDABF8, (3, 3), "the buffer count at bits 3 to 5"),
@@ -966,7 +983,7 @@ def check_dma_descriptor(acib, rkof, ctab, sbd1):
     )
 
 
-def check_getter_table(acib, rkof, ctab, sbd1):
+def check_getter_table(acib, rkof, ctab, sbd1, phyb):
     """How a number becomes a function: the 534-entry table, and the 54-entry one behind 0x20D.
 
     Both halves are here because telling them apart is the correction 5.2 records: a number
@@ -1011,7 +1028,7 @@ def check_getter_table(acib, rkof, ctab, sbd1):
     )
 
 
-def check_session_commands(acib, rkof, ctab, sbd1):
+def check_session_commands(acib, rkof, ctab, sbd1, phyb):
     """The eleven commands of 6.6, each resolving to the handler we publish for it."""
     keys = [u16(acib, HCI_KEYS + 2 * i) & HCI_KEY_MASK for i in range(HCI_KEY_COUNT)]
     for opcode, handler in sorted(hci.ULLA_SESSION_COMMANDS.items()):
@@ -1037,7 +1054,7 @@ def check_session_commands(acib, rkof, ctab, sbd1):
     )
 
 
-def check_feature_bit_commands(acib, rkof, ctab, sbd1):
+def check_feature_bit_commands(acib, rkof, ctab, sbd1, phyb):
     """That the two commands really write the feature byte, and with which masks. [5.8]
 
     Read as instructions rather than as prose: 0xFF77's handler must clear bit 5 and add
@@ -1065,7 +1082,7 @@ def check_feature_bit_commands(acib, rkof, ctab, sbd1):
     )
 
 
-def check_procedure_tables(acib, rkof, ctab, sbd1):
+def check_procedure_tables(acib, rkof, ctab, sbd1, phyb):
     """The three procedures' state handlers, and the dispatchers that index them. [5.9, 5.10]"""
     for name, table, literal, addresses in (
         ("sink", SINK_TABLE, SINK_LITERAL, list(SINK_HANDLER_ADDRESSES.values())),
@@ -1097,7 +1114,7 @@ def check_procedure_tables(acib, rkof, ctab, sbd1):
     )
 
 
-def check_name_table_bounds(acib, rkof, ctab, sbd1):
+def check_name_table_bounds(acib, rkof, ctab, sbd1, phyb):
     """That the mode and result lists are as long as we say, and nothing guards them. [6]
 
     Stated as what the image must contain, not as the absence of something: a run of zeroes
@@ -1117,7 +1134,7 @@ def check_name_table_bounds(acib, rkof, ctab, sbd1):
     return True, f"{len(Mode)} modes then {past_modes!r}, {len(Result)} results then a null"
 
 
-def check_report_listeners(acib, rkof, ctab, sbd1):
+def check_report_listeners(acib, rkof, ctab, sbd1, phyb):
     """One listener per report type, each with its own length and builder entry. [2.6]
 
     Read as instructions, because every number here is an immediate: the length the listener
@@ -1157,7 +1174,7 @@ def check_report_listeners(acib, rkof, ctab, sbd1):
     )
 
 
-def check_session_command_gates(acib, rkof, ctab, sbd1):
+def check_session_command_gates(acib, rkof, ctab, sbd1, phyb):
     """The link-up half of the five gated session commands: gate, role test, ids, refusals. [6.6]
 
     Every one of them asks the same two questions in the same order, and what it does next is
@@ -1207,7 +1224,7 @@ def check_session_command_gates(acib, rkof, ctab, sbd1):
     )
 
 
-def check_dsp_ulla_node(acib, rkof, ctab, sbd1):
+def check_dsp_ulla_node(acib, rkof, ctab, sbd1, phyb):
     """The DSP's ULLA node: its version field, its property ids and its frame processor. [7]
 
     Section 7 is the part of this document that reads a different architecture, so these are
@@ -1244,7 +1261,7 @@ def check_dsp_ulla_node(acib, rkof, ctab, sbd1):
     )
 
 
-def check_report_request(acib, rkof, ctab, sbd1):
+def check_report_request(acib, rkof, ctab, sbd1, phyb):
     """What asks for a type 1 report: the class dispatch, its arm, and where the id is built.
 
     Read as instructions because the class arithmetic is an immediate and the id is a modified
@@ -1279,7 +1296,7 @@ def check_report_request(acib, rkof, ctab, sbd1):
     )
 
 
-def check_report_producer(acib, rkof, ctab, sbd1):
+def check_report_producer(acib, rkof, ctab, sbd1, phyb):
     """The two report producers in the controller: the message, the ids, the two copies. [2.6]
 
     The whole layout 2.6 publishes comes out of the first of them, so every number it writes is
@@ -1341,7 +1358,7 @@ def check_report_producer(acib, rkof, ctab, sbd1):
     )
 
 
-def check_procedure_scheduler(acib, rkof, ctab, sbd1):
+def check_procedure_scheduler(acib, rkof, ctab, sbd1, phyb):
     """The per-link procedure scheduler: its id space, its table and two of its arms. [5.11]
 
     Decoded from the instructions rather than read off a table, because the two numbers that
@@ -1374,7 +1391,7 @@ def check_procedure_scheduler(acib, rkof, ctab, sbd1):
     )
 
 
-def check_standard_rate_roads(acib, rkof, ctab, sbd1):
+def check_standard_rate_roads(acib, rkof, ctab, sbd1, phyb):
     """Both standard roads to an extra ACL rate, and that each is closed. [5.12]
 
     These two arms are why this project can say HDR is announced nowhere a standard host can
@@ -1419,7 +1436,7 @@ def check_standard_rate_roads(acib, rkof, ctab, sbd1):
     )
 
 
-def check_packet_type_table(acib, rkof, ctab, sbd1):
+def check_packet_type_table(acib, rkof, ctab, sbd1, phyb):
     """The eighteen-entry packet-type table, and the request that reaches its third table. [5.13]
 
     Every number in `openulla/packets.py` is read back out of the image here, so the table the
@@ -1525,7 +1542,7 @@ def check_packet_type_table(acib, rkof, ctab, sbd1):
     )
 
 
-def check_table_legality_constants(acib, rkof, ctab, sbd1):
+def check_table_legality_constants(acib, rkof, ctab, sbd1, phyb):
     """Each table's legal entries, as the firmware's own three immediates. [5.13]
 
     This is the strongest statement of the table-membership column in the image, and it
@@ -1571,7 +1588,7 @@ def check_table_legality_constants(acib, rkof, ctab, sbd1):
     )
 
 
-def check_permission_partition(acib, rkof, ctab, sbd1):
+def check_permission_partition(acib, rkof, ctab, sbd1, phyb):
     """The mask filter's four immediates: the partition, and why it cannot orient the rates.
 
     Apple's branch gates one group of three on bit 4 of the permission byte and the other on
@@ -1626,7 +1643,7 @@ def check_permission_partition(acib, rkof, ctab, sbd1):
     )
 
 
-def check_shared_host_commands(acib, rkof, ctab, sbd1):
+def check_shared_host_commands(acib, rkof, ctab, sbd1, phyb):
     """The seven captured host commands this controller implements, and 0xFD02's two sizes. [6.8]
 
     The two sizes are read against `openulla/packets.py` rather than written out again, so the
@@ -1687,7 +1704,7 @@ def check_shared_host_commands(acib, rkof, ctab, sbd1):
     )
 
 
-def check_payload_header_width(acib, rkof, ctab, sbd1):
+def check_payload_header_width(acib, rkof, ctab, sbd1, phyb):
     """Both payload-header length fields, and that only the wide builder tests Apple's bits. [7.3]
 
     The two masks are the evidence for where each field sits, so they are decoded rather than
@@ -1719,7 +1736,7 @@ def check_payload_header_width(acib, rkof, ctab, sbd1):
     )
 
 
-def check_paired_procedures(acib, rkof, ctab, sbd1):
+def check_paired_procedures(acib, rkof, ctab, sbd1, phyb):
     """The five procedures with two forms, and that the power answers are one code five times.
 
     The immediates are checked in the image; the five-field reading is checked as arithmetic,
@@ -1808,7 +1825,7 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
     )
 
 
-def check_prose_citations(acib, rkof, ctab, sbd1):
+def check_prose_citations(acib, rkof, ctab, sbd1, phyb):
     """Every address the documentation only describes in words. [5.14, 5.15, 6.8, 7.3]
 
     The other claims re-derive a structure. These are the field offsets and destinations that
@@ -1872,7 +1889,7 @@ def literal_loaders(img, target, window=1024, anchors=8):
     return {at for at, count in votes.items() if count >= anchors - 1}
 
 
-def check_instruction_citations(acib, rkof, ctab, sbd1):
+def check_instruction_citations(acib, rkof, ctab, sbd1, phyb):
     """That every address these documents cite is an instruction, not a literal-pool word.
 
     `tests/test_docs.py` checks that a cited address is inside its payload and
@@ -1921,7 +1938,68 @@ def check_instruction_citations(acib, rkof, ctab, sbd1):
     )
 
 
-def check_ctab_manifest(acib, rkof, ctab, sbd1):
+def check_phy_image(acib, rkof, ctab, sbd1, phyb):
+    """That the radio PHY payload is an ARMv7-M image, and its interrupt map. [7.5]
+
+    This payload had no citation in these documents at all. It is not a block of coefficients:
+    it opens with a Cortex-M exception vector table and holds Thumb code, and the two facts
+    that identify it as that rather than as a table of numbers are checked here - vector 15's
+    handler is a tick counter, and the reset handler writes both stack pointers itself, which
+    is why the table's first word is zero where an initial stack pointer would sit.
+    """
+    if len(phyb) != PHY_SIZE:
+        return False, f"phyb is {len(phyb)} bytes, not the {PHY_SIZE} of build 9A348"
+    vectors = [u32(phyb, 4 * i) for i in range(PHY_VECTORS)]
+    if vectors[0] != 0:
+        return False, f"the first vector word is 0x{vectors[0]:x}, not the zero 7.5 explains"
+    for index, word in enumerate(vectors[1:], 1):
+        if not word & 1 or (word & ~1) >= len(phyb):
+            return False, f"vector {index} is 0x{word:x}, not a Thumb address inside the image"
+    if any(u32(phyb, 4 * i) for i in range(PHY_VECTORS, PHY_VECTORS + 3)):
+        return False, f"the table does not stop at {PHY_VECTORS} words"
+    # The shared default handler is what makes this a vector table rather than a list: one
+    # target serves every reserved slot.
+    shared = {vectors[i] for i in PHY_DEFAULT_SLOTS}
+    if len(shared) != 1:
+        return False, f"the reserved slots no longer share one handler: {shared}"
+    # Vector 15 is SysTick, and its handler increments a counter through a literal and returns.
+    tick = vectors[15] & ~1
+    if literal_word(phyb, tick) is None:
+        return False, f"0x{tick:x} does not open by loading a literal"
+    if [u16(phyb, tick + off) for off in (2, 4, 6, 8)] != PHY_TICK_BODY:
+        return False, f"0x{tick:x} is no longer a counter increment and return"
+    # The reset handler writes MSP and PSP, which is the other half of the first word being 0.
+    for where, special in PHY_STACK_WRITES:
+        first, second = u16(phyb, where), u16(phyb, where + 2)
+        if first & 0xFFF0 != 0xF380 or second & 0xFF != special:
+            return False, (
+                f"0x{where:x} is {first:04x} {second:04x}, not an msr of special register "
+                f"0x{special:x}"
+            )
+    stubs = [i for i in range(PHY_FIRST_IRQ, PHY_VECTORS)
+             if u16(phyb, vectors[i] & ~1) == THUMB_BX_LR]
+    if len(stubs) != PHY_STUB_COUNT:
+        return False, f"{len(stubs)} of the IRQ vectors are bare bx lr, not {PHY_STUB_COUNT}"
+    # The two interrupts whose own handler names them, which is how 7.5 can name them at all.
+    for irq, text in PHY_NAMED_IRQS:
+        handler = vectors[PHY_FIRST_IRQ + irq] & ~1
+        found = None
+        for at in range(handler, handler + 0x24, 2):
+            if u16(phyb, at) & 0xF800 == 0x4800:
+                literal = literal_word(phyb, at)
+                if literal is not None and literal < len(phyb):
+                    found = phyb[literal:literal + 48].split(b"\x00")[0].decode("latin-1")
+                    break
+        if found is None or text not in found:
+            return False, f"IRQ {irq}'s handler no longer names {text!r}, it reads {found!r}"
+    return True, (
+        f"{PHY_VECTORS} vectors, every one a Thumb address, {len(PHY_DEFAULT_SLOTS)} reserved "
+        f"slots on one handler, vector 15 a tick counter, the reset handler writing MSP and "
+        f"PSP, and {len(stubs)} of {PHY_VECTORS - PHY_FIRST_IRQ} IRQs a bare bx lr"
+    )
+
+
+def check_ctab_manifest(acib, rkof, ctab, sbd1, phyb):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
     This claim is about the container rather than about an image, so it is read from the
@@ -1953,7 +2031,7 @@ def check_ctab_manifest(acib, rkof, ctab, sbd1):
     )
 
 
-def check_a2dp_endpoints(acib, rkof, ctab, sbd1):
+def check_a2dp_endpoints(acib, rkof, ctab, sbd1, phyb):
     """The three stream endpoints, each descriptor pointing at its capability. [ulla.md 4.6]"""
     seen = {}
     for at in A2DP_DESCRIPTORS:
@@ -2005,6 +2083,7 @@ CHECKS = (
     ("the five paired procedures", check_paired_procedures),
     ("prose-only citations", check_prose_citations),
     ("citations are instructions", check_instruction_citations),
+    ("the radio PHY image", check_phy_image),
 )
 
 
@@ -2020,11 +2099,13 @@ def load(path, what):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--payloads", help="directory holding acib.bin, rkof.bin and ctab.bin")
+    ap.add_argument("--payloads", help="directory holding acib.bin, rkof.bin, ctab.bin, "
+                                       "sbd1.bin and phyb.bin")
     ap.add_argument("--acib", help="the Bluetooth controller payload")
     ap.add_argument("--rkof", help="the RTKitOS features payload")
     ap.add_argument("--ctab", help="the compressed copy of the whole firmware table")
     ap.add_argument("--sbd1", help="the DSP payload, which holds the ULLA node of section 7")
+    ap.add_argument("--phyb", help="the radio PHY payload, the BTP core's own image")
     args = ap.parse_args()
     here = args.payloads
 
@@ -2035,15 +2116,16 @@ def main():
     rkof = load(args.rkof or beside("rkof"), "rkof")
     ctab = load(args.ctab or beside("ctab"), "ctab")
     sbd1 = load(args.sbd1 or beside("sbd1"), "sbd1")
+    phyb = load(args.phyb or beside("phyb"), "phyb")
 
     print(
         f"acib {len(acib)} bytes, rkof {len(rkof)} bytes, "
-        f"ctab {len(ctab)} bytes, sbd1 {len(sbd1)} bytes"
+        f"ctab {len(ctab)} bytes, sbd1 {len(sbd1)} bytes, phyb {len(phyb)} bytes"
     )
     failed = 0
     for name, check in CHECKS:
         try:
-            ok, detail = check(acib, rkof, ctab, sbd1)
+            ok, detail = check(acib, rkof, ctab, sbd1, phyb)
         except Exception as exc:  # a claim that cannot even be read is a failed claim
             ok, detail = False, f"{type(exc).__name__}: {exc}"
         print(f"  {'PASS' if ok else 'FAIL'}  {name:<32} {detail}")

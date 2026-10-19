@@ -76,6 +76,7 @@ firmware from us.
   - [7.1 The stream's control path, which is not open any more](#71-the-streams-control-path-which-is-not-open-any-more)
   - [7.2 The buffer descriptor the stream module programs](#72-the-buffer-descriptor-the-stream-module-programs)
   - [7.3 One piece of the air format: the payload header is wider](#73-one-piece-of-the-air-format-the-payload-header-is-wider)
+  - [7.4 The radio PHY payload, and why it does not hold the air format](#74-the-radio-phy-payload-and-why-it-does-not-hold-the-air-format)
 - [8. What an implementation can do today](#8-what-an-implementation-can-do-today)
   - [8.1 The order to implement it in](#81-the-order-to-implement-it-in)
 
@@ -2930,13 +2931,58 @@ field, so no single buffer above 1023 bytes.
 
 **This is narrower than it was, and one part of the earlier search has to be withdrawn.** 6.8
 found the field a maximum packet size actually lives in, the halfword at 0x1000B494 + 0x718, and
-what writes it: it boots at 2586, 0xFD02 sets it to 2586 or 339, 0xFD7C and 0xFD7D set it to any
-halfword from their request, and **one internal path writes a hard-coded 1024** [fw acib
-0x57ac2]. That last one is a 0x400 this paragraph's own search would never have found, because it
+what writes it: it boots at 2586, 0xFD02 sets it to 2586 or 339, 0xFD7C and 0xFD7D set it from
+their request behind their own gates (6.8), and **one internal path writes a hard-coded 1024**
+[fw acib 0x57ac2]. That last one is a 0x400 this paragraph's own search would never have found, because it
 searched the audio transmit path for *comparisons* and this is a *write* three hundred kilobytes
 away from it. So "the only two comparisons against 0x400" was true and not the right question.
 What remains open is only the original one: the format string is unreferenced, so whichever
 constant that particular message would have printed is still unreachable.
+
+### 7.4 The radio PHY payload, and why it does not hold the air format
+
+This payload had no citation anywhere in these documents, so what it is was worth establishing
+rather than assuming. **It is not a block of coefficients: it is an ARMv7-M code image.** The
+firmware's own table of payload tags gives its owner a name, pairing `phyb` with **BTP** where
+it pairs `acib` with BTM and `aopf` with AOP [fw rkof the tag at 0x1dd2aa, its name at
+0x1dd2af, the pointer that reaches the tag at 0x1f0d08]. So there is a third processor in this
+device beyond the controller and the DSP, and this is its image.
+
+**The first 0xA4 bytes are an exception vector table**, which is what identifies the
+architecture. Forty-one words, every one after the first an odd address inside the image, and
+the forty-second onwards zero. Three things make it a vector table rather than a list of
+numbers:
+
+- **The reserved slots share one handler.** Words 2 to 10 and 12 to 13 all hold one address,
+  and words 11 and 14 hold a second. That is the shape a default handler makes.
+- **Word 15's handler is a tick counter.** It loads a pointer from its own literal pool, loads
+  the word, adds one, stores it back and returns, in five instructions [fw phyb 0x434 the
+  literal load, 0x436, 0x438, 0x43a and 0x43c]. Word 15 is where the architecture puts SysTick.
+- **The first word is zero where an initial stack pointer belongs, and the reset handler
+  explains it.** Instead of taking a stack pointer from the table, the reset handler loads two
+  values and writes them to the special registers itself, `msr MSP` then `msr PSP` [fw phyb
+  0x5b5c and 0x5b64]. Those two special registers exist only on ARMv7-M and above, and the
+  image uses Thumb-2 wide encodings throughout, so the core is an M-profile one of at least
+  that version, not an ARMv6-M.
+
+**Twenty-five of the forty-one are device interrupts, and thirteen of those are a bare `bx
+lr`.** So the PHY declares nearly twice the interrupt sources it handles. Of the twelve that do
+something, ten reach their work through a one-instruction trampoline, and **two name themselves
+in their own diagnostics**: IRQ 16 is `AFE_EL_CORR_DONE` and IRQ 20 is `DPD_RAM_WR_AVAIL`
+[fw phyb the vector at 0x80 and its handler at 0xcbc, the vector at 0x90 and its handler at
+0xc98, each loading its text from its own literal]. AFE is the analog front end and DPD is
+digital pre-distortion, which is what the rest of the image is about.
+
+**And that is the point for anyone hoping this payload holds the air format: it does not.** Its
+own build string names the component it was compiled from, `WxBtPhy/firmware/w3/mac.c`, and its
+diagnostics name what it manages: the PLL and AGC lock states, RSSI readings, per-band transmit
+power tables with a system-configuration block that carries a version and a checksum, and the
+DPD actuation and test paths. That is transmit-chain calibration and MAC housekeeping. The
+modulation and the symbol-level framing are in the radio hardware the registers drive, and no
+payload in this build describes them, which is the same conclusion
+[ulla.md](ulla.md) reached from the strings alone and now rests on the image's structure.
+`tools/verify_claims.py` re-derives the vector table, the tick handler, both stack-pointer
+writes, the stub count and both interrupt names.
 
 ## 8. What an implementation can do today
 
