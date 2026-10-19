@@ -411,17 +411,8 @@ STREAM_CODE_INDEX = (
     (0x11D97E, 0x11D9CE, "ullt", 4),
 )
 STREAM_CODE_ERROR = (0x11D9AE, 0xE00002C2)  # what an unknown code answers
-# The proxy is a node in a property framework: a 35-slot virtual table bracketed by zero words,
-# of which it implements three. Two of those three are a pair handling one property.
-PROXY_VTABLE = (0x1CFE14, 35)
-PROXY_VTABLE_BRACKETS = (0x1CFE0C, 0x1CFE10, 0x1CFEA0)  # offset-to-top, typeinfo, and the end
-PROXY_SLOTS = ((6, 0x121658), (18, 0x12165C), (19, 0x1216E0))
-PROXY_PROPERTY = 0x190
-# (where, the halfword pair) for `cmp.w r1, #0x190` in each of the pair's two methods.
-PROXY_PROPERTY_TESTS = ((0x12166A, 0xF5B1, 0x7FC8), (0x1216EE, 0xF5B1, 0x7FC8))
-# Each refuses a buffer of seven or fewer; the second states the transfer length outright.
-PROXY_LENGTH_TESTS = ((0x121672, 0x2907), (0x1216F4, 0x2B07))
-PROXY_TRANSFER = (0x121700, 0x2208)  # movs r2, #8
+# The proxy's own table and property live with `check_proxy_property_pair` below, which reads
+# the same instructions by decoding them rather than by comparing their halfwords.
 LINK_AUDIO_NAMES = (
     (0x1E4BCB, "HeadsetSequenceManager.cpp", 0x118D62),
     (0x1E4C53, "encConfig", 0x119180),
@@ -609,6 +600,44 @@ A2DP_DESCRIPTORS = (0x1C14D0, 0x1C14E8, 0x1C1500)
 # same three against what the device advertises on the air.
 A2DP_CAPABILITIES = {codec: capability for codec, (_, capability) in a2dp.ENDPOINTS.items()}
 
+# The receive-side proxy's virtual table, and the one property its own slots expose.
+PROXY_VTABLE = 0x1CFE14  # the first of the entries, each a Thumb pointer with bit 0 set
+PROXY_SLOTS = 35
+PROXY_NULL_RTTI = (0x1CFE0C, 0x1CFE10)  # the two zero words below it: offset-to-top, typeinfo
+PROXY_END_ZEROS = (0x1CFEA0, 0x1CFEA4)  # and two more above the last entry
+PROXY_OWN = {6: 0x121658, 18: 0x12165C, 19: 0x1216E0}  # the slots whose code names its file
+PROXY_SOURCE = "UllaRxClientMgrProxy.cpp"
+PROXY_IN_PARAMETER = "inPropertyData"
+PROXY_PROPERTY = 0x190
+PROXY_TRANSFER = 8
+PROXY_SHORTEST_REFUSED = 7
+PROXY_REFUSAL = 0xE00002C2
+PROXY_LS = 9  # the condition code of BLS, unsigned lower or same
+# Instruction addresses only. Every constant and every string below is reached through the
+# instruction that loads it, never from a hardcoded pool address: a literal-pool word can
+# itself decode as an LDR, and reading one as an instruction is how two earlier citations in
+# this file went wrong.
+PROXY_READ = {
+    "argument": 0x121666,  # mov r4, r3
+    "id": 0x12166A,  # cmp.w r1, #0x190
+    "length": 0x121670,  # ldr r1, [r4]: dereferenced, so the length arrives by reference
+    "bound": 0x121672,  # cmp r1, #7
+    "refuse": 0x121674,  # bls, into the refusal block
+    "reason": 0x121694,  # ldr r4, [pc]
+    "file": 0x121696,  # ldr r0, [pc]
+}
+PROXY_WRITE = {
+    "buffer": 0x1216EA,  # cbz r2: a null buffer is refused before the id is even read
+    "null_path": 0x121714,  # where that CBZ lands
+    "id": 0x1216EE,  # cmp.w r1, #0x190
+    "bound": 0x1216F4,  # cmp r3, #7: the length itself, not a pointer to it
+    "refuse": 0x1216F6,  # bls
+    "transfer": 0x121700,  # movs r2, #8
+    "parameter": 0x121728,  # ldr r1, [pc]: the name of the argument the null path refused
+    "reason": 0x121732,  # ldr r4, [pc], on the short-buffer path
+    "file": 0x121734,  # ldr r0, [pc]
+}
+
 # ctab, the whole firmware table again, in one unframed LZ stream [docs/ulla.md 4.1]
 CTAB_MAGIC = b"rkosftab"
 CTAB_MAGIC_AT = 0x3D  # where the magic, 0x20 bytes into the table itself, lands in the stream
@@ -760,6 +789,86 @@ def wide_branch(img, off, link=True):
         | ((second & 0x7FF) << 1)
     )
     return off + 4 + (value - (1 << 25) if sign else value)
+
+
+def cmp_imm(img, off):
+    """Which register a Thumb CMP (immediate) tests and against what, narrow form or wide.
+
+    `data_imm` reads the wide modified-immediate field but accepts any of the wide
+    data-processing instructions and drops the register; both matter here, because the claim
+    is that a particular argument register is tested against a particular property id. The
+    wide form is SUB with S set and Rd = 0b1111, which is how the architecture spells CMP.
+    """
+    first = u16(img, off)
+    if first & 0xF800 == 0x2800:  # T1: 00101 Rn imm8
+        return (first >> 8) & 7, first & 0xFF
+    second = u16(img, off + 2)
+    if first & 0xF9F0 != 0xF1B0 or second & 0x8F00 != 0x0F00:
+        return None
+    field = (((first >> 10) & 1) << 11) | (((second >> 12) & 7) << 8) | (second & 0xFF)
+    return first & 0xF, thumb_expand(field)
+
+
+def cond_branch(img, off):
+    """The condition and target of a narrow conditional branch: 1101 cond imm8, doubled.
+
+    Conditions 14 and 15 are not branches in this encoding (they are UDF and SVC), so a hit
+    on one of those is not a branch and is reported as none.
+    """
+    first = u16(img, off)
+    if first & 0xF000 != 0xD000:
+        return None
+    condition = (first >> 8) & 0xF
+    if condition >= 14:
+        return None
+    offset = first & 0xFF
+    return condition, off + 4 + 2 * (offset - 0x100 if offset & 0x80 else offset)
+
+
+def ldr_imm(img, off):
+    """A narrow LDR (immediate): which register is loaded, from which base, at which offset.
+
+    The encoding is 01101 imm5 Rn Rt and the offset is counted in words, so an offset of zero
+    is a plain dereference. That distinction is the whole evidence for which half of a getter
+    and setter pair is which, so it is read rather than assumed.
+    """
+    first = u16(img, off)
+    if first & 0xF800 != 0x6800:
+        return None
+    return first & 7, (first >> 3) & 7, 4 * ((first >> 6) & 0x1F)
+
+
+def mov_reg(img, off):
+    """A narrow MOV between low registers: 0100 0110 0 Rm Rd, with no immediate at all."""
+    first = u16(img, off)
+    if first & 0xFF00 != 0x4600:
+        return None
+    return first & 7, (first >> 3) & 7
+
+
+def compare_branch(img, off):
+    """A CBZ or CBNZ: which register it tests, where it goes, and whether it tests for zero.
+
+    The displacement is i:imm5 doubled and always forward, which is why there is no sign to
+    handle here.
+    """
+    first = u16(img, off)
+    if first & 0xF500 != 0xB100:
+        return None
+    displacement = (((first >> 9) & 1) << 5) | ((first >> 3) & 0x1F)
+    return first & 7, off + 4 + 2 * displacement, not first & 0x0800
+
+
+def movs_imm(img, off):
+    """Which register a narrow MOV (immediate) loads and with what: 00100 Rd imm8.
+
+    `mov_imm` returns the constant alone and takes the wide form too. Here the register is
+    half the evidence: a length argument is only a length argument because it is in r2.
+    """
+    first = u16(img, off)
+    if first & 0xF800 != 0x2000:
+        return None
+    return (first >> 8) & 7, first & 0xFF
 
 
 def a64_mov_imm(img, off):
@@ -2191,30 +2300,7 @@ def check_the_codec_question(acib, rkof, ctab, sbd1, phyb):
             )
     if literal_word(rkof, STREAM_CODE_ERROR[0]) != STREAM_CODE_ERROR[1]:
         return False, f"rkof 0x{STREAM_CODE_ERROR[0]:x} is no longer the unknown-code error"
-    # The proxy's virtual table, and the one property its own methods handle.
-    base, slots = PROXY_VTABLE
-    for where in PROXY_VTABLE_BRACKETS:
-        if u32(rkof, where) != 0:
-            return False, f"rkof 0x{where:x} is not a zero word, so the table is not bracketed"
-    for index in range(slots):
-        word = u32(rkof, base + 4 * index)
-        if not word & 1 or (word & ~1) >= len(rkof):
-            return False, f"vtable slot {index} is 0x{word:x}, not a Thumb address in the image"
-    for index, target in PROXY_SLOTS:
-        got = u32(rkof, base + 4 * index) & ~1
-        if got != target:
-            return False, f"vtable slot {index} is 0x{got:x}, not the proxy's 0x{target:x}"
-    for where, first, second in PROXY_PROPERTY_TESTS:
-        if (u16(rkof, where), u16(rkof, where + 2)) != (first, second):
-            return False, (
-                f"rkof 0x{where:x} no longer tests property 0x{PROXY_PROPERTY:x}"
-            )
-    for where, encoding in PROXY_LENGTH_TESTS:
-        if u16(rkof, where) != encoding:
-            return False, f"rkof 0x{where:x} no longer bounds the buffer below eight"
-    if u16(rkof, PROXY_TRANSFER[0]) != PROXY_TRANSFER[1]:
-        return False, f"rkof 0x{PROXY_TRANSFER[0]:x} no longer moves eight as the length"
-    # And the link's own configuration path, each name reached from its own literal load.
+    # The link's own configuration path, each name reached from its own literal load.
     for where, text, load_at in LINK_AUDIO_NAMES:
         actual = rkof[where:where + 48].split(b"\x00")[0].decode("latin-1")
         if actual != text:
@@ -2229,9 +2315,7 @@ def check_the_codec_question(acib, rkof, ctab, sbd1, phyb):
         f"{len(CODEC_COMMANDS)} codec commands beside A2DP and HFP, the link's own "
         f"configuration path as {len(LINK_AUDIO_NAMES)} names of one module with its DSP proxy, "
         f"{len(STREAM_CODE_INDEX)} stream codes resolving to slots 0 to "
-        f"{max(index for *_, index in STREAM_CODE_INDEX)} with the link owning two, and the "
-        f"proxy's {PROXY_VTABLE[1]}-slot table implementing {len(PROXY_SLOTS)} of them with one "
-        f"eight-byte property 0x{PROXY_PROPERTY:x}"
+        f"{max(index for *_, index in STREAM_CODE_INDEX)} with the link owning two"
     )
 
 
@@ -2286,6 +2370,88 @@ def check_a2dp_endpoints(acib, rkof, ctab, sbd1, phyb):
     return True, "vendor 0xFF, AAC 0x02 and SBC 0x00, lengths and bytes as published"
 
 
+def check_proxy_property_pair(acib, rkof, ctab, sbd1, phyb):
+    """The proxy's virtual table, and its pair of slots on one eight-byte property. [7.5]
+
+    Two facts are at stake. The table is one class's, not a registry: a run of entries with
+    two zero words on each side, which is a virtual table whose offset-to-top and typeinfo
+    are null. And of its slots, two sit on the same property id and move the same eight
+    bytes in opposite directions, which is read off the calling convention: the reader takes
+    the caller's length through a pointer, so it can write the real length back, while the
+    writer takes the length by value and copies a fixed eight bytes in.
+    """
+    for at in PROXY_NULL_RTTI + PROXY_END_ZEROS:
+        if u32(rkof, at) != 0:
+            return False, f"the word at 0x{at:x} is 0x{u32(rkof, at):08x}, not zero"
+    for index in range(PROXY_SLOTS):
+        entry = u32(rkof, PROXY_VTABLE + 4 * index)
+        if entry == 0:
+            return False, f"slot {index} is zero, so the run is shorter than {PROXY_SLOTS}"
+        if not entry & 1 or entry >= len(rkof):
+            return False, f"slot {index} is 0x{entry:08x}, not a Thumb address in the payload"
+    for index, function in PROXY_OWN.items():
+        entry = u32(rkof, PROXY_VTABLE + 4 * index)
+        if entry != function | 1:
+            return False, f"slot {index} is 0x{entry:08x}, not 0x{function | 1:08x}"
+
+    def refusal(site, which):
+        """That this site loads the refusal code, and names the proxy's own source file."""
+        reason = literal_word(rkof, site["reason"])
+        if reason != PROXY_REFUSAL:
+            return f"the {which} refusal loads 0x{reason:08x}, not 0x{PROXY_REFUSAL:08x}"
+        name = cstring(rkof, literal_word(rkof, site["file"]))
+        if name != PROXY_SOURCE:
+            return f"the {which} path names {name!r}, not {PROXY_SOURCE!r}"
+        return None
+
+    for site, which in ((PROXY_READ, "read"), (PROXY_WRITE, "write")):
+        if cmp_imm(rkof, site["id"]) != (1, PROXY_PROPERTY):
+            return False, f"the {which} slot's test at 0x{site['id']:x} is not r1 against "\
+                          f"0x{PROXY_PROPERTY:x}: {cmp_imm(rkof, site['id'])}"
+        branch = cond_branch(rkof, site["refuse"])
+        if branch != (PROXY_LS, site["reason"]):
+            return False, f"the {which} slot's bound branch is {branch}, not BLS to "\
+                          f"0x{site['reason']:x}"
+        wrong = refusal(site, which)
+        if wrong:
+            return False, wrong
+
+    moved = mov_reg(rkof, PROXY_READ["argument"])
+    if moved != (4, 3):
+        return False, f"the read slot's third argument move is {moved}, not r3 into r4"
+    loaded = ldr_imm(rkof, PROXY_READ["length"])
+    if loaded != (1, moved[0], 0):
+        return False, f"the read slot's length load is {loaded}, not r1 from [r{moved[0]}]"
+    if cmp_imm(rkof, PROXY_READ["bound"]) != (1, PROXY_SHORTEST_REFUSED):
+        return False, f"the read slot tests {cmp_imm(rkof, PROXY_READ['bound'])}, not the "\
+                      f"dereferenced length against {PROXY_SHORTEST_REFUSED}"
+
+    if cmp_imm(rkof, PROXY_WRITE["bound"]) != (3, PROXY_SHORTEST_REFUSED):
+        return False, f"the write slot tests {cmp_imm(rkof, PROXY_WRITE['bound'])}, not r3 "\
+                      f"itself against {PROXY_SHORTEST_REFUSED}"
+    if ldr_imm(rkof, PROXY_WRITE["bound"]) is not None:
+        return False, "the write slot's bound is a load, so the length is not by value"
+    tested = compare_branch(rkof, PROXY_WRITE["buffer"])
+    if tested != (2, PROXY_WRITE["null_path"], True):
+        return False, (
+            f"the write slot's buffer test is {tested}, not CBZ r2 to "
+            f"0x{PROXY_WRITE['null_path']:x}"
+        )
+    if literal_word(rkof, PROXY_WRITE["null_path"]) != PROXY_REFUSAL:
+        return False, "the write slot's null path does not load the refusal code"
+    if movs_imm(rkof, PROXY_WRITE["transfer"]) != (2, PROXY_TRANSFER):
+        return False, f"the write slot moves {movs_imm(rkof, PROXY_WRITE['transfer'])}, not "\
+                      f"{PROXY_TRANSFER} into r2"
+    named = cstring(rkof, literal_word(rkof, PROXY_WRITE["parameter"]))
+    if named != PROXY_IN_PARAMETER:
+        return False, f"the write slot's null path names {named!r}, not {PROXY_IN_PARAMETER!r}"
+    return True, (
+        f"{PROXY_SLOTS} slots at 0x{PROXY_VTABLE:x} with null RTTI, slots "
+        f"{sorted(PROXY_OWN)} in {PROXY_SOURCE}, property 0x{PROXY_PROPERTY:x} read by "
+        f"reference and written by value, {PROXY_TRANSFER} bytes, {PROXY_IN_PARAMETER}"
+    )
+
+
 CHECKS = (
     ("session transition table", check_transition_table),
     ("band plan", check_band_table),
@@ -2321,6 +2487,7 @@ CHECKS = (
     ("citations are instructions", check_instruction_citations),
     ("the radio PHY image", check_phy_image),
     ("the codec question", check_the_codec_question),
+    ("the proxy's property pair", check_proxy_property_pair),
 )
 
 

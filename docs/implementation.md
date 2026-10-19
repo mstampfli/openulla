@@ -292,8 +292,9 @@ python3 tools/payload_survey.py --payloads payloads
   PASS  prose-only citations             48 prose citations hold their instruction
   PASS  citations are instructions       775 acib citations, none of them a literal-pool word, with 1 allowed as data
   PASS  the radio PHY image              a 48-word table ending at the info block with 41 live entries, 11 reserved slots on one handler and SVCall/PendSV on another, vector 15 a tick counter, msr of MSP, PSP and BASEPRI, '[BTP]: (version:' its own name, and of 25 populated IRQs 13 bare bx lr, 9 trampolines, 3 bodies
-  PASS  the codec question               2 codec names in the DSP each reached from its own site, 6 codec commands beside A2DP and HFP, the link's own configuration path as 5 names of one module with its DSP proxy, 5 stream codes resolving to slots 0 to 4 with the link owning two, and the proxy's 35-slot table implementing 3 of them with one eight-byte property 0x190
-34 of 34 claims hold
+  PASS  the codec question               2 codec names in the DSP each reached from its own site, 6 codec commands beside A2DP and HFP, the link's own configuration path as 5 names of one module with its DSP proxy, 5 stream codes resolving to slots 0 to 4 with the link owning two
+  PASS  the proxy's property pair        35 slots at 0x1cfe14 with null RTTI, slots [6, 18, 19] in UllaRxClientMgrProxy.cpp, property 0x190 read by reference and written by value, 8 bytes, inPropertyData
+35 of 35 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows

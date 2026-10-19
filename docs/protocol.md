@@ -2961,10 +2961,11 @@ What a slot's twenty bytes hold is not established, and neither is how this func
 entered: no branch anywhere in the payload targets it and no word holds its address.
 
 **The proxy itself is a node in a property framework, and it exposes exactly one property.**
-Its methods live in a virtual table of **35 slots**, bracketed above and below by zero words -
-the null offset-to-top and null type information of a class compiled without run-time type
-support, which is also why the class cannot be named from the image [fw rkof the table at
-0x1cfe14 with its brackets at 0x1cfe0c, 0x1cfe10 and 0x1cfea0]. Three of the 35 are the
+Its methods live in a virtual table of **35 slots**, bracketed above and below by two zero
+words each - the null offset-to-top and null type information of a class compiled without
+run-time type support, so **the table does not name its class**; what the image names is the
+source file the methods were compiled from [fw rkof the table at 0x1cfe14, its lower brackets
+at 0x1cfe0c and 0x1cfe10, its upper ones at 0x1cfea0 and 0x1cfea4]. Three of the 35 are the
 proxy's own, the other 32 being inherited implementations elsewhere in the payload: slots 6, 18
 and 19 [fw rkof 0x121658, 0x12165c and 0x1216e0, each naming `UllaRxClientMgrProxy.cpp` in its
 own diagnostics, where slot 34 names `TimerPropertyHIDDeviceNode.cpp` instead]. Slot 6 is a
@@ -2976,9 +2977,21 @@ size outright by moving **8** as its transfer length [fw rkof 0x12166a and 0x121
 tests, 0x121672 and 0x1216f4 the two length bounds, 0x121700 the length]. So the link's proxy
 carries **one eight-byte property in two directions**, which is a second data point for the
 property interface section 7 reaches from the DSP side, where the node's own switch answers
-0x258, 0x259 and 0x25A. What the eight bytes contain is not established, and which of the two
-methods reads and which writes is not either: they take their length from different places, one
-from the first word of a structure and one from a separate argument.
+0x258, 0x259 and 0x25A.
+
+**Which of the pair reads and which writes is settled by how each one receives the length.**
+Slot 18 takes its third argument as a pointer and dereferences it before testing the bound
+[fw rkof 0x121666 `mov r4, r3`, 0x121670 `ldr r1, [r4]` at offset zero, then 0x121672 the
+bound], and it passes that same pointer on to the call it makes, which is how a reader returns
+the length it actually produced. Slot 19 tests the argument itself [fw rkof 0x1216f4 `cmp r3,
+#7`], so its caller states a length rather than asking for one, and it then copies a fixed
+eight bytes. Slot 19 also refuses a null buffer before it even reads the id, and names the
+argument it refused: **`inPropertyData`** [fw rkof 0x1216ea the `cbz r2` to 0x121714, and
+0x121728 the literal load of that name]. An argument named for data coming in, and a length
+given rather than returned, make slot 19 the write and slot 18 the read.
+
+What the eight bytes contain is still not established. Nothing in these two methods interprets
+them: slot 19 hands them to a copy and slot 18 to a call that takes a buffer and a length.
 
 The addresses above are every one of them a literal load, an instruction or a page-relative
 pair rather than a string offset, because two readings of this material were wrong by one byte
