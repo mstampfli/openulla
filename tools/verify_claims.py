@@ -26,6 +26,8 @@ point of the tool: it tells you which claims still hold.
 """
 import argparse
 import os
+import pathlib
+import re
 import struct
 import sys
 
@@ -46,6 +48,8 @@ from openulla.procedure import (
     THIRD_HANDLER_ADDRESSES,
 )
 from openulla.session import TRANSITIONS
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # acib, the Bluetooth controller image
 BAND_TABLE = 0xF52E8
@@ -326,6 +330,18 @@ TLV_SHORT_STEP = (0x29886, 0x2002)  # movs r0, #2, type 2's one-byte value
 TLV_SKIP_ONE = (0x298BE, 0x2101)  # movs r1, #1
 TLV_SKIP_SHIFT = (0x298C0, 0xEB01, 0x1010)  # add.w r0, r1, r0, lsr #4
 TLV_REPLY_BLOCK_AT = 0x29A68  # the literal, as count then the first item
+# Citations that name a four-byte constant on purpose, which `check_instruction_citations`
+# would otherwise refuse. Each one has to be a sentence that says it is reading a word.
+DATA_CITATIONS = {
+    # 5.15: "the reply ... starts its block with a count of 0x0B and then the bytes 20 5b 00
+    # [fw acib the word at 0x29a68, stored at 0x29a34]". The word is the claim.
+    TLV_REPLY_BLOCK_AT,
+}
+# The positive control for that check, and it needs one: a scan that finds nothing passes, so on
+# a file that is not this image the check would report success having examined noise. These two
+# words are the ones that prompted the check, each with the instruction that loads it; they are
+# no longer cited anywhere, so they cannot be satisfied by the documents.
+LITERAL_CONTROLS = {0x14584: 0x14548, 0x4A3B4: 0x4A362}
 # 0x7B/0x14's three gates: the length, a link bit, and feature bit 0. [5.15]
 GATE_14_LENGTH = (0x3C02C, 0x2804)  # cmp r0, #4 on the whole PDU length
 GATE_14_LENGTH_ERROR = (0x3C31E, 0x2019)  # movs r0, #0x19
@@ -1814,6 +1830,97 @@ def check_prose_citations(acib, rkof, ctab, sbd1):
     return True, f"{len(PROSE_CITATIONS)} prose citations hold their instruction"
 
 
+def instruction_boundaries(img, start, end):
+    """The instruction boundaries of an anchored forward Thumb sweep.
+
+    A halfword starts a 32-bit instruction when its top five bits are 0b11101, 0b11110 or
+    0b11111, so a sweep that begins on a real boundary stays on them.
+    """
+    out, pc = set(), start
+    while pc < end:
+        out.add(pc)
+        pc += 4 if (u16(img, pc) >> 11) in (0x1D, 0x1E, 0x1F) else 2
+    return out
+
+
+def literal_loaders(img, target, window=1024, anchors=8):
+    """Addresses of instructions that load the word at `target`, so that `target` is data.
+
+    Several anchors have to agree. A sweep begun at an arbitrary offset can start out of phase,
+    and a halfword in the middle of a wide instruction can match `ldr rN, [pc]` exactly: the
+    first version of this detector reported acib 0x29b8c as a literal on the strength of the
+    second halfword of the `ldrb` at 0x29b82, and 0x29b8c is a real instruction. Requiring
+    agreement across eight starting phases is what removes that whole class of answer, and this
+    project has made the unanchored-sweep mistake before.
+    """
+    votes: dict[int, int] = {}
+    for step in range(anchors):
+        start = target - window - 2 * step
+        if start < 0:
+            continue
+        for at in sorted(instruction_boundaries(img, start, target + 4)):
+            if at >= target:
+                break
+            head = u16(img, at)
+            if head & 0xF800 == 0x4800:  # ldr rN, [pc, #imm8*4]
+                if ((at + 4) & ~3) + 4 * (head & 0xFF) == target:
+                    votes[at] = votes.get(at, 0) + 1
+            elif head & 0xFF7F == 0xF85F and (head >> 11) in (0x1D, 0x1E, 0x1F):
+                imm = u16(img, at + 2) & 0xFFF
+                if ((at + 4) & ~3) + (imm if head & 0x80 else -imm) == target:
+                    votes[at] = votes.get(at, 0) + 1
+    return {at for at, count in votes.items() if count >= anchors - 1}
+
+
+def check_instruction_citations(acib, rkof, ctab, sbd1):
+    """That every address these documents cite is an instruction, not a literal-pool word.
+
+    `tests/test_docs.py` checks that a cited address is inside its payload and
+    `check_prose_citations` checks the instruction at a curated 48 of them. Neither catches the
+    error this is for: citing the four-byte constant an instruction reads instead of the
+    instruction that reads it. Two citations in 5.13 were exactly that, and under rule 11 - an
+    address with the instructions that show it - they cited nothing at all.
+
+    `DATA_CITATIONS` is the allowlist, and it is for addresses the prose deliberately names as
+    data rather than as code. Each entry has to say what the sentence claims, because an
+    allowlist is how this check would quietly stop working.
+    """
+    cited: dict[int, set[str]] = {}
+    for path in sorted((ROOT / "docs").glob("*.md")):
+        text = path.read_text()
+        for group in re.finditer(r"\[([^\[\]]*?)\]", text, re.S):
+            if "acib" not in group.group(1):
+                continue
+            for found in re.findall(r"0x([0-9a-fA-F]{4,6})\b", group.group(1)):
+                value = int(found, 16)
+                if value < len(acib):
+                    cited.setdefault(value, set()).add(path.name)
+    if len(cited) < 500:
+        return False, f"only {len(cited)} acib citations found, so the scan is not working"
+    for word_at, loader_at in LITERAL_CONTROLS.items():
+        if loader_at not in literal_loaders(acib, word_at):
+            return False, (
+                f"the control failed: nothing at 0x{loader_at:x} loads the word at "
+                f"0x{word_at:x}, so this payload is not the image and a clean scan below "
+                "would mean nothing"
+            )
+    offenders = []
+    for address in sorted(cited):
+        if address % 4 or address in DATA_CITATIONS:
+            continue
+        loaders = literal_loaders(acib, address)
+        if loaders:
+            where = ", ".join(sorted(cited[address]))
+            at = ", ".join(f"0x{one:x}" for one in sorted(loaders))
+            offenders.append(f"0x{address:x} in {where} is the word loaded at {at}")
+    if offenders:
+        return False, "cited as an instruction but it is data: " + "; ".join(offenders)
+    return True, (
+        f"{len(cited)} acib citations, none of them a literal-pool word, with "
+        f"{len(DATA_CITATIONS)} allowed as data"
+    )
+
+
 def check_ctab_manifest(acib, rkof, ctab, sbd1):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
@@ -1897,6 +2004,7 @@ CHECKS = (
     ("payload header width", check_payload_header_width),
     ("the five paired procedures", check_paired_procedures),
     ("prose-only citations", check_prose_citations),
+    ("citations are instructions", check_instruction_citations),
 )
 
 

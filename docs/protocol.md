@@ -1508,9 +1508,11 @@ approximately; an earlier version of this paragraph cited the store and called i
 **four** parallel arrays of eighteen entries: an allowed-mask bit, a maximum payload, the
 four-bit TYPE code that goes in the baseband header, and the slot count coded 0, 1 and 2 for
 one, three and five slots [fw acib 0xf11a0, 0xf11e8, 0xf120c and 0xf121e, read at 0x137a6 to
-0x137ca, at 0x14548 and 0x1454a, at 0x149ee, and at 0x4a362 and 0x4a364; an earlier version of
-this list named 0x14584 and 0x4a3b4, which are the literal-pool words those loads read and not
-instructions]. Twelve of the eighteen are the
+0x137ca, at 0x14548 and 0x1454a, at 0x149ee, and at 0x4a362 and 0x4a364]. An earlier version of
+that list named two addresses four halfwords further on, which are the literal-pool words those
+loads read rather than instructions; `check_instruction_citations` in `tools/verify_claims.py`
+now refuses that mistake across every citation in these documents. Twelve of the eighteen are
+the
 specification's, carrying exactly its payload maxima, and that is the control which identifies
 the table: 17, 27, 54, 83, 121, 183, 224, 339, 367, 552, 679 and 1021 bytes all appear. Six are
 left over:
