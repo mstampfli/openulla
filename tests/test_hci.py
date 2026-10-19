@@ -2,7 +2,7 @@
 import pytest
 
 from openulla import hci, lmp
-from openulla.codes import Mode, RejectReason, Result
+from openulla.codes import HciError, Mode, RejectReason, Result
 from openulla.errors import ProtocolError
 
 
@@ -148,3 +148,17 @@ def test_the_two_commands_that_set_the_controllers_own_feature_bits():
     assert 0xA9 | 0x56 == 0xFF and 0xA9 & 0x56 == 0
     assert (1 << lmp.FEATURE_BIT_BANDS) & 0xA9  # bit 5 is in the group 0xFDF3 leaves alone
     assert (1 << lmp.FEATURE_BIT_MODE_PROCEDURE) & 0x56  # bit 6 is in the group it adds
+
+
+def test_the_eleven_commands_that_reach_the_ulla_session():
+    """protocol.md 6.6: found by their handlers, not by guessing opcodes."""
+    assert len(hci.ULLA_SESSION_COMMANDS) == 11
+    assert hci.OPCODE_ULLA_SETUP in hci.ULLA_SESSION_COMMANDS
+    assert hci.OPCODE_ALLOWED_BANDS in hci.ULLA_SESSION_COMMANDS
+    assert all(op >> 10 == hci.OGF_VENDOR for op in hci.ULLA_SESSION_COMMANDS)
+    # The two payloads the earbud's own manager is known to send.
+    assert hci.session_command(0xFE52) == bytes.fromhex("52 fe 00")
+    assert hci.session_command(0xFE58, bytes(4)) == bytes.fromhex("58 fe 04 00 00 00 00")
+    with pytest.raises(ProtocolError):
+        hci.session_command(0xFE54)  # a neighbour whose handler never reaches the session
+    assert hci.SESSION_COMMAND_REFUSAL == HciError.COMMAND_DISALLOWED

@@ -1388,6 +1388,53 @@ agree on what a range means.
 Where this message sits among the rest of its escape space, and which extended opcodes that
 space implements at all, is section 5.6.
 
+### 6.6 The other vendor commands that reach the ULLA session
+
+0xFE50 is not the only command on this interface, and the rest can be found mechanically
+rather than guessed at. The ULLA session object has one accessor [fw acib 0x2f52c], the same
+one 0x75's and 0x76's receivers use (5.2); taking every call to it in the image and asking
+which command handler it falls inside gives **eleven commands**, nine of them not mentioned
+anywhere else in this document:
+
+| command | handler | the earbud's own manager sends it |
+|---|---|---|
+| 0xFE16 | acib 0x1ebf4 | yes, five bytes: 1, then a word of its own state [fw rkof 0x27c08] |
+| 0xFE4C | acib 0x1d6cc | no |
+| 0xFE4E | acib 0x1e7b8 | no |
+| 0xFE50 | acib 0x1da40 | yes, the mode change of section 6 |
+| 0xFE52 | acib 0x1dd88 | yes, with no parameters at all [fw rkof 0x26940] |
+| 0xFE53 | acib 0x1de62 | no |
+| 0xFE55 | acib 0x1dde4 | no |
+| 0xFE57 | acib 0x1d900 | no |
+| 0xFE58 | acib 0x1d952 | yes, four zero bytes [fw rkof 0x26866] |
+| 0xFE7B | acib 0x1d44e | no |
+| 0xFF79 | acib 0x193f4 | yes, the allowed-band mask of 6.1 |
+
+**Five of them share one shape**, which is the useful part. 0xFE52, 0xFE53, 0xFE55, 0xFE57 and
+0xFE58 all begin with the same gate chain [fw acib 0x1dd88, 0x1de62, 0x1dde4, 0x1d900,
+0x1d952, all through 0x1dfe0]:
+
+1. a device predicate [fw acib 0x62044]. When it holds, the handler takes a path of its own
+   that does not involve the session object at all.
+2. otherwise the session has to be **active**: the state byte 2 with a flag set, which is
+   exactly the check 0x75's receiver makes [fw acib 0x2f550]. If it is not, the command
+   completes with **0x0C**, command disallowed.
+3. then the link's **role byte** decides which of two branches runs [fw acib 0x2f566], the
+   same test again from 5.2.
+
+What each branch does is a different call into the session module, and three of them are
+property writes on the session object with the ids 0x1B0 to 0x1B3 [fw acib 0x4883c, 0x4870e,
+0x486f8 and 0x48722]. 0xFE58's branch writes 0x1B3 and then reports to the host [fw acib
+0x48722 into 0x11e8c], and 0xFE53's other path reports too [fw acib 0x11f04]. So this is a
+family of commands for a session that already exists, gated on the session being active, which
+is the same division 5.2 found on the air: 0x73 creates, and 0x74 to 0x76 are for a session
+that is there.
+
+What the individual commands mean is not traced, and naming them would be interpretation. The
+table is published because it bounds the host interface: an implementation that answers these
+eleven, with 0x0C where the gates fail, has covered what a host can ask about an ULLA session
+in this build. `openulla.hci.ULLA_SESSION_COMMANDS` holds the list.
+
 ## 7. The audio layer, and what is not known
 
 Once the mode change succeeds the radio carries the audio. The parts that are established:

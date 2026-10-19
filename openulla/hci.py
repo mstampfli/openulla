@@ -47,6 +47,26 @@ MANAGER_CONFIG_WORD = 0x0096
 MANAGER_FLAGS_MODE_ONE = 0x04
 MANAGER_FLAGS_OTHERWISE = 0x0F
 OPCODE_FEATURE_GROUP = 0xFDF3  # four bits of the feature byte, bit 6 among them
+ULLA_SESSION_COMMANDS: dict[int, int] = {
+    0xFE16: 0x1EBF4,
+    0xFE4C: 0x1D6CC,
+    0xFE4E: 0x1E7B8,
+    0xFE50: 0x1DA40,
+    0xFE52: 0x1DD88,
+    0xFE53: 0x1DE62,
+    0xFE55: 0x1DDE4,
+    0xFE57: 0x1D900,
+    0xFE58: 0x1D952,
+    0xFE7B: 0x1D44E,
+    0xFF79: 0x193F4,
+}
+"""Every vendor command whose handler reaches the ULLA session object, and its handler.
+
+Found mechanically, not guessed: the session has one accessor [fw acib 0x2f52c] and these are
+the command handlers that call it. Five of them share one gate chain and answer 0x0C when the
+session is not active; what each means is not traced. protocol.md 6.6.
+"""
+SESSION_COMMAND_REFUSAL = 0x0C  # what the gated ones answer when the session is not active
 OPCODE_BAND_GATE = 0xFF77
 OPCODE_READ_LINK_BAND = 0xFF78
 OPCODE_ALLOWED_BANDS = 0xFF79
@@ -185,6 +205,19 @@ def band_gate(enable: bool) -> bytes:
     is zero. 0xFF78 refuses outright while the bit is clear [fw acib 0x19348].
     """
     return command(OPCODE_BAND_GATE, bytes((1 if enable else 0,)))
+
+
+def session_command(opcode: int, params: bytes = b"") -> bytes:
+    """One of the commands of protocol.md 6.6, with the payload the caller knows.
+
+    Only the opcodes whose handlers reach the ULLA session object are allowed, so a typo
+    cannot turn into a command this document has never looked at. The two payloads the
+    earbud's own manager uses are no bytes at all for 0xFE52 and four zero bytes for 0xFE58
+    [fw rkof 0x26940, 0x26866]; what the others take is not traced.
+    """
+    if opcode not in ULLA_SESSION_COMMANDS:
+        raise ProtocolError(f"0x{opcode:04x} is not one of the ULLA session commands")
+    return command(opcode, params)
 
 
 def feature_group(enable: bool) -> bytes:

@@ -360,6 +360,19 @@ def check_names(acib, rkof):
     return True, f"{len(Mode)} modes, {len(Result)} results, {checked} reasons, 2 unnamed"
 
 
+def check_session_commands(acib, rkof):
+    """The eleven commands of 6.6, each resolving to the handler we publish for it."""
+    keys = [u16(acib, HCI_KEYS + 2 * i) & HCI_KEY_MASK for i in range(HCI_KEY_COUNT)]
+    for opcode, handler in sorted(hci.ULLA_SESSION_COMMANDS.items()):
+        hits = [i for i, k in enumerate(keys) if k == (opcode & HCI_KEY_MASK)]
+        if len(hits) != 1:
+            return False, f"0x{opcode:04x} matches {len(hits)} keys under the mask"
+        got = u32(acib, HCI_HANDLERS + 4 * hits[0]) & ~1
+        if got != handler:
+            return False, f"0x{opcode:04x} now resolves to 0x{got:x}, not 0x{handler:x}"
+    return True, f"{len(hci.ULLA_SESSION_COMMANDS)} handlers, all as published"
+
+
 def check_feature_bit_commands(acib, rkof):
     """That the two commands really write the feature byte, and with which masks. [5.8]
 
@@ -470,6 +483,7 @@ CHECKS = (
     ("mode-change event shape", check_event_shape),
     ("mode, result and reason names", check_names),
     ("name table bounds", check_name_table_bounds),
+    ("ULLA session commands", check_session_commands),
     ("feature bit commands", check_feature_bit_commands),
     ("procedure state tables", check_procedure_tables),
     ("A2DP stream endpoints", check_a2dp_endpoints),
