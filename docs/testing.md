@@ -85,6 +85,14 @@ of two.
 On any controller that is not Apple's, the expected verdict is "implements none of them". Report
 anything else.
 
+**Two commands are worth trying before the link-manager exchange**, because each is one command
+with one byte and each would say something on its own. **0xFD02** sets how large a packet may be,
+and its mode byte of 1 selects the 8 Mbit/s five-slot maximum (protocol.md 6.8). **0xFDEE** is
+the shorter lever: one flag byte puts a link into Apple's packet-type table with all six of its
+packet types permitted, with no negotiation at all (protocol.md 6.9). Neither is in the eighteen
+a host was previously known to need, and both are in the earbuds' own command table. On
+commodity silicon both should be refused, and which refusal arrives is the information.
+
 **Then the exchange itself.** `openulla/` builds every PDU in the order a source must send them
 (protocol.md 8.1), and `tools/ulla_sink.py` answers as an earbud on a real L2CAP channel, so the
 host half of an implementation can be exercised before it touches earbuds. What to report: the

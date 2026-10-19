@@ -71,6 +71,7 @@ firmware from us.
   - [6.6 The other vendor commands that reach the ULLA session](#66-the-other-vendor-commands-that-reach-the-ulla-session)
   - [6.7 Two commands that read the procedure's own request block](#67-two-commands-that-read-the-procedures-own-request-block)
   - [6.8 Seven commands an Apple host was seen sending, in the earbuds' own table](#68-seven-commands-an-apple-host-was-seen-sending-in-the-earbuds-own-table)
+  - [6.9 One command puts a link into Apple's packet-type table](#69-one-command-puts-a-link-into-apples-packet-type-table)
 - [7. The audio layer, and what is not known](#7-the-audio-layer-and-what-is-not-known)
   - [7.1 The stream's control path, which is not open any more](#71-the-streams-control-path-which-is-not-open-any-more)
   - [7.2 The buffer descriptor the stream module programs](#72-the-buffer-descriptor-the-stream-module-programs)
@@ -2390,6 +2391,42 @@ been found, so this document does not claim a mapping for them.
 Put beside the boot default, that settles who sets the packet size: **the controller comes up at
 the 8 Mb/s five-slot maximum, its own software never changes it, and only an external host
 narrows it.**
+
+### 6.9 One command puts a link into Apple's packet-type table
+
+Everything in 5.13 reaches the third packet-type table by negotiation: an LMP request, a
+capability bit, a procedure. There is also a vendor command that simply does it, and it is in
+the table this document already publishes.
+
+**0xFDEE**, handler acib 0x169ac. It looks up the link named in its request and answers status 2
+when there is none [fw acib 0x169b4, 0x169b8, 0x169fc]. Then **one flag byte at the request's
++0xD** chooses between two paths [fw acib 0x169bc, 0x169d6], and it also copies that byte's bit
+0 into a global [fw acib 0x169c4 to 0x169ce].
+
+With the flag **non-zero**, three writes in eight instructions:
+
+| it writes | where | why that matters |
+|---|---|---|
+| **0x18** | the link's Apple permission, through the setter's flagged path [fw acib 0x169d8, 0x169da, 0x169dc] | both of the bits the mask filter tests, which 5.14 shows leaves **all six** packet types selectable |
+| **0x3F0000** | the link's +0x78 [fw acib 0x169e0, 0x169e6] | exactly the six mask bits of 5.13, as an immediate |
+| **2** | the link's +0x17E [fw acib 0x169e8, 0x169ea] | the active packet-type table, which 5.13 establishes |
+
+With the flag **zero** it writes **0x11** to the standard permission instead [fw acib 0x16a00,
+0x16a02]. It also reads the request's +0xF and +0x10 [fw acib 0x169ee, 0x169e4].
+
+So **one vendor command with one flag byte puts a link into Apple's packet-type table with all
+six of its packet types permitted**, without any of the negotiation of 5.13. For anyone asking
+what a host can reach, that is a shorter answer than this document had: 0xFD02 of 6.8 sets how
+large a packet may be, and this one sets which packets exist at all.
+
+It is also an independent confirmation of the six. 5.13 derived that set from three parallel
+arrays and 5.14 from two bit tests in a filter; here the same six appear as a single immediate
+written by a command handler, which none of those arguments could have produced.
+
+One caution, so the table above is not read as more than it says: what the link's **+0x78** is
+has not been established. The mask the chooser actually walks comes from the 0x1000B494 record's
++0x40 [fw acib 0x13750], which is a different structure. What is established is that this
+handler writes that immediate there, and what the immediate is.
 
 ## 7. The audio layer, and what is not known
 

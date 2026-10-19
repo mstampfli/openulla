@@ -304,6 +304,15 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
   specified entries do at 1, 2 and 3. Apple declares two proprietary rates for
   this device, HDR4 and HDR8, and names its five-slot pair 4-DH5 and 8-DH5.
   [docs/protocol.md](docs/protocol.md) 5.13.
+- **And one vendor command reaches them without negotiating at all.** 0xFDEE's
+  handler takes one flag byte and, when it is set, writes the permission that
+  leaves all six packet types selectable, the immediate 0x3F0000 which is
+  exactly those six mask bits, and the value 2 into the link's active
+  packet-type table. So a host has a shorter path than the link-manager
+  exchange: 0xFD02 sets how large a packet may be and this one sets which
+  packets exist at all. It is also a third independent confirmation of the six,
+  since that immediate was never part of how they were found.
+  [docs/protocol.md](docs/protocol.md) 6.9.
 - **They are announced nowhere a standard host can see them**, which is four
   findings pointing one way rather than a guess. The
   Create Connection packet-type field has no bit for 4-DH5 or 8-DH5; the LMP

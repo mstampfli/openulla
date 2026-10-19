@@ -156,6 +156,7 @@ APPLE_TABLE_CMP = 0x3C0C2  # cmp r0, #2, where the specification's arm has cmp r
 PACKET_MASKS = 0xF11A0  # one 32-bit allowed mask per entry
 PACKET_PAYLOADS = 0xF11E8  # one halfword payload maximum per entry
 PACKET_TYPE_CODES = 0xF120C  # one byte of baseband TYPE per entry
+MASK_IMMEDIATE_AT = 0x169E0  # mov.w r0, #0x3f0000 in 0xFDEE's handler, which is those six bits
 # The sender that chooses between the two forms: (where the immediate is, what it must be).
 TABLE_SENDER_ARMS = (
     (0x29E46, 0x217F, 0x29E3A, 0x220B),  # movs r1, #0x7f / movs r2, #0xb
@@ -282,6 +283,17 @@ PROSE_CITATIONS = (
     ("0x25's standard permission at body+0x2a", 0x31F30, 0xF894, 0x102A),
     ("and Apple's at body+0x2b", 0x31F3C, 0xF894, 0x102B),
     ("with the flag set", 0x31F42, 0x2201, None),
+    # 0xFDEE's handler, which reaches table 2 without negotiating. [6.9]
+    ("0xFDEE reads its flag byte", 0x169BC, 0x7B60, None),
+    ("and branches on it", 0x169D6, 0xB199, None),
+    ("the permission it writes", 0x169D8, 0x2118, None),
+    ("with the flagged path", 0x169DA, 0x2201, None),
+    ("the six mask bits as an immediate", 0x169E0, 0xF44F, 0x107C),
+    ("stored at the link's +0x78", 0x169E6, 0x67A8, None),
+    ("the table it sets", 0x169E8, 0x2002, None),
+    ("written to the link's +0x17e", 0x169EA, 0xF885, 0x017E),
+    ("the off path's permission", 0x16A00, 0x2111, None),
+    ("with the standard path", 0x16A02, 0x2200, None),
 )
 # The TLV parser behind the counted block, and the block this firmware's own reply opens with.
 TLV_TYPE_MASK_AT = 0x2983A  # and r1, r2, #0xf, the low nibble is the type
@@ -1391,10 +1403,19 @@ def check_packet_type_table(acib, rkof, ctab, sbd1):
             return False, f"the sender's arm at 0x{opcode_at:x} no longer sends 0x{opcode:04x}"
     if u16(acib, TABLE_SENDER_VALUE) != 0xF894:  # ldrb.w r1, [r4, #0x17f]
         return False, f"0x{TABLE_SENDER_VALUE:x} no longer reads the value to send"
+    # 6.9's confirmation: one command handler writes exactly those six bits as an immediate.
+    six = sum(1 << bit for bit in packets.APPLE_MASK_BITS)
+    got = data_imm(acib, MASK_IMMEDIATE_AT)
+    if got != six:
+        return False, (
+            f"0x{MASK_IMMEDIATE_AT:x} carries {got and hex(got)}, not the six mask bits "
+            f"0x{six:x}"
+        )
     return True, (
         f"{len(packets.TABLE)} entries, all twelve specified payloads present, "
         f"{len(extra)} more at mask bits {packets.APPLE_MASK_BITS[0]} to "
-        f"{packets.APPLE_MASK_BITS[-1]}, Apple's request bounded to {packets.MAX_TABLE}"
+        f"{packets.APPLE_MASK_BITS[-1]}, Apple's request bounded to {packets.MAX_TABLE}, "
+        f"and 0xFDEE writes 0x{six:x}"
     )
 
 
