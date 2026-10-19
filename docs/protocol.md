@@ -1106,6 +1106,17 @@ per link by a controller property, is a 1:2:3 family and nothing in these payloa
 It is the most concrete lead left for anyone with a capture: those six bytes are recognisable
 on sight.
 
+**The same three bits gate one more message.** The function that sends 0x7B/0x10, whose body
+is one halfword (5.7), opens with the identical test: bit 2 of the AND of the two first
+feature bytes, or failing that bit 1 of the same AND or bit 6 of the AND of the fourth bytes
+[fw acib 0x296ac to 0x296ce]. On top of that it wants a per-link halfword at +0x4C to read
+either 0x4C or 0x0F and a byte at +0x3E to be set [fw acib 0x296d0 to 0x296e0]; otherwise it
+does one call and returns. When it does go on, it writes 0x2F to the link's +0x7D and 1 to its
++0x80, and sends the message only if bit 5 or bit 7 of that same AND is set, having called one
+function in either case and a second one when bit 5 is [fw acib 0x296f2 to 0x29774]. So those
+bits are not a one-off for the pair above: they gate a small group of messages, which is one
+more reason the feature exchange is where an implementation starts.
+
 ## 6. Controller interface: HCI vendor commands
 
 The source's host starts the whole thing with vendor command **0xFE50** [fw acib table at
