@@ -1430,6 +1430,16 @@ family of commands for a session that already exists, gated on the session being
 is the same division 5.2 found on the air: 0x73 creates, and 0x74 to 0x76 are for a session
 that is there.
 
+**0xFE16 is the one whose parameters are fully readable**, and it is worth the detail because
+its bound is a measurement rather than a guess. It takes a byte and a 32-bit value, which is
+exactly the five bytes the earbud's manager sends. The value has to be **at least 0x7D (125)
+and at most 0x2710 (10000)**, and outside that the command completes with **0x11**; then the
+same device predicate decides between two handlers, with the session-active check and 0x0C on
+the other path [fw acib 0x1ebfc to 0x1ec4a, the two handlers 0x1ebb4 and 0x1eb0a, which pass
+both parameters into the link layer at 0x5ed34 and 0x5ed54]. A single value bounded to
+125 to 10000 looks like a time or an interval, but nothing in these payloads says in what
+unit, so this document records the bound and not a meaning.
+
 What the individual commands mean is not traced, and naming them would be interpretation. The
 table is published because it bounds the host interface: an implementation that answers these
 eleven, with 0x0C where the gates fail, has covered what a host can ask about an ULLA session

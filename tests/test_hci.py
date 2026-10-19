@@ -162,3 +162,12 @@ def test_the_eleven_commands_that_reach_the_ulla_session():
     with pytest.raises(ProtocolError):
         hci.session_command(0xFE54)  # a neighbour whose handler never reaches the session
     assert hci.SESSION_COMMAND_REFUSAL == HciError.COMMAND_DISALLOWED
+
+
+def test_the_bound_on_0xfe16s_value():
+    """125 to 10000 inclusive, or the command answers 0x11. [protocol.md 6.6]"""
+    low, high = hci.FE16_VALUE_RANGE
+    assert (low, high) == (125, 10000)
+    assert hci.session_command(0xFE16, bytes((1,)) + high.to_bytes(4, "little")) == (
+        bytes.fromhex("16 fe 05 01 10 27 00 00")
+    )

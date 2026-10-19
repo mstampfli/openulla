@@ -67,6 +67,12 @@ the command handlers that call it. Five of them share one gate chain and answer 
 session is not active; what each means is not traced. protocol.md 6.6.
 """
 SESSION_COMMAND_REFUSAL = 0x0C  # what the gated ones answer when the session is not active
+FE16_VALUE_RANGE = (0x7D, 0x2710)
+"""The bound 0xFE16's 32-bit parameter has to be inside, or the command answers 0x11.
+
+125 to 10000 inclusive [fw acib 0x1ec00 and 0x1ec04]. What it measures is not traced, so the
+range is recorded and not interpreted. protocol.md 6.6.
+"""
 OPCODE_BAND_GATE = 0xFF77
 OPCODE_READ_LINK_BAND = 0xFF78
 OPCODE_ALLOWED_BANDS = 0xFF79

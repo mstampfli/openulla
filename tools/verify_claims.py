@@ -370,7 +370,20 @@ def check_session_commands(acib, rkof):
         got = u32(acib, HCI_HANDLERS + 4 * hits[0]) & ~1
         if got != handler:
             return False, f"0x{opcode:04x} now resolves to 0x{got:x}, not 0x{handler:x}"
-    return True, f"{len(hci.ULLA_SESSION_COMMANDS)} handlers, all as published"
+    # 0xFE16's bound, read as instructions: cmp r5,#0x7d then movw r0,#0x2710.
+    low, high = hci.FE16_VALUE_RANGE
+    if u16(acib, 0x1EC00) & 0xFF != low:
+        return False, f"0xFE16's lower bound is now 0x{u16(acib, 0x1EC00) & 0xFF:x}, not 0x{low:x}"
+    movw = u32(acib, 0x1EC04)
+    got = ((movw >> 16) & 0xFF) | ((movw >> 20) & 0x700) | ((movw & 0x400) << 1) | (
+        (movw & 0xF) << 12
+    )
+    if got != high:
+        return False, f"0xFE16's upper bound is now 0x{got:x}, not 0x{high:x}"
+    return True, (
+        f"{len(hci.ULLA_SESSION_COMMANDS)} handlers as published, 0xFE16 bounded to "
+        f"{low} to {high}"
+    )
 
 
 def check_feature_bit_commands(acib, rkof):
