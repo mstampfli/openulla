@@ -23,7 +23,8 @@ manager's whole transition table, the band plan, the command table with every ha
 the PDU lengths, both dispatch tables, every body builder, the event's shape, the mode, result
 and reason names and the bounds of their tables, all three procedures' state tables, the
 eleven session commands with 0xFE16's bound, the two commands that write the controller's
-feature bits, and the stream endpoints. It fails on a single changed byte, and it needs no
+feature bits, the stream endpoints, and both standard roads to an extra ACL rate with the
+bounds that close them. It fails on a single changed byte, and it needs no
 firmware from us.
 
 ## Contents
@@ -56,6 +57,7 @@ firmware from us.
   - [5.9 The source's own procedure, state by state](#59-the-sources-own-procedure-state-by-state)
   - [5.10 The sink runs the same kind of machine, and there is a third](#510-the-sink-runs-the-same-kind-of-machine-and-there-is-a-third)
   - [5.11 One extended pair, traced end to end](#511-one-extended-pair-traced-end-to-end)
+  - [5.12 One of those escape spaces is Bluetooth's own, and it closes every standard road](#512-one-of-those-escape-spaces-is-bluetooths-own-and-it-closes-every-standard-road)
 - [6. Controller interface: HCI vendor commands](#6-controller-interface-hci-vendor-commands)
   - [6.0 What a source actually puts in those seven bytes](#60-what-a-source-actually-puts-in-those-seven-bytes)
   - [6.1 Which bands are allowed: command 0xFF79](#61-which-bands-are-allowed-command-0xff79)
@@ -839,7 +841,10 @@ once both links are ready [fw acib 0x677c8, 0x302f8].
 
 ### 5.6 The two escape spaces, and which messages exist in them
 
-Extended PDUs live behind two escape opcodes, 0x7B and 0x7F, numbered independently. Each has
+Extended PDUs live behind two escape opcodes, 0x7B and 0x7F, numbered independently. Only
+**0x7B** is Apple's: 0x7F is the specification's own escape and the 34 extended opcodes behind
+it are its own, which section 5.12 establishes and which is why this section's second row is a
+map of standard link management rather than of this protocol. Each has
 its own dispatch table, reached from the main table's case for that opcode after a bound
 check, and each has one stub that every unimplemented extended opcode shares with the
 out-of-range case:
@@ -1392,6 +1397,57 @@ selector value of 0x0A would reach that arm, and two that read an id back out of
 acib 0x36b9a to 0x36ba6, 0x4aa6a, 0x55d0c]. So the message is real, its sender is reachable
 and its gate is known, but what decides to run that procedure is not in these files: the same
 shape of answer as the source's third state in 5.9, and recorded here for the same reason.
+
+### 5.12 One of those escape spaces is Bluetooth's own, and it closes every standard road
+
+The 0x7F space is **not** part of this protocol. It is the specification's own escape, and
+saying so changes how 5.6 and 5.7 should be read: the second table there is the controller's
+implementation of standard link management, which this document maps only because the two
+spaces share a dispatcher and one handler.
+
+Three things establish it. The features handler answers with escape opcode **0x7F** and
+extended opcode **4** passed as immediates, which is the specification's extended features
+response [fw acib 0x2777c, 0x2777e]. The table has 34 entries for extended opcodes 0x01 to
+0x22, which is exactly the specification's extended opcode range. And every transmit length 5.7
+lists for this space is the length the specification gives the extended opcode of that number:
+12 bytes for the features request and response at 0x03 and 0x04, 15 for the clock adjustment at
+0x05, 3 for its acknowledgement at 0x06, 6 for its request at 0x07, 3 for the packet-type-table
+request at 0x0B, 16 for the eSCO link request at 0x0C, 4 for its removal at 0x0D and 7 for the
+channel classification request at 0x10. Eight independent lengths agreeing is not a coincidence.
+
+So **Apple's own extended space is 0x7B alone**, and it hangs off an opcode the specification
+reserves rather than one of its four escapes, which are 124 to 127.
+
+The dispatcher is a halfword branch table: the target of extended opcode N is the table base
+plus twice its entry [fw acib table 0x3b3bc]. The shared reject at 0x3bf52 is the target of the
+eight entries for 0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x12, 0x13 and 0x14, which is how 5.6's refused
+list was read.
+
+**The packet-type-table request is bounded to the two tables that already exist.** Its handler
+is the table's eleventh target. It reads the single payload byte, stores it, compares it with 1,
+and sends anything above that to an arm which answers error **0x1E**, Invalid LMP Parameters
+[fw acib 0x3be6c the read, 0x3be70 the compare, 0x3be74 the branch, 0x3bf80 the error]. This
+matters more than its size suggests, because the packet-type table is how Enhanced Data Rate
+was introduced: table 0 is the basic-rate packet set, table 1 reinterprets the same baseband
+header codes as the 2 and 3 Mb/s ones. A third rate would be a third table, and there is none.
+
+**The features exchange answers zeros past page 2.** The handler reads the requested page,
+compares it with 3, and for anything from 3 up fills eight zero bytes and replies anyway rather
+than refusing [fw acib 0x27706 the page, 0x2770a the bound, 0x27712 the fill]. The local pages
+it answers with are page 0 from 0x10003288 and pages 1 and 2 from 0x100033a4 and the eight bytes
+after it [fw acib 0x27750, 0x27764, 0x27734]. It records which page the peer asked for in bits
+0, 1 and 2 of the link's +0x3C and keeps the peer's page 0 at the link's +0x3F [fw acib
+0x2773c, 0x27744]. That those globals really are the specification's pages in its own layout is
+confirmed from a second direction: an unrelated caller tests bit 3 of page 1 together with bit 0
+of page 2's second byte, which are the host and controller halves of Secure Connections [fw acib
+0xa818 to 0xa82c].
+
+Both of those were then measured on the air, and the pages hold nothing the specification does
+not define [measurements.md section 13]. Taken with 6.1's packet-type field, which has no bit
+for 4-DH5 or 8-DH5, every standard way to announce or select an extra ACL rate is closed in this
+firmware, by bound or by emptiness. **Whatever selects HDR is not a Bluetooth mechanism.** That
+is a narrowing result, not a dead end: it leaves the 0x7B space and the vendor command
+interface, and both are mapped here.
 
 ## 6. Controller interface: HCI vendor commands
 

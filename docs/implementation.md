@@ -31,6 +31,13 @@ fill it in; it says so, and the tests say so too.
 | `octets.py` | reading and writing this protocol's integers, and the one place that says they are little-endian |
 | `describe.py` | one place for the wording of every decode, over all five layers |
 | `capture.py` | finds this protocol's frames in a btsnoop capture, learning the channel from the L2CAP signalling |
+| `a2dp.py` | the three stream endpoints the earbuds register, in one copy, so the verifier and the link tool compare the same bytes |
+| `features.py` | the specification's LMP feature bit assignments, so a set bit nobody defines can be spotted rather than argued about |
+
+That is every module. Two of them hold data rather than protocol, and both exist so that two
+consumers read one copy: `a2dp.py` is checked against the firmware by `tools/verify_claims.py`
+and against the air by `tools/bt_link_state.py`, and `features.py` is read by that same tool and
+by the tests behind [measurements.md](measurements.md) section 13.
 
 ## Running it
 
@@ -199,7 +206,7 @@ still works: Apple's catalog served build 9A348 as `A3048.zip`, 11,455,085 bytes
 beginning `a04ff3f0d74e47e4`, the same asset [ulla.md](ulla.md) section 1 names. The
 `firmware.uarp` inside it, SHA-256 beginning `78171265810972c3`, is byte for byte the file
 every address in this repository was read from, and the four payloads extracted from that
-download pass **23 of 23 claims**. If your own download gives those two prefixes, you have the
+download pass **24 of 24 claims**. If your own download gives those two prefixes, you have the
 same bytes; if it does not, Apple has published a new build and the tool will tell you which
 claims moved.
 
@@ -240,7 +247,8 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  DSP ULLA node                    the node's version at +0x2bc, 3 property ids, 'processBufferUllav11', error 0xe00002e7
   PASS  procedure scheduler              89 ids from 0xfcd0, 40 arms, 0x1a -> 0x296a0
   PASS  ctab is the table again          'rkosftab' at 0x3d, 20 entries in table order, no block magic
-23 of 23 claims hold
+  PASS  no standard road to a new rate   packet-type table bounded to 0 or 1 with error 0x1e, feature pages bounded below 3 and filled with eight zeros above, pages at 0x10003288 and 0x100033a4
+24 of 24 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows

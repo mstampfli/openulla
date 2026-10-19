@@ -268,3 +268,51 @@ def test_the_endpoint_table_is_what_the_verifier_checks():
     assert verify_claims.A2DP_CAPABILITIES == {
         codec: capability for codec, (_, capability) in a2dp.ENDPOINTS.items()
     }
+
+
+def test_feature_bit_numbering_matches_the_specification_byte_order():
+    """Bit N lives in byte N // 8 [features.py, Core spec Vol 2 Part C 3.3]."""
+    from openulla import features
+
+    assert features.set_bits(b"\x01") == [0]
+    assert features.set_bits(b"\x80") == [7]
+    assert features.set_bits(b"\x00\x01") == [8]
+    assert features.set_bits(bytes(8)) == []
+    # Bits 25 and 26 are EDR ACL 2 and 3 Mb/s, which is byte 3 bits 1 and 2.
+    edr = bytes.fromhex("0000000600000000")
+    assert features.set_bits(edr) == [25, 26]
+    assert [name for _, name in features.decode(0, edr)] == [
+        "EDR ACL 2 Mb/s",
+        "EDR ACL 3 Mb/s",
+    ]
+
+
+def test_the_measured_pages_hold_nothing_the_specification_does_not_define():
+    """The negative result of [measurements.md section 13], as a check rather than a sentence."""
+    from openulla import features
+
+    measured = {
+        0: bytes.fromhex("bffe2dfedbff7b87"),
+        1: bytes.fromhex("0b00000000000000"),
+        2: bytes.fromhex("0003000000000000"),
+    }
+    for page, data in measured.items():
+        assert features.undefined(page, data) == [], page
+    assert sum(len(features.set_bits(d)) for d in measured.values()) == 54
+    # The point of the measurement: the device does announce EDR, so the mechanism is in use.
+    named = {name for _, name in features.decode(0, measured[0])}
+    assert "EDR ACL 2 Mb/s" in named and "EDR ACL 3 Mb/s" in named
+
+
+def test_an_undefined_bit_is_reported_rather_than_named():
+    """A guard that cannot fail is not a guard: these are the shapes it must catch."""
+    from openulla import features
+
+    reserved_in_page_0 = bytes.fromhex("0000000100000000")  # bit 24
+    assert features.undefined(0, reserved_in_page_0) == [24]
+    assert "RESERVED" in features.decode(0, reserved_in_page_0)[0][1]
+    assert features.undefined(1, bytes.fromhex("1000000000000000")) == [4]  # past page 1's four
+    assert features.undefined(2, bytes.fromhex("8000000000000000")) == [7]  # page 2's gap
+    # An unknown page number defines nothing, so every set bit in it is reported.
+    assert features.undefined(9, b"\x05") == [0, 2]
+    assert features.MAX_PAGE == 2

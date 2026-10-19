@@ -2,7 +2,7 @@
 
 Everything the AirPods' own firmware can answer has been answered: the setup protocol is
 documented field by field in [protocol.md](protocol.md), an implementation of it is in
-`openulla/`, and `tools/verify_claims.py` re-derives twenty-three groups of claims from the
+`openulla/`, and `tools/verify_claims.py` re-derives twenty-four groups of claims from the
 firmware image itself. What is left needs hardware this project does not have.
 
 Two different kinds of hardware answer two different questions, and it is worth being precise
@@ -198,6 +198,11 @@ Measured here already, with the bytes in [measurements.md](measurements.md):
   has no bit for 4-DH5 or 8-DH5 (section 9).
 - An Intel AX211 implements none of the vendor commands documented here, and answers 0x0C to
   every unimplemented opcode in that group (section 10).
+- **HDR is announced nowhere a standard host can see it.** All three of the earbuds' LMP feature
+  pages were read off the air: 54 bits set, every one of them a defined Bluetooth feature, every
+  reserved position zero (section 13). They announce EDR 2 and 3 Mb/s in page 0 bits 25 and 26,
+  so the one mechanism a new ACL rate has for announcing itself is present and in use on this
+  very device, and HDR is not in it. `tools/bt_link_state.py MAC` prints this.
 
 ## Sharing results
 

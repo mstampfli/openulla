@@ -280,13 +280,26 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
   [docs/protocol.md](docs/protocol.md) 2.6.
 - **The implementation exists**, in `openulla/`, with a simulated earbud, a
   decoder, a capture reader, an L2CAP sink server and a verifier that
-  re-derives twenty-three groups of claims from a firmware image, the audio
+  re-derives twenty-four groups of claims from a firmware image, the audio
   DSP's own node among them. See
   [docs/implementation.md](docs/implementation.md).
 - **A Linux laptop can start a ULLA session and be told it succeeded.** Sending
   seven bytes over an ordinary Bluetooth channel moves the earbuds' session
   machine through three states and returns a success status. Measured, with
   the bytes, in [docs/measurements.md](docs/measurements.md).
+- **Apple's HDR packet modes are announced nowhere a standard host can see
+  them**, which is four findings pointing one way rather than a guess. The
+  Create Connection packet-type field has no bit for 4-DH5 or 8-DH5; the LMP
+  packet-type-table request, which is how Enhanced Data Rate's packet set was
+  switched in, bounds its byte to 0 or 1 and refuses anything above with
+  Invalid LMP Parameters; the controller answers eight zero bytes for any
+  feature page above 2; and all three of the earbuds' feature pages, read off
+  the air, hold 54 set bits of which every single one is a defined Bluetooth
+  feature. The same pages do announce EDR 2 and 3 Mb/s, so the mechanism a new
+  rate would use is present and in use on that very device. Whatever selects
+  HDR is therefore not a Bluetooth mechanism.
+  [docs/protocol.md](docs/protocol.md) 5.12 and
+  [docs/measurements.md](docs/measurements.md) section 13.
 - Where it stops: the next step is a link-manager exchange that only the
   source's own Bluetooth controller can emit, and commodity controllers
   neither expose that interface nor implement the radio modes it needs.

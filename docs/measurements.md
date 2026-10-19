@@ -284,3 +284,43 @@ what they *mean* is still open, and 4.6 says what can and cannot be read out of 
 and not a manual diff. The bytes it compares against live in `openulla/a2dp.py`, which is also
 what `tools/verify_claims.py` checks the image against, so there is one copy of them rather
 than two that could drift apart.
+
+## 13. HDR is announced nowhere a standard host can see it
+
+Measured 2026-10-19 against real earbuds on 9A348, over an established and encrypted link, by
+reading all three LMP feature pages off the device. `tools/bt_link_state.py MAC` prints this.
+
+| page | bytes | bits set | bits the specification does not define |
+|---|---|---|---|
+| 0 | `bf fe 2d fe db ff 7b 87` | 49 | none |
+| 1 | `0b 00 00 00 00 00 00 00` | 3 | none |
+| 2 | `00 03 00 00 00 00 00 00` | 2 | none |
+
+Fifty-four bits are set across the three pages and **every one of them is a defined Bluetooth
+feature**. Every reserved position is zero: page 0 bits 24, 34, 50, 55 and 59 to 62, page 1
+everything from bit 4 up, page 2 bit 7 and everything from bit 13 up.
+
+That is worth stating as a negative result because of what these pages are for. A new ACL rate
+has one specified place to announce itself, and Enhanced Data Rate used it: 2 and 3 Mb/s are
+page 0 bits 25 and 26, and these earbuds set both, along with the 3-slot and 5-slot EDR bits.
+So the mechanism is present, in use, and visibly exercised by the very same device. **Apple's
+HDR4 and HDR8 are not in it.**
+
+Four independent findings now say the same thing, which is why this document states it rather
+than one of them:
+
+- the Create Connection packet-type field has no bit for 4-DH5 or 8-DH5 (section 9), so a host
+  cannot ask for the packets;
+- the LMP packet-type-table request, which is how EDR's packet table was switched in, bounds its
+  single byte to 0 or 1 and answers 0x1E, Invalid LMP Parameters, above that
+  ([protocol.md](protocol.md) section 5.12), so there is no third table;
+- the extended feature pages announce nothing non-standard, measured here;
+- and the controller fills eight zero bytes for any page above 2 (protocol.md 5.12), so there is
+  no vendor page hiding behind the standard ones.
+
+Every standard road to an extra ACL rate is therefore closed in this firmware, by bound or by
+emptiness. Whatever selects HDR is not a Bluetooth mechanism, which leaves Apple's own escape
+space and the vendor command interface, and narrows where to look next rather than widening it.
+
+The decoder behind the table is `openulla/features.py`, which holds the specification's bit
+assignments once; the tool and the tests both read them from there.

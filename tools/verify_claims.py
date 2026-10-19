@@ -130,6 +130,25 @@ ESCAPE_7F_TABLE = 0x3B3BC
 ESCAPE_7F_COUNT = 34
 ESCAPE_7F_STUB = 0x3BF52
 ESCAPE_7F_REFUSED = {0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x12, 0x13, 0x14}
+# The two standard arms that close every road to an extra ACL rate. [5.12]
+PACKET_TABLE_EXT = 0x0B  # the packet-type-table request, how EDR's packet set was switched in
+PACKET_TABLE_ARM = 0x3BE50
+PACKET_TABLE_READ = 0x3BE6C  # ldrb r0, [r5], the single payload byte
+PACKET_TABLE_CMP = 0x3BE70  # cmp r0, #1: table 0 or table 1, and nothing else
+PACKET_TABLE_ERROR_AT = 0x3BF80  # movs r0, #0x1e, Invalid LMP Parameters
+PACKET_TABLE_ERROR = 0x1E
+FEATURES_EXT = 0x03  # the extended features request
+FEATURES_ARM = 0x3BD68
+FEATURES_HANDLER = 0x276FC
+FEATURES_CALL = 0x3BD6C  # the arm's second call, which is the handler
+FEATURES_PAGE_CMP = 0x2770A  # cmp r5, #3: pages 0, 1 and 2 exist
+FEATURES_FILL_LEN = 0x27710  # movs r1, #8: eight zero bytes for any page above them
+FEATURES_REPLY_OPCODE = 0x2777C  # movs r1, #0x7f, the specification's own escape
+FEATURES_REPLY_EXT = 0x2777E  # movs r2, #4, its extended features response
+FEATURES_PAGE_0 = 0x10003288
+FEATURES_PAGE_12 = 0x100033A4  # page 1, then page 2 in the eight bytes after it
+FEATURES_PAGE_0_LOAD = 0x27750
+FEATURES_PAGE_12_LOAD = 0x27764
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
@@ -637,6 +656,14 @@ def case_literal(img, target):
     return None
 
 
+def literal_word(img, at):
+    """The word a `ldr rN, [pc, #imm]` at this address loads, or None if that is not one."""
+    ins = u16(img, at)
+    if (ins & 0xF800) != 0x4800:
+        return None
+    return u32(img, ((at + 4) & ~3) + 4 * (ins & 0xFF))
+
+
 def reason_case(img, value):
     """Where the formatter's byte tables send one reason value."""
     if value < 0x80:
@@ -1105,6 +1132,51 @@ def check_procedure_scheduler(acib, rkof, ctab, sbd1):
     )
 
 
+def check_standard_rate_roads(acib, rkof, ctab, sbd1):
+    """Both standard roads to an extra ACL rate, and that each is closed. [5.12]
+
+    These two arms are why this project can say HDR is announced nowhere a standard host can
+    see it, so the bound and the page limit are checked as instructions, not described.
+    """
+    arm = ESCAPE_7F_TABLE + 2 * u16(acib, ESCAPE_7F_TABLE + 2 * (PACKET_TABLE_EXT - 1))
+    if arm != PACKET_TABLE_ARM:
+        return False, f"the packet-type-table arm is now 0x{arm:x}, not 0x{PACKET_TABLE_ARM:x}"
+    if u16(acib, PACKET_TABLE_READ) != 0x7828:  # ldrb r0, [r5]
+        return False, f"0x{PACKET_TABLE_READ:x} no longer reads the payload byte"
+    if u16(acib, PACKET_TABLE_CMP) != 0x2801:  # cmp r0, #1
+        return False, (
+            f"the bound at 0x{PACKET_TABLE_CMP:x} is now "
+            f"0x{u16(acib, PACKET_TABLE_CMP):04x}, not cmp r0, #1"
+        )
+    if u16(acib, PACKET_TABLE_ERROR_AT) != 0x2000 | PACKET_TABLE_ERROR:
+        return False, f"0x{PACKET_TABLE_ERROR_AT:x} no longer answers 0x{PACKET_TABLE_ERROR:x}"
+
+    arm = ESCAPE_7F_TABLE + 2 * u16(acib, ESCAPE_7F_TABLE + 2 * (FEATURES_EXT - 1))
+    if arm != FEATURES_ARM:
+        return False, f"the features arm is now 0x{arm:x}, not 0x{FEATURES_ARM:x}"
+    goes = wide_branch(acib, FEATURES_CALL)
+    if goes != FEATURES_HANDLER:
+        return False, f"that arm calls {goes and hex(goes)}, not 0x{FEATURES_HANDLER:x}"
+    if u16(acib, FEATURES_PAGE_CMP) != 0x2D03:  # cmp r5, #3
+        return False, f"the page bound at 0x{FEATURES_PAGE_CMP:x} is no longer cmp r5, #3"
+    if u16(acib, FEATURES_FILL_LEN) != 0x2108:  # movs r1, #8
+        return False, f"0x{FEATURES_FILL_LEN:x} no longer fills eight bytes"
+    if u16(acib, FEATURES_REPLY_OPCODE) != 0x217F:  # movs r1, #0x7f
+        return False, f"0x{FEATURES_REPLY_OPCODE:x} no longer answers on escape 0x7F"
+    if u16(acib, FEATURES_REPLY_EXT) != 0x2204:  # movs r2, #4
+        return False, f"0x{FEATURES_REPLY_EXT:x} no longer answers with extended opcode 4"
+    for at, want in ((FEATURES_PAGE_0_LOAD, FEATURES_PAGE_0),
+                     (FEATURES_PAGE_12_LOAD, FEATURES_PAGE_12)):
+        got = literal_word(acib, at)
+        if got != want:
+            return False, f"0x{at:x} loads {got and hex(got)}, not 0x{want:08x}"
+    return True, (
+        "packet-type table bounded to 0 or 1 with error 0x1e, feature pages bounded below 3 "
+        f"and filled with eight zeros above, pages at 0x{FEATURES_PAGE_0:x} and "
+        f"0x{FEATURES_PAGE_12:x}"
+    )
+
+
 def check_ctab_manifest(acib, rkof, ctab, sbd1):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
@@ -1180,6 +1252,7 @@ CHECKS = (
     ("DSP ULLA node", check_dsp_ulla_node),
     ("procedure scheduler", check_procedure_scheduler),
     ("ctab is the table again", check_ctab_manifest),
+    ("no standard road to a new rate", check_standard_rate_roads),
 )
 
 

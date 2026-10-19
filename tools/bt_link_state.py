@@ -24,7 +24,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla import a2dp
+from openulla import a2dp, features
 
 MAC_RE = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
 
@@ -209,6 +209,63 @@ def print_endpoints(mac):
                   % a2dp.vendor_specific(advertised).hex(" "))
 
 
+PAGE_LINE = re.compile(r"^\s*Features page (\d+):\s*((?:0x[0-9a-fA-F]{2}\s*)+)$", re.M)
+
+
+def remote_features(mac):
+    """The LMP feature pages the device announces, read from it over the air.
+
+    `hcitool info` performs the remote feature reads and prints the pages; parsing its output
+    is the cheap way to the same bytes, and it needs an established link and privileges.
+    """
+    if not shutil.which("hcitool"):
+        return None, "hcitool not installed"
+    rc, out = run(["hcitool", "info", mac])
+    if rc != 0 or "Features page" not in out:
+        rc2, out2 = run(["sudo", "-n", "hcitool", "info", mac])
+        if rc2 != 0 or "Features page" not in out2:
+            return None, "needs privileges and an established link (try: sudo -n hcitool info)"
+        out = out2
+    pages = {}
+    for page, hexbytes in PAGE_LINE.findall(out):
+        pages[int(page)] = bytes(int(b, 16) for b in hexbytes.split())
+    return pages, None
+
+
+def print_features(mac):
+    """Decode the pages and say whether anything in them is not in the specification.
+
+    The point of printing this is the last line. A proprietary ACL rate has one specified place
+    to announce itself, the way EDR announced itself in page 0 bits 25 and 26, so a bit set here
+    that the specification does not define would be that announcement.
+    """
+    pages, why = remote_features(mac)
+    print("\nLMP feature pages, against the specification's own bit assignments:")
+    if pages is None:
+        print("  %s" % why)
+        return
+    unknown = {}
+    for page in sorted(pages):
+        data = pages[page]
+        extra = features.undefined(page, data)
+        if extra:
+            unknown[page] = extra
+        print("  page %d  %s  %d bits set%s" % (
+            page, data.hex(" "), len(features.set_bits(data)),
+            ", %d NOT DEFINED" % len(extra) if extra else ""))
+        for bit in extra:
+            print("        bit %d is set and the specification does not define it" % bit)
+    if pages.get(0, b"") and features.set_bits(pages[0]):
+        named = [n for b, n in features.decode(0, pages[0]) if "EDR ACL" in n]
+        if named:
+            print("  it does announce %s" % ", ".join(named))
+    if unknown:
+        print("  VERDICT: something is announced here that no standard host can name")
+    else:
+        print("  VERDICT: every set bit is a defined Bluetooth feature, so whatever else this")
+        print("           device can do on the air, it does not announce it in these pages")
+
+
 def main():
     if len(sys.argv) != 2 or not re.match(MAC_RE, sys.argv[1]):
         raise SystemExit("usage: bt_link_state.py AA:BB:CC:DD:EE:FF")
@@ -250,6 +307,7 @@ def main():
             print(line)
 
     print_endpoints(sys.argv[1])
+    print_features(sys.argv[1])
 
     print("\nverdict:")
     voice = [link for link in (links or []) if link["kind"] in ("SCO", "eSCO")]
