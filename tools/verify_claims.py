@@ -16,6 +16,8 @@ asset catalog and stay on your machine:
     python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \\
         extract rkof payloads/rkof.bin --payload FTAB
     python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \\
+        extract sbd1 payloads/sbd1.bin --payload FTAB
+    python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \\
         payload CTAB payloads/ctab.bin
     python3 tools/verify_claims.py --payloads payloads
 
@@ -188,6 +190,15 @@ LINK_UP_REFUSALS = (  # status site, its halfword, opcode site, the opcode it an
     (0x1D93A, 0x220C, 0x1D948, 0xFE57),
     (0x1D984, 0x210C, 0x1D986, 0xFE58),
 )
+# sbd1, the DSP payload: the ULLA node of section 7, which is AArch64 rather than Thumb
+NODE_VERSION_READ = (0x9D334, 21, 0x2BC)  # ldr w8, [x21, #0x2bc]: the node's version field
+NODE_VERSION_NAMES = ((0x9D338, 0x10CD42, "ULLA 1.0"), (0x9D33C, 0x10CD39, "ULLA 1.1"))
+NODE_VERSION_TEST = (0x9D348, 0x11)  # cmp w8, #0x11, the only version it treats as 1.1
+NODE_PROPERTY_IDS = ((0x9D0DC, 0x258), (0x9D0E4, 0x25A), (0x9D0EC, 0x259))
+NODE_PROPERTY_VERSION = (0x9D0F4, 0, 0x2BC)  # id 0x259 reads that same field
+NODE_PROCESSOR_NAME = (0x9E070, 0x10CD7F, "processBufferUllav11")
+NODE_PROCESSOR_ERROR = (0x9D4B4, 0x02E7, 0x9D4B8, 0xE000)  # movz then movk: 0xe00002e7
+NODE_CHANNEL_HEADER = (0x9D64C, 0x3C08, 0x9D650, 0x0001)  # the word each channel object gets
 # What asks for a type 1 report: a queued message, and the two places its id is built [2.6]
 REQUEST_CLASS_BASE = (0x5A018, 0x3000)  # sub.w r0, sl, #0x3000, so the index is the class - 0x30
 REQUEST_CLASS_BOUND = (0x5A024, 0x2D5E)  # cmp r5, #0x5e
@@ -388,12 +399,62 @@ def wide_branch(img, off, link=True):
     return off + 4 + (value - (1 << 25) if sign else value)
 
 
+def a64_mov_imm(img, off):
+    """The 16-bit immediate of an AArch64 MOVZ or MOVK, with the halfword it lands in."""
+    word = u32(img, off)
+    if word & 0x7F800000 not in (0x52800000, 0x72800000):
+        return None
+    return (word >> 5) & 0xFFFF, (word >> 21) & 3
+
+
+def a64_cmp_imm(img, off):
+    """The 12-bit immediate of an AArch64 CMP (immediate), which is SUBS into the zero register."""
+    word = u32(img, off)
+    if word & 0x7F800000 != 0x71000000 or word & 0x1F != 0x1F:
+        return None
+    return (word >> 10) & 0xFFF
+
+
+def a64_ldr_offset(img, off):
+    """The byte offset of an AArch64 LDR (immediate, unsigned) of a 32-bit register."""
+    word = u32(img, off)
+    if word & 0xFFC00000 != 0xB9400000:
+        return None
+    return ((word >> 10) & 0xFFF) * 4
+
+
+def a64_page_target(img, off, within=4):
+    """Where an ADRP points, once the ADD that completes it is found.
+
+    The ADD does not have to be the next instruction: two of these pairs are interleaved at
+    the version site, so the matching ADD is the first one that adds to the ADRP's own
+    register.
+    """
+    word = u32(img, off)
+    if word & 0x9F000000 != 0x90000000:
+        return None
+    register = word & 0x1F
+    value = ((word >> 29) & 3) | (((word >> 5) & 0x7FFFF) << 2)
+    if value & (1 << 20):
+        value -= 1 << 21
+    page = (off & ~0xFFF) + (value << 12)
+    for step in range(1, within + 1):
+        following = u32(img, off + 4 * step)
+        if (
+            following & 0xFF800000 == 0x91000000
+            and following & 0x1F == register
+            and (following >> 5) & 0x1F == register
+        ):
+            return page + ((following >> 10) & 0xFFF)
+    return None
+
+
 def cstring(img, off, limit=128):
     end = img.find(b"\0", off, off + limit)
     return img[off : end if end >= 0 else off + limit].decode("ascii", "replace")
 
 
-def check_band_table(acib, rkof, ctab):
+def check_band_table(acib, rkof, ctab, sbd1):
     """The eight records of the band plan, byte for byte. [docs/protocol.md 6.3]"""
     for band in bands.BAND_TABLE:
         at = BAND_TABLE + band.index * bands.RECORD_SIZE
@@ -403,7 +464,7 @@ def check_band_table(acib, rkof, ctab):
     return True, f"8 records of {bands.RECORD_SIZE} bytes at acib 0x{BAND_TABLE:x}"
 
 
-def check_transition_table(acib, rkof, ctab):
+def check_transition_table(acib, rkof, ctab, sbd1):
     """Every row of the session manager's table, against openulla.session. [3.4]"""
     expected = {}
     for row in TRANSITIONS:
@@ -432,7 +493,7 @@ def check_transition_table(acib, rkof, ctab):
     return True, f"{rows} rows over 15 states, events, both next states and handlers"
 
 
-def check_hci_command_table(acib, rkof, ctab):
+def check_hci_command_table(acib, rkof, ctab, sbd1):
     """The command table, its ordering, and the handler of every command we send. [6.1, 6.4]"""
     keys = [u16(acib, HCI_KEYS + 2 * i) for i in range(HCI_KEY_COUNT)]
     masked = [k & HCI_KEY_MASK for k in keys]
@@ -460,7 +521,7 @@ def check_hci_command_table(acib, rkof, ctab):
     )
 
 
-def check_pdu_lengths(acib, rkof, ctab):
+def check_pdu_lengths(acib, rkof, ctab, sbd1):
     """The length each PDU declares, from the serializer's own constant. [5.1, 5.3]"""
     for at, (opcode, length) in SERIALIZER_LENGTHS.items():
         if u16(acib, at) != 0xF04F:
@@ -471,7 +532,7 @@ def check_pdu_lengths(acib, rkof, ctab):
     return True, "accepted 2, not accepted 3, 0x74 7, 0x73 9, including the header byte"
 
 
-def check_receive_dispatch(acib, rkof, ctab):
+def check_receive_dispatch(acib, rkof, ctab, sbd1):
     """Where the parser sends each opcode, with the table's own alignment. [5.3]"""
     for opcode, target in RECEIVE_TARGETS.items():
         got = RECEIVE_BASE + 2 * u16(acib, RECEIVE_TABLE + 2 * (opcode - 1))
@@ -480,7 +541,7 @@ def check_receive_dispatch(acib, rkof, ctab):
     return True, f"table at acib 0x{RECEIVE_TABLE:x}, {len(RECEIVE_TARGETS)} opcodes checked"
 
 
-def check_escape_dispatch(acib, rkof, ctab):
+def check_escape_dispatch(acib, rkof, ctab, sbd1):
     """Both escape spaces: the two messages we encode, and what each space refuses. [5.6]"""
     for ext, target in ESCAPE_7B_TARGETS.items():
         got = ESCAPE_7B_TABLE + 2 * u16(acib, ESCAPE_7B_TABLE + 2 * (ext - 1))
@@ -506,7 +567,7 @@ def check_escape_dispatch(acib, rkof, ctab):
     )
 
 
-def check_transmit_builders(acib, rkof, ctab):
+def check_transmit_builders(acib, rkof, ctab, sbd1):
     """Which body builder each extended opcode of each space uses. [5.7]"""
     covered, without = 0, 0
     for name, table, first, count, cases, stub in (
@@ -530,7 +591,7 @@ def check_transmit_builders(acib, rkof, ctab):
     return True, f"{covered} extended opcodes over both spaces, {without} with no builder"
 
 
-def check_event_shape(acib, rkof, ctab):
+def check_event_shape(acib, rkof, ctab, sbd1):
     """The constant word that gives the event its code, length and id. [6]"""
     got = u32(acib, EVENT_LITERAL)
     if got != EVENT_LITERAL_VALUE:
@@ -562,7 +623,7 @@ def reason_case(img, value):
     return table + 2 * img[table + index]
 
 
-def check_names(acib, rkof, ctab):
+def check_names(acib, rkof, ctab, sbd1):
     """The mode, result and reason names, from the tables the firmware's own log indexes."""
     for mode in Mode:
         name = cstring(rkof, u32(rkof, MODE_NAMES + 4 * mode.value))
@@ -586,7 +647,7 @@ def check_names(acib, rkof, ctab):
     return True, f"{len(Mode)} modes, {len(Result)} results, {checked} reasons, 2 unnamed"
 
 
-def check_dma_descriptor(acib, rkof, ctab):
+def check_dma_descriptor(acib, rkof, ctab, sbd1):
     """The three bitfield extractions of 7.2, read as instructions. [7.2]"""
     for where, expect, what in (
         (0xDABF8, (3, 3), "the buffer count at bits 3 to 5"),
@@ -613,7 +674,7 @@ def check_dma_descriptor(acib, rkof, ctab):
     )
 
 
-def check_getter_table(acib, rkof, ctab):
+def check_getter_table(acib, rkof, ctab, sbd1):
     """How a number becomes a function: the 534-entry table, and the 54-entry one behind 0x20D.
 
     Both halves are here because telling them apart is the correction 5.2 records: a number
@@ -654,7 +715,7 @@ def check_getter_table(acib, rkof, ctab):
     )
 
 
-def check_session_commands(acib, rkof, ctab):
+def check_session_commands(acib, rkof, ctab, sbd1):
     """The eleven commands of 6.6, each resolving to the handler we publish for it."""
     keys = [u16(acib, HCI_KEYS + 2 * i) & HCI_KEY_MASK for i in range(HCI_KEY_COUNT)]
     for opcode, handler in sorted(hci.ULLA_SESSION_COMMANDS.items()):
@@ -680,7 +741,7 @@ def check_session_commands(acib, rkof, ctab):
     )
 
 
-def check_feature_bit_commands(acib, rkof, ctab):
+def check_feature_bit_commands(acib, rkof, ctab, sbd1):
     """That the two commands really write the feature byte, and with which masks. [5.8]
 
     Read as instructions rather than as prose: 0xFF77's handler must clear bit 5 and add
@@ -708,7 +769,7 @@ def check_feature_bit_commands(acib, rkof, ctab):
     )
 
 
-def check_procedure_tables(acib, rkof, ctab):
+def check_procedure_tables(acib, rkof, ctab, sbd1):
     """The three procedures' state handlers, and the dispatchers that index them. [5.9, 5.10]"""
     for name, table, literal, addresses in (
         ("sink", SINK_TABLE, SINK_LITERAL, list(SINK_HANDLER_ADDRESSES.values())),
@@ -740,7 +801,7 @@ def check_procedure_tables(acib, rkof, ctab):
     )
 
 
-def check_name_table_bounds(acib, rkof, ctab):
+def check_name_table_bounds(acib, rkof, ctab, sbd1):
     """That the mode and result lists are as long as we say, and nothing guards them. [6]
 
     Stated as what the image must contain, not as the absence of something: a run of zeroes
@@ -760,7 +821,7 @@ def check_name_table_bounds(acib, rkof, ctab):
     return True, f"{len(Mode)} modes then {past_modes!r}, {len(Result)} results then a null"
 
 
-def check_report_listeners(acib, rkof, ctab):
+def check_report_listeners(acib, rkof, ctab, sbd1):
     """One listener per report type, each with its own length and builder entry. [2.6]
 
     Read as instructions, because every number here is an immediate: the length the listener
@@ -800,7 +861,7 @@ def check_report_listeners(acib, rkof, ctab):
     )
 
 
-def check_session_command_gates(acib, rkof, ctab):
+def check_session_command_gates(acib, rkof, ctab, sbd1):
     """The link-up half of the five gated session commands: gate, role test, ids, refusals. [6.6]
 
     Every one of them asks the same two questions in the same order, and what it does next is
@@ -850,7 +911,44 @@ def check_session_command_gates(acib, rkof, ctab):
     )
 
 
-def check_report_request(acib, rkof, ctab):
+def check_dsp_ulla_node(acib, rkof, ctab, sbd1):
+    """The DSP's ULLA node: its version field, its property ids and its frame processor. [7]
+
+    Section 7 is the part of this document that reads a different architecture, so these are
+    AArch64 instructions: a register-offset load, two page-relative string references, three
+    compares, and the two constants the processor builds with a MOVZ and a MOVK.
+    """
+    at, register, offset = NODE_VERSION_READ
+    if a64_ldr_offset(sbd1, at) != offset or (u32(sbd1, at) >> 5) & 0x1F != register:
+        return False, f"0x{at:x} no longer reads the version field at +0x{offset:x}"
+    for at, address, text in NODE_VERSION_NAMES:
+        if a64_page_target(sbd1, at) != address:
+            return False, f"0x{at:x} no longer points at 0x{address:x}"
+        if cstring(sbd1, address) != text:
+            return False, f"0x{address:x} no longer reads {text!r}"
+    at, version = NODE_VERSION_TEST
+    if a64_cmp_imm(sbd1, at) != version:
+        return False, f"the version test at 0x{at:x} is not against 0x{version:x}"
+    for at, ident in NODE_PROPERTY_IDS:
+        if a64_cmp_imm(sbd1, at) != ident:
+            return False, f"0x{at:x} no longer answers id 0x{ident:x}"
+    at, register, offset = NODE_PROPERTY_VERSION
+    if a64_ldr_offset(sbd1, at) != offset or (u32(sbd1, at) >> 5) & 0x1F != register:
+        return False, f"id 0x259 no longer reads +0x{offset:x} at 0x{at:x}"
+    at, address, text = NODE_PROCESSOR_NAME
+    if a64_page_target(sbd1, at) != address or cstring(sbd1, address) != text:
+        return False, f"0x{at:x} no longer names {text!r}"
+    for at, low, then, high in (NODE_PROCESSOR_ERROR, NODE_CHANNEL_HEADER):
+        if a64_mov_imm(sbd1, at) != (low, 0) or a64_mov_imm(sbd1, then) != (high, 1):
+            return False, f"the constant at 0x{at:x} is no longer 0x{high:04x}{low:04x}"
+    return True, (
+        f"the node's version at +0x{NODE_VERSION_READ[2]:x}, "
+        f"{len(NODE_PROPERTY_IDS)} property ids, {NODE_PROCESSOR_NAME[2]!r}, "
+        f"error 0x{NODE_PROCESSOR_ERROR[3]:04x}{NODE_PROCESSOR_ERROR[1]:04x}"
+    )
+
+
+def check_report_request(acib, rkof, ctab, sbd1):
     """What asks for a type 1 report: the class dispatch, its arm, and where the id is built.
 
     Read as instructions because the class arithmetic is an immediate and the id is a modified
@@ -885,7 +983,7 @@ def check_report_request(acib, rkof, ctab):
     )
 
 
-def check_report_producer(acib, rkof, ctab):
+def check_report_producer(acib, rkof, ctab, sbd1):
     """The two report producers in the controller: the message, the ids, the two copies. [2.6]
 
     The whole layout 2.6 publishes comes out of the first of them, so every number it writes is
@@ -947,7 +1045,7 @@ def check_report_producer(acib, rkof, ctab):
     )
 
 
-def check_procedure_scheduler(acib, rkof, ctab):
+def check_procedure_scheduler(acib, rkof, ctab, sbd1):
     """The per-link procedure scheduler: its id space, its table and two of its arms. [5.11]
 
     Decoded from the instructions rather than read off a table, because the two numbers that
@@ -980,7 +1078,7 @@ def check_procedure_scheduler(acib, rkof, ctab):
     )
 
 
-def check_ctab_manifest(acib, rkof, ctab):
+def check_ctab_manifest(acib, rkof, ctab, sbd1):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
     This claim is about the container rather than about an image, so it is read from the
@@ -1012,7 +1110,7 @@ def check_ctab_manifest(acib, rkof, ctab):
     )
 
 
-def check_a2dp_endpoints(acib, rkof, ctab):
+def check_a2dp_endpoints(acib, rkof, ctab, sbd1):
     """The three stream endpoints, each descriptor pointing at its capability. [ulla.md 4.6]"""
     seen = {}
     for at in A2DP_DESCRIPTORS:
@@ -1052,6 +1150,7 @@ CHECKS = (
     ("session command gates", check_session_command_gates),
     ("report producers", check_report_producer),
     ("report request path", check_report_request),
+    ("DSP ULLA node", check_dsp_ulla_node),
     ("procedure scheduler", check_procedure_scheduler),
     ("ctab is the table again", check_ctab_manifest),
 )
@@ -1073,6 +1172,7 @@ def main():
     ap.add_argument("--acib", help="the Bluetooth controller payload")
     ap.add_argument("--rkof", help="the RTKitOS features payload")
     ap.add_argument("--ctab", help="the compressed copy of the whole firmware table")
+    ap.add_argument("--sbd1", help="the DSP payload, which holds the ULLA node of section 7")
     args = ap.parse_args()
     here = args.payloads
 
@@ -1082,12 +1182,16 @@ def main():
     acib = load(args.acib or beside("acib"), "acib")
     rkof = load(args.rkof or beside("rkof"), "rkof")
     ctab = load(args.ctab or beside("ctab"), "ctab")
+    sbd1 = load(args.sbd1 or beside("sbd1"), "sbd1")
 
-    print(f"acib {len(acib)} bytes, rkof {len(rkof)} bytes, ctab {len(ctab)} bytes")
+    print(
+        f"acib {len(acib)} bytes, rkof {len(rkof)} bytes, "
+        f"ctab {len(ctab)} bytes, sbd1 {len(sbd1)} bytes"
+    )
     failed = 0
     for name, check in CHECKS:
         try:
-            ok, detail = check(acib, rkof, ctab)
+            ok, detail = check(acib, rkof, ctab, sbd1)
         except Exception as exc:  # a claim that cannot even be read is a failed claim
             ok, detail = False, f"{type(exc).__name__}: {exc}"
         print(f"  {'PASS' if ok else 'FAIL'}  {name:<32} {detail}")

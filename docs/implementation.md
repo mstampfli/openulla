@@ -186,6 +186,8 @@ python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
 python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     extract rkof payloads/rkof.bin --payload FTAB
 python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
+    extract sbd1 payloads/sbd1.bin --payload FTAB
+python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     payload CTAB payloads/ctab.bin
 python3 tools/verify_claims.py --payloads payloads
 ```
@@ -211,9 +213,10 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  session command gates            5 commands through one gate, 5 ids on the link-up paths, 3 role refusals of 0x0C, 0xFE55 bounded to +/-800
   PASS  report producers                 0x121d2: id 0xe910, 185 payload bytes, blocks at +0x45 and +0x85 copied 0x80 at a time; 0x11e24 stamps 0xa08 over 9 + 4 words and one more
   PASS  report request path              class 0x8c of 0x5e reaches 0x5544c, id 0x8c00 built at 2 sites
+  PASS  DSP ULLA node                    the node's version at +0x2bc, 3 property ids, 'processBufferUllav11', error 0xe00002e7
   PASS  procedure scheduler              89 ids from 0xfcd0, 40 arms, 0x1a -> 0x296a0
   PASS  ctab is the table again          'rkosftab' at 0x3d, 20 entries in table order, no block magic
-22 of 22 claims hold
+23 of 23 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows

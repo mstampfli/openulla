@@ -418,8 +418,9 @@ link keys and other people's device addresses.
   link-up paths, the three report listeners with
   their lengths and the controller-side producer that fills one of them, the
   per-link procedure scheduler's id space and arms, and the
-  manifest of the compressed copy the container carries of itself. It fails on
-  a single changed byte.
+  manifest of the compressed copy the container carries of itself, and the
+  DSP's own ULLA node, which is AArch64 rather than Thumb. It fails on a single
+  changed byte.
 - `tools/ulla_demo.py`: runs a whole setup against the simulated earbud and
   prints every frame and PDU of it, with no hardware involved. `--reject`
   makes the peer controller refuse at one of its four checks.
@@ -452,6 +453,8 @@ python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     extract acib payloads/acib.bin --payload FTAB
 python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     extract rkof payloads/rkof.bin --payload FTAB
+python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
+    extract sbd1 payloads/sbd1.bin --payload FTAB
 python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     payload CTAB payloads/ctab.bin
 python3 tools/verify_claims.py --payloads payloads

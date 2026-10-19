@@ -58,6 +58,7 @@ def test_the_verifier_refuses_files_that_are_not_the_firmware(tmp_path, capsys, 
     acib.write_bytes(bytes(0x100000))
     rkof.write_bytes(bytes(0x200000))
     (tmp_path / "ctab.bin").write_bytes(bytes(0x1000))
+    (tmp_path / "sbd1.bin").write_bytes(bytes(0x100000))
     monkeypatch.setattr("sys.argv", ["verify_claims.py", "--payloads", str(tmp_path)])
     assert verify_claims.main() == 1
     printed = capsys.readouterr().out

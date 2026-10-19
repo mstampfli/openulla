@@ -1792,6 +1792,26 @@ Once the mode change succeeds the radio carries the audio. The parts that are es
   four-way on two bits as well, which is an observation about where the structure sits rather
   than a reading of what it means.
 
+- **The processor's own shape**, now that its extent is known: the function runs from sbd1
+  0x9d4b0 to about 0x9e0e0, and the name above is logged near its end. What it does is
+  distribute into per-channel buffers rather than decode anything: it holds an array of
+  pointers at the node's **+0x270**, picks one by a counter at **+0x27C** taken modulo a count
+  at **+0x250**, and reads the first word of the object it lands on, whose low two bits steer
+  the path [fw sbd1 0x9d9a4 to 0x9d9d0]. When it initialises such an object it writes the word
+  **0x00013C08**, then the node's +0x280, then a zero doubleword, and hands on the address at
+  the object's +0x10 [fw sbd1 0x9d644 to 0x9d664]. Its early exits return **0xE00002E7**
+  [fw sbd1 0x9d4b4]. At the end it clears an array of as many words as the node's **+0x24C**
+  says, bumps a frame counter at **+0x2DC**, keeps that array's last word in **+0x2A8** and
+  reports the count to its caller [fw sbd1 0x9e098 to 0x9e0d4]; two more counters sit at
+  +0x2E4 and +0x2EC. One selector value of 3 and one of 4 take different index arithmetic, the
+  4 case dividing by the node's +0x284 after a mask of 3 [fw sbd1 0x9df60 to 0x9df98].
+
+  That is the shape of a multi-channel deinterleaver with a frame counter, and it is as far as
+  these files go: every number above is an offset into a node whose fields are not named
+  anywhere in the image, and none of it tells you what the radio carried. What it does say is
+  that the receive side thinks in channels and subframes, and where to start reading if a
+  capture ever makes the wire side legible.
+
   One correction while naming these: an earlier reading of this section cited a second address
   for "frames and subframes per version", and that one is **not** the ULLA node. It is
   `_fillChannelForSubframe` [fw sbd1 0xb21d4, the name at 0x10daa5], and its neighbours are
