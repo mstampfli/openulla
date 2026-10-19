@@ -262,10 +262,12 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
   them** - one per role, with their own dispatchers and tables, the second half
   of each being the teardown. The firmware's own strings call them transactions
   and name two of the roles. [docs/protocol.md](docs/protocol.md) 5.9 and 5.10.
-- **The host interface is eleven commands, not one.** 0xFE50 starts the mode
-  change; ten more reach an ULLA session, five of them sharing one gate chain
-  that answers 0x0C while no session is active.
-  [docs/protocol.md](docs/protocol.md) 6.6.
+- **The host interface is eleven commands, not one** - and two more besides.
+  0xFE50 starts the mode change; ten more reach an ULLA session, five of them
+  sharing one gate chain that answers 0x0C while no session is active; and two
+  read out the request block the controllers' own procedures build, one as a
+  byte and one as a structure of up to 76.
+  [docs/protocol.md](docs/protocol.md) 6.6 and 6.7.
 - **The stream's control path exists twice**, once for a session and once for a
   link that is already up, with the same four steps and the same assert, and the
   firmware tells you in its own words what the start needs: an audio DMA address.

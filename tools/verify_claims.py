@@ -67,6 +67,8 @@ COMMAND_HANDLERS = {
     0xFFBD: 0x1926C,
     0xFD31: 0x1E0DE,
     0xFDF3: 0x16B20,
+    0xFF8C: 0x19964,  # the two that read the state-2 request block, 6.7
+    0xFE74: 0x1D492,
 }
 FEATURE_WORD = 0x10003290  # the controller's own feature bits, 5.8
 FEATURE_KEEP_MASK = 0xA9  # what 0xFDF3 leaves alone

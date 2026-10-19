@@ -1122,10 +1122,13 @@ step wide: a source built from this firmware gets as far as sending 0x74 and sto
 an implementation of the source role has to drive that step itself. This is the step 5.5 was
 missing when it said the chain was complete.
 
-One more limit worth stating plainly: the request block that state 2 builds is
-only known by its offsets, because what the three calls it is handed to do with it was not
-followed [fw acib 0x68748 to 0x68762]; the one field traced into it on purpose is bit 2 of the
-host's flag byte, at the block's +0x50 (5.1).
+One more thing about the request block that state 2 builds, which used to be listed here as a
+limit: it is not only internal. Its global lives at acib 0x1000e368, 0x410 bytes, and every
+access to it is in one module [fw acib 0x6445c to 0x65f76]. Two vendor commands read it out to
+the host, and the responder's own procedure code copies the whole block into an object at
++0xAC [fw acib 0x671d0 through the copier at 0x648a4, which answers 0x410]. Section 6.7 has
+the two commands. The one field traced into the block on purpose is still bit 2 of the host's
+flag byte, at its +0x50 (5.1).
 
 `openulla/procedure.py` is this table, and `tests/test_procedure.py` walks it.
 
@@ -1778,6 +1781,20 @@ What the individual commands mean is not traced, and naming them would be interp
 table is published because it bounds the host interface: an implementation that answers these
 eleven, with 0x0C where the gates fail, has covered what a host can ask about an ULLA session
 in this build. `openulla.hci.ULLA_SESSION_COMMANDS` holds the list.
+
+### 6.7 Two commands that read the procedure's own request block
+
+The eleven above are the ones that reach the session object. Two others reach the request block
+state 2 of the procedures builds (5.9), which is what that block is for:
+
+| command | handler | what it answers |
+|---|---|---|
+| **0xFF8C** | acib 0x19964 | one byte. It takes the connection handle from the command's +0xB, resolves the link and answers status **2** if that fails; then, on a link that is up, the block's byte at **+0x6C** for the source role and 0x639c4's value for the other; and on a link that is not up, an entry of an array at the link's **+0x440**, stride 0xB, indexed by the link's +0x44C. The reply carries the handle and that byte [fw acib 0x19964 to 0x199c4] |
+| **0xFE74** | acib 0x1d492 | up to **0x4C bytes**. It zeroes a 0x4C-byte buffer, fills it from the block's +0x24 for the source role or through 0x63be8 for the other, and answers the filler's own length plus one [fw acib 0x1d492 to 0x1d4da]. The filler branches on the block's **+0x48** being 2 or 4 [fw acib 0x6119c] |
+
+So the block's +0x48 is a kind field with two values, +0x6C is a byte a host can read, and +0x24
+onwards is a structure a host can dump. What those bytes mean is not established, and this
+document does not guess; what is established is that they leave the controller.
 
 ## 7. The audio layer, and what is not known
 
