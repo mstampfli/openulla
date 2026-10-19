@@ -342,9 +342,14 @@ filled in by guesswork.
 
 What the firmware does say about the messages themselves is now complete in one
 direction and inventoried in the other: both escape spaces are listed message by
-message, with what each carries and who consumes it, and three of them are
-decoded in full. What the rest *mean* is open, and the names that would settle
-it ship in a text table that is not in these payloads.
+message, with what each carries and who consumes it. Nine are decoded, five of
+them because they mirror a procedure the Bluetooth specification defines and
+one function per procedure chooses which form to send. What the rest *mean* is
+open, and the names that would settle it ship in a text table that is not in
+these payloads. Two constraints found along the way bind any implementation:
+the **procedure number** a link is running decides which messages are legal at
+all, and refusal code **0x24 means a PDU arrived in the wrong procedure** rather
+than with the wrong bytes ([docs/protocol.md](docs/protocol.md) 5.15).
 
 **This is not Vision-Pro-only hardware.** A current MacBook has the same radio:
 the narrowband test report for an Apple MacBook Air states "Both power modes
