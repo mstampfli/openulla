@@ -313,7 +313,7 @@ than one of them:
   cannot ask for the packets;
 - the LMP packet-type-table request, which is how EDR's packet table was switched in, bounds its
   single byte to 0 or 1 and answers 0x1E, Invalid LMP Parameters, above that
-  ([protocol.md](protocol.md) section 5.12), so there is no third table;
+  ([protocol.md](protocol.md) section 5.12), so **that** request cannot reach a third table;
 - the extended feature pages announce nothing non-standard, measured here;
 - and the controller fills eight zero bytes for any page above 2 (protocol.md 5.12), so there is
   no vendor page hiding behind the standard ones.

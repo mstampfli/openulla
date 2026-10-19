@@ -1439,7 +1439,9 @@ and sends anything above that to an arm which answers error **0x1E**, Invalid LM
 [fw acib 0x3be6c the read, 0x3be70 the compare, 0x3be74 the branch, 0x3bf80 the error]. This
 matters more than its size suggests, because the packet-type table is how Enhanced Data Rate
 was introduced: table 0 is the basic-rate packet set, table 1 reinterprets the same baseband
-header codes as the 2 and 3 Mb/s ones. A third rate would be a third table, and there is none.
+header codes as the 2 and 3 Mb/s ones. A third rate would be a third table, and **the
+specification's own request cannot select one**. Whether the controller has one anyway is a
+different question, and 5.13 answers it.
 
 **The features exchange answers zeros past page 2.** The handler reads the requested page,
 compares it with 3, and for anything from 3 up fills eight zero bytes and replies anyway rather
@@ -1471,7 +1473,8 @@ for the standard form and 0x29e60 with 0x29e54 for Apple's]. The value it sends 
 the link's +0x17F, placed at the field block's +0x10, which is where 5.7's body builder reads
 it [fw acib 0x29e1a, 0x29e22, 0x29e38].
 
-The receiving arms are the same procedure twice over, and differ in **one number**:
+The receiving arms are the same procedure twice over, and the **bound** is the difference that
+matters:
 
 | | the specification's | Apple's |
 |---|---|---|
@@ -1485,14 +1488,25 @@ Both store the byte at the field block's +0x10, call the same argument thunk at 
 the same collision check at 0x29f40, and join at the same address 0x3bb4c, Apple's through a
 two-instruction thunk [fw acib 0x3be70 and 0x3c0c2 the two bounds, 0x3bf80 the shared error,
 0x3c0d2 to 0x3c2e2 the thunk]. **Nothing else in the payload calls 0x29f40**, which is what
-says these two arms are one procedure rather than two that look alike. The agreed value is
-compared against the link's +0x17E and becomes the link's active table [fw acib 0x2a020,
-0x2a024, 0x2a02c].
+says these two arms are one procedure rather than two that look alike.
+
+They are not identical, and the table above is not a complete diff. The specification's arm has
+two entry gates Apple's does not: the same bit-2 feature test that 5.14 describes, diverting to
+a log when it is set, and one further call whose failure diverts to the same place [fw acib
+0x3be54 to 0x3be60, and 0x3be64 to 0x3be68].
+
+The agreed value is first stored as **pending** at the link's +0x17F after being compared with
+the active table [fw acib 0x2a020, 0x2a024, 0x2a02c]. It **becomes** the active table in a
+different function, which compares the two and commits the pending one to +0x17E [fw acib
+0x29edc to 0x29eec]. That commit is the joint where a negotiated 2 turns into the table the mask
+filter of 5.13 and the hardware field of 7.2 read, so it is worth citing exactly rather than
+approximately; an earlier version of this paragraph cited the store and called it the commit.
 
 **So there is a third packet-type table, and these are the packets in it.** The controller keeps
-three parallel arrays of eighteen entries: an allowed-mask bit, a maximum payload and the
-four-bit TYPE code that goes in the baseband header [fw acib 0xf11a0, 0xf11e8, 0xf120c, read
-together at 0x137a6 to 0x137ca, 0x14584 and 0x4a3b4]. Twelve of the eighteen are the
+**four** parallel arrays of eighteen entries: an allowed-mask bit, a maximum payload, the
+four-bit TYPE code that goes in the baseband header, and the slot count coded 0, 1 and 2 for
+one, three and five slots [fw acib 0xf11a0, 0xf11e8, 0xf120c and 0xf121e, read at 0x137a6 to
+0x137ca, 0x14584, 0x149ee and 0x4a3b4]. Twelve of the eighteen are the
 specification's, carrying exactly its payload maxima, and that is the control which identifies
 the table: 17, 27, 54, 83, 121, 183, 224, 339, 367, 552, 679 and 1021 bytes all appear. Six are
 left over:
@@ -1506,29 +1520,38 @@ left over:
 | 20 | 1288 | 0xE | 5 | 4 Mb/s, five slots |
 | 21 | 2586 | 0xF | 5 | 8 Mb/s, five slots |
 
-Three things fix those readings and none of them is a guess. **Table 2 has exactly table 1's
-TYPE code layout**, which is the whole argument in one sentence. A packet-type table is a
-reinterpretation of the same four header bits, and the seven codes selectable in table 1 are
-0x3, 0x4, 0x8, 0xA, 0xB, 0xE and 0xF, meaning DM1 and then, in pairs by slot length, 2-DH1 and
-3-DH1, 2-DH3 and 3-DH3, 2-DH5 and 3-DH5. Table 2's seven codes are the same seven, and within
-each pair the lower code again carries the smaller payload. So each code's slot count and which
-of its pair is the faster packet carry straight across from a table the specification defines;
-no arithmetic is needed for either. **The mask bits lie
-at 16 to 21**, above the sixteen-bit packet-type field a host can reach, which is why section 9
-of [measurements.md](measurements.md) found no way to ask for them; feeding the recovered table
-nothing but that sixteen-bit field reproduces that result, since the best it can then choose is
-3-DH5. **And the rates follow from the payloads**, which is a second and independent route to
-the same answer. Dividing each payload by a rate gives the
-time its payload occupies, and at the right rate every entry of one slot length agrees. The
-specified entries agree at 1, 2 and 3 Mb/s, giving about 2712, 2716 and 2723 microseconds for
-five slots. The six extra entries agree at 4 and 8 Mb/s, giving 2576 and 2586 for five slots,
-1406 and 1416 for three, and within each slot length the higher entry is 2.01 times the lower.
-No other pair of rates makes them consistent. Apple declares exactly two proprietary rates for
-this device, 4 and 8 Mb/s, named HDR4 and HDR8 [ulla.md 2.2], and the five-slot pair is what its
-own filing calls 4-DH5 and 8-DH5.
+**The slot counts are not inferred: the firmware states them.** The fourth parallel array holds
+one byte per entry, 0, 1 and 2 for one, three and five slots, and it agrees with every entry
+above [fw acib the array at 0xf121e, its pointer loaded at 0x149ee and indexed at 0x149f8]. The
+TYPE codes say the same thing a second way, since table 2 uses exactly the seven codes table 1
+does and those codes carry fixed slot counts there: 0x3, 0x4 and 0x8 for one slot, 0xA and 0xB
+for three, 0xE and 0xF for five.
 
-The firmware never writes "HDR", so the identification is ours and stated as such; the table,
-the lengths, the TYPE codes and the arithmetic are not.
+**The mask bits lie at 16 to 21**, above the sixteen-bit packet-type field a host can reach,
+which is why section 9 of [measurements.md](measurements.md) found no way to ask for them;
+feeding the recovered table nothing but that sixteen-bit field reproduces that result, since the
+best it can then choose is 3-DH5.
+
+**The split into two rate groups is also the firmware's own.** A fifth array holds the eighteen
+TYPE codes grouped by rate class rather than in table order: six basic-rate codes, then four
+groups of three, so its indices 12 to 17 are these six as two groups of three [fw acib the array
+at 0xf7804, read at 0xd2d92]. 7.3 shows the same index deciding the payload header's width, so
+the grouping is load-bearing rather than incidental.
+
+**What the payloads add is the factor between the two rates, and no more than that.** Dividing a
+payload by a rate gives the time it occupies, and the three- and five-slot pairs agree to about
+ten microseconds at 4 and 8 Mb/s: 1406 against 1416, and 2576 against 2586. Their ratios are
+2.014 and 2.008. But that agreement is **scale-invariant** - it constrains the ratio of the two
+rates and says nothing about their size, so 4.5 and 9 fit exactly as well - and the one-slot
+pair does not fit the pattern at all, standing at 242/112 = **2.16** for a reason that is not
+established. So this arithmetic is not a second route to 4 and 8, and an earlier version of this
+section wrongly said it was.
+
+**The absolute rates come from Apple's filing**, which declares exactly two proprietary rates for
+this device, 4 and 8 Mb/s, named HDR4 and HDR8 [ulla.md 2.2], and calls the five-slot pair 4-DH5
+and 8-DH5. The firmware supplies the table, the lengths, the TYPE codes, the slot counts and the
+grouping into two rate classes; the two numbers are Apple's own words, and the identification of
+its HDR4 and HDR8 with these two groups is this project's reading.
 
 **Two of those payload figures appear as immediates elsewhere, and those sites were checked and
 are not this.** 1288 is a length argument in a structure initialisation [fw acib 0x8a9ca] and
@@ -1536,8 +1559,8 @@ a size chosen by a nine-entry mask against an index [fw acib 0xbc592]; 1416 is t
 size formula beside a magic-word check [fw acib 0x8c38] and a threshold on a halfword copied
 from another field [fw acib 0xad2c8]. None of the four reads the packet table or the link's
 active-table byte. In a payload full of buffer sizes a round number recurs by itself, which is
-why the table above rests on all three parallel arrays agreeing and not on where a number turns
-up. The last two of those four are unidentified rather than explained.
+why the table above rests on all four parallel arrays agreeing and not on where a number turns
+up. The last two of those four sites are unidentified rather than explained.
 
 Two further places show the table being used rather than merely stored. The packet-type mask
 filter branches on it: when the active table is 2 it clears bits among 16 to 21 according to two
@@ -1567,18 +1590,30 @@ form or Apple's, and the two forms are the same length or **exactly one byte lon
 | 0x7F/0x11, channel classification | 12 | 0x7B/0x1A | 13 | acib 0x46014 | **5** [fw acib 0x45f92] |
 
 **The family splits in two along a sensible line.** Every one of the six deciding functions
-reads the peer's feature byte at the link's +0x47, ANDs it with the first byte of the global at
-0x10003290, and tests one bit of the result: set takes Apple's form, clear takes the
-specification's. Four of them test **bit 2**, the bit 5.8 already records as steering 5.11's
-reply, and the two channel classification messages test **bit 5**, which is the band family bit
-5.8 names. Classification is about channels, so it travels with the bands rather than with the
-rest; that is one more use for a bit this document had already named, not a new bit.
+reads the peer's feature byte at the link's +0x47 and ANDs it with the first byte of the global
+at 0x10003290. The two channel classification senders then test **bit 5**, the band family bit
+5.8 names, and that single test decides it: set takes Apple's form, clear the specification's
+[fw acib 0x22d46, 0x45f92]. Classification is about channels, so it travels with the bands
+rather than with the rest; that is one more use for a bit this document had already named.
+
+The other four test **bit 2** first, and **bit 2 is not the whole condition**, which an earlier
+version of this section got wrong by stopping there. When bit 2 is clear they run a second test
+and that can select Apple's form too: bit 1 of the same AND, or bit 6 of the AND of the two
+fourth bytes. The caller hands it the first-byte AND and the global's fourth byte, and it reads
+the link's own fourth byte at +0x4A, keeps bit 1 of the first and bit 6 of their AND, and
+returns the sum, so either alone is enough [fw acib 0x29e2e to 0x29e34 calling 0x2a204, whose
+body is 0x2a204 to 0x2a212; the same shape at 0x28f7a and 0x29212 through 0x293ac]. So the
+specification's form goes out only when **all three** are clear. 5.11 states that three-way condition correctly for the reply it traces, and
+this section now agrees with it rather than contradicting it.
 
 The last row's sender also confirms 5.7's body layout from the other side: before choosing a
-form it copies **ten bytes** into the message block at **+0x16**, which is exactly where 5.7
-says the builder for 0x7F/0x11 reads ten bytes from, and it puts the same ten into a per-entry
-slot with a stride of 0x50 [fw acib 0x45fee, 0x45ff8, 0x45fde]. 5.7's layout was read off the
-builder, so that is two independent reads agreeing.
+form each path copies **ten bytes**, and each puts them where 5.7 says that form's builder reads
+them. On the specification's path they go to the message block's **+0x16**, which is where 5.7
+has the builder for 0x7F/0x11 read ten bytes; on Apple's they go to **+0x11**, which is where
+5.7 has 0x7B/0x1A read ten bytes after its leading byte [fw acib 0x45ff8 after the branch at
+0x45f94, and 0x45fc4 on the other side]. 5.7's layouts were read off the builders, so each form
+is confirmed twice over from opposite ends. An earlier version of this said the copy happened
+before the choice and named only one destination.
 
 The lengths come from 5.7's own table, which was written before any of this was known, so the
 agreement is not circular. 0x7B/0x1A is the clearest case of the pattern: "one byte, then ten
@@ -1609,8 +1644,10 @@ name. The request's handler switches on a selector of **0, 1 and 2**, which is t
 of the specification's power control request. Each of its branches asks the radio layer one
 boolean, which is what a controller must do to answer whether it can still step power. And the
 receiver's two masks over the four-bit code, 0x9009 and 0x504, select exactly the codes whose
-two extra fields are each 0 or 3 (0, 3, 12 and 15) and exactly those with a 2 in one or both
-(2, 8 and 10). A mask that falls on two-bit boundaries is reading two-bit fields.
+two extra fields are each 0 or 3 (0, 3, 12 and 15) and exactly the non-zero codes whose two
+fields are each 0 or 2 (2, 8 and 10). Note what the second one is not: codes 6, 9, 11 and 14
+each carry a 2 in one field and are in neither mask, so the rule is "each field is 0 or 2", not
+"a 2 anywhere". A mask that falls on two-bit boundaries is reading two-bit fields either way.
 
 What stays open is narrower than before: the specification assigns a meaning to each of the four
 values, and this document does not claim which of Apple's five fields belongs to which rate.
@@ -1690,10 +1727,16 @@ attributed to an arm that merely sits before it.
 | 0x26 | 0x3c00e | 0x32064 | read as a byte, a word at +1 and a byte at +5, below |
 | 0x27 | 0x3c2b8 | none | logs and joins the common exit |
 
-The consumers cluster, and the clusters are modules rather than coincidence: 0x2919c, 0x29318
-and 0x29470 within one 0x200; 0x2978c and 0x297c8 within 0x40; and 0x29a1c, 0x29a70, 0x29ab4
-and 0x29b38 within one 0x200, which puts **0x15 and 0x16 in the same module as both band
-messages this document already decodes**.
+The consumers do sit close together, and **that is worth almost nothing as evidence**, which is
+worth saying because an earlier version of this paragraph leaned on it. Put the nine consumers
+in address order and their extended opcodes come out 0x0E, 0x0F, 0x0A, 0x10, 0x11, 0x15, 0x16,
+0x17, 0x1C: near enough to ascending that proximity mostly tracks the opcode number. 0x15 and
+0x16 would sit beside 0x17 and 0x1C whatever they did. The same holds across the whole image;
+the command handlers of section 6, for instance, are laid out in opcode order, so two of them
+being neighbours says nothing about what they do.
+
+What actually places messages together here is what their code tests, and that is how 0x15 and
+0x16 are placed below.
 
 **0x10 and 0x11 are a request and its answer.** 0x10's consumer stores the halfword at the
 link's +0x62, sets the link's +0x3E, and replies with escape 0x7B extended opcode **0x11** as
@@ -1827,7 +1870,8 @@ is a separate gate again.
 is the last thing called before that refusal: it takes the link and the PDU, reads the link's
 procedure number and its +0x80, and logs them together with the PDU's own opcode, choosing a
 richer format for an opcode of 0x7B or above [fw acib 0x3f858 to 0x3f884]. It is called at
-**37 sites, and 30 of them load 0x24 in the very next instruction**. The specification's name
+**37 sites, and 27 of them load 0x24 in the very next instruction** (17 into r0, 9 into r4 and
+one into r1; five more branch straight to such a load). The specification's name
 for 0x24 is LMP PDU Not Allowed, which `openulla/codes.py` already uses, and the mechanism says
 what it means in practice here: **a PDU that earns 0x24 arrived in the wrong procedure, not with
 the wrong bytes.** An implementation that gets 0x24 should look at what procedure the link is
@@ -2313,7 +2357,8 @@ document does not guess; what is established is that they leave the controller.
 
 A contributor captured an established session between a Broadcom Mac and these earbuds and
 reported the Mac's whole vendor-command inventory, twelve opcodes [ulla.md section 8]. None of
-them is one of the eighteen this document had mapped, which is what section said. Put through
+them is one of the eighteen this document had mapped, which is what ulla.md section 8 said. Put
+through
 the earbuds' **own** command table instead, **seven of the twelve are there**:
 
 | opcode | handler | what its handler does |
@@ -2341,12 +2386,12 @@ maximum of the five-slot entry only Apple's third packet-type table can select, 
 DH5's. The two buffer figures are each a little larger than the payload they accompany, by 14
 and 13 bytes.
 
-So a host configures this controller's packet buffers for either the basic-rate five-slot packet
-or the 8 Mb/s one, by one byte of one vendor command, and an Apple host was seen sending that
-command during a session with these earbuds. What the Mac's own controller does with its 0xFD02
-is not established here: the opcode is in a vendor space, and two controllers sharing a number
-is not the same as sharing a meaning. What is established is that the earbuds implement it and
-what theirs does.
+So one byte of **this** command configures the packet buffers for either the basic-rate five-slot
+packet or the 8 Mb/s one, and an Apple host was seen sending it during a session with these
+earbuds. It is **not** the only way in, and 6.9's own caution applies here too: see the end of
+this section. What the Mac's own controller does with its 0xFD02 is not established here either,
+because the opcode is in a vendor space and two controllers sharing a number is not the same as
+sharing a meaning. What is established is that the earbuds implement it and what theirs does.
 
 **Where the size lands, and what it starts as.** Both of the handler's calls are one-line
 setters on the configuration block of 5.14: the size goes to the **halfword at 0x1000B494 +
@@ -2388,9 +2433,24 @@ sit in the high group, where the hit rate is total; it is not there. What the lo
 remains open, because the function that drains the queue and forms the actual opcode has not
 been found, so this document does not claim a mapping for them.
 
-Put beside the boot default, that settles who sets the packet size: **the controller comes up at
-the 8 Mb/s five-slot maximum, its own software never changes it, and only an external host
-narrows it.**
+**But who owns the packet size is not settled, and an earlier version of this section claimed it
+was.** The absence above is real and says only that the RTKitOS image never sends 0xFD02; it
+cannot say the field is otherwise untouched, because the writers that touch it never form an HCI
+command at all. The size setter has **five** call sites, not two:
+
+| site | what writes the size |
+|---|---|
+| acib 0x160f4 and 0x1610c | 0xFD02's handler, 2586 or 339 |
+| acib 0x1cff4 | the handler of **0xFD7C**, with the halfword at its request's +0xB, so any value [fw acib handler 0x1cfd0] |
+| acib 0x1d06e | the handler of **0xFD7D**, likewise [fw acib handler 0x1d038] |
+| acib 0x57ac6 | a hard-coded **1024**, inside the function at acib 0x57a8c [fw acib 0x57ac2] |
+
+That last function is reached from **0xFD5F**'s handler and also from acib 0x57b30, which is not
+in the command table at all [fw acib callers 0x1c632 inside handler 0x1c618, and 0x57d70]. So a
+host is not confined to the two values and not to one command, and the controller's own code
+writes the field with a constant on a path no host has to touch. What **is** established: the
+block boots with 2586, 0xFD02 writes one of two values, three other commands write it too, and
+one internal path writes 1024.
 
 ### 6.9 One command puts a link into Apple's packet-type table
 
@@ -2631,12 +2691,27 @@ twelve-bit writer masks with **0x8007**, preserving bits 0 to 2 and bit 15 only,
 is bits 3 to 14. **Apple's payload header takes two of the three bits the specification leaves
 undefined** and spends them on length, which is the minimum that 2586 needs.
 
-Which header goes with which packet is visible in one function, acib 0x1465c to 0x14ae8. It
-reads the link's active packet-type table and compares it with 2 [fw acib 0x1494c, 0x1496c,
-0x14a66]; it tests the allowed mask against **0x3F0000**, which is exactly the six mask bits of
-5.13 and nothing else [fw acib 0x14a92]; and it contains the twelve-bit writer and the one-slot
-writer and no ten-bit writer at all [fw acib 0x14aca, 0x14ac0]. All five callers of the ten-bit
-writer are in other functions [fw acib 0xb407e, 0xbc822, 0xbe012, 0xd2dce, 0xd5d82].
+**Which header goes with which packet is decided outright, by an index.** One function picks all
+three widths in a row, on the rate-class index of 5.13's fifth array: index 0 or 1 takes the
+five-bit one-slot writer, anything above takes the low three bits and then index up to 0xB takes
+the **ten-bit** writer while anything above takes the **twelve-bit** one [fw acib 0xd2da4 the
+first test, 0xd2db0 the one-slot writer, 0xd2dc8 the second test, 0xd2dce the ten-bit writer,
+0xd2dd4 the twelve-bit one, with the index itself read at 0xd2d90 and used against that array at
+0xd2d92].
+
+Lay that against the array and it is exact. Indices 0 and 1 are TYPE 0x3 and 0x4, which are DM1
+and DH1, the only packets that use the one-byte header. Indices 2 to 0xB are the rest of the
+basic-rate set and both EDR rate groups, all of which use the two-byte header with its ten-bit
+length. **Indices 0xC to 0x11 are Apple's six**, and they take the twelve-bit field, the two
+one-slot ones included. That matches `openulla/packets.py`'s own width rule, which was derived
+from a different question entirely - whether each entry can express its own maximum - so two
+independent routes give the same assignment.
+
+A second function reaches the same twelve-bit writer while testing the active table against 2
+and the allowed mask against **0x3F0000**, which is exactly the six mask bits of 5.13 [fw acib
+0x1494c, 0x1496c, 0x14a66, 0x14a92, 0x14aca]. An earlier version of this section rested the
+whole claim on that function containing one writer and not the other, which was much weaker than
+what the index test above actually says.
 
 Two separately recovered things agree here, which is worth saying because nothing made them:
 the payload maxima come from the table of 5.13 and the field widths from this block of
@@ -2649,9 +2724,10 @@ the two-byte header whatever its slot count.
 So the air format is not entirely out of reach after all. The modulation and the framing above
 the payload header remain hardware, but the payload header's own layout is recovered, and it
 tells a software implementation the one thing it could not have guessed: the length field is
-twelve bits wide, not ten, whenever the link is running Apple's packet-type table. Eleven bits
-would also have held 2586, so twelve is a choice rather than a deduction, and the mask is what
-says it is twelve.
+twelve bits wide, not ten, whenever the link is running Apple's packet-type table. Twelve is
+also the narrowest field that holds 2586, since eleven bits reach only 2047, so the width is a
+deduction and the mask confirms it. An earlier version of this paragraph said eleven would have
+done, which is simply wrong.
 
 **[open] The rest of the over-the-air packet format.** The air packet is produced by radio hardware
 configured through registers, and the register semantics are not public, so it is not

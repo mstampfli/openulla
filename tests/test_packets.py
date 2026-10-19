@@ -48,26 +48,39 @@ def test_table_2_has_exactly_table_1s_type_code_layout():
             assert table[lower].slots == table[higher].slots
 
 
-def test_the_rates_follow_from_the_payloads():
-    """At 4 and 8 Mb/s each slot length agrees, the way the specified entries do at 1, 2 and 3."""
+def test_the_payload_ratios_say_a_factor_of_two_and_the_one_slot_pair_does_not_fit():
+    """What the payloads actually support, including the pair that does not.
+
+    An earlier version of this test ran the ratio check over `(3, 5)` only, which excluded the
+    one pair that fails it, and the documentation it was supposed to support said "within each
+    slot length" on that basis. All three are covered here, and the one-slot pair is asserted to
+    be the outlier it is rather than left out [protocol.md 5.13].
+    """
+    def pair(slots):
+        low = next(e for e in packets.TABLE if e.slots == slots and "4mbit" in e.name)
+        high = next(e for e in packets.TABLE if e.slots == slots and "8mbit" in e.name)
+        return low, high
+
+    ratios = {slots: pair(slots)[1].payload / pair(slots)[0].payload for slots in (1, 3, 5)}
+    # The three- and five-slot pairs sit just above two.
+    assert 2.00 <= ratios[3] < 2.02, ratios
+    assert 2.00 <= ratios[5] < 2.02, ratios
+    # The one-slot pair does not, and the reason is not established.
+    assert ratios[1] > 2.15, ratios
+    assert ratios[1] == 242 / 112
+
     def window(name, rate):
         entry = next(e for e in packets.TABLE if e.name == name)
         return packets.payload_window_us(entry, rate)
 
-    # The control: the specified five-slot entries all land near 2.72 ms.
-    assert 2700 < window("DH5", 1) < 2730
-    assert 2700 < window("2-DH5", 2) < 2730
-    assert 2700 < window("3-DH5", 3) < 2730
-    # The six extra ones land near 2.58 ms for five slots and 1.41 ms for three, at 4 and 8.
-    assert 2570 < window("apple_4mbit_5slot", 4) < 2590
-    assert 2570 < window("apple_8mbit_5slot", 8) < 2590
-    assert 1400 < window("apple_4mbit_3slot", 4) < 1420
-    assert 1400 < window("apple_8mbit_3slot", 8) < 1420
-    # And the two rates of one slot length stand in a ratio of about two.
-    for slots in (3, 5):
-        low = next(e for e in packets.TABLE if e.slots == slots and "4mbit" in e.name)
-        high = next(e for e in packets.TABLE if e.slots == slots and "8mbit" in e.name)
-        assert 2.0 <= high.payload / low.payload < 2.02
+    # Dividing by a rate is scale-invariant, so it fixes the ratio of the two rates and not
+    # their size: at 4 and 8 the three- and five-slot pairs agree to within about ten
+    # microseconds, and at 4.5 and 9 they agree exactly as well. That is why `packets.APPLE_RATES`
+    # cites Apple's filing for the absolute values rather than this arithmetic.
+    for low_rate, high_rate in ((4, 8), (4.5, 9), (3, 6)):
+        spread_5 = abs(window("apple_4mbit_5slot", low_rate)
+                       - window("apple_8mbit_5slot", high_rate))
+        assert spread_5 / window("apple_4mbit_5slot", low_rate) < 0.005
     assert packets.APPLE_RATES == (4, 8)
     with pytest.raises(ValueError):
         packets.payload_window_us(packets.TABLE[0], 0)
@@ -123,7 +136,8 @@ def test_the_wider_field_is_exactly_what_the_largest_packet_needs():
     assert largest.payload >= 1 << packets.LENGTH_BITS_SPECIFIED
     assert largest.payload < 1 << packets.LENGTH_BITS_APPLE
     assert packets.length_bits(largest) == packets.LENGTH_BITS_APPLE
-    # Eleven bits would also have held it, so twelve is a choice; the mask is the evidence.
+    # Twelve is the narrowest field that holds it: eleven bits reach only 2047.
+    assert largest.payload > (1 << 11) - 1
     assert packets.HEADER_MASK_APPLE == 0x7 | (1 << 15)
     assert packets.HEADER_MASK_SPECIFIED == 0x7 | (0x7 << 13)
 

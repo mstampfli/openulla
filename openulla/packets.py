@@ -1,10 +1,14 @@
 """The controller's ACL packet-type table, including the six entries Bluetooth does not define.
 
 This is the answer to "how are Apple's HDR packet modes selected on a link", and it is a table
-rather than an argument. The controller keeps three parallel arrays of eighteen entries: a
-32-bit allowed-mask per entry, the maximum payload each entry carries, and the four-bit TYPE
-code that goes in the baseband header [fw acib masks 0xf11a0, payloads 0xf11e8, TYPE codes
-0xf120c; read together by 0x137a6 to 0x137ca, 0x14584 and 0x4a3b4].
+rather than an argument. The controller keeps **four** parallel arrays of eighteen entries: a
+32-bit allowed-mask per entry, the maximum payload each entry carries, the four-bit TYPE code
+that goes in the baseband header, and **the slot count**, coded 0, 1 and 2 for one, three and
+five slots [fw acib masks 0xf11a0, payloads 0xf11e8, TYPE codes 0xf120c, slot counts 0xf121e;
+read by 0x137a6 to 0x137ca, 0x14584, 0x149ee and 0x4a3b4].
+
+The fourth array matters for what follows: **the slot counts are stated by the firmware**, not
+inferred. Every one of the eighteen below agrees with it.
 
 **Twelve of the eighteen are the specification's, with exactly its payload maxima**, which is
 what proves the table is what it looks like: 17, 27, 54, 83, 121, 183, 224, 339, 367, 552, 679
@@ -18,15 +22,26 @@ Apple's own LMP request can negotiate [docs/protocol.md section 5.13]. Their TYP
 same ones tables 0 and 1 use, which is what a packet-type table is for: the same four header
 bits mean a different packet in a different table.
 
-The arithmetic says which rates they are, and nothing else fits. Within each slot length the
-two new entries stand in a ratio of 2.00, and dividing each payload by a rate of 4 and 8 Mb/s
-gives one consistent payload window per slot length, the same way the specified entries do at
-1, 2 and 3 Mb/s. `payload_window_us` prints that derivation. Apple declares exactly two
-proprietary rates for this device, HDR4 at 4 Mb/s and HDR8 at 8 Mb/s [docs/ulla.md 2.2].
+**The payloads say the two rates differ by a factor of about two, and they do not say more than
+that.** The three-slot pair stands at 1416/703 = 2.014 and the five-slot pair at 2586/1288 =
+2.008. The one-slot pair stands at 242/112 = **2.16** and does not fit that pattern; why is not
+established, and it is not left out of the count here as it once was. Dividing a payload by a
+rate is scale-invariant, so the agreement within a slot length fixes the *ratio* of the two
+rates and nothing about their size: 4 and 8 fit exactly as well as 4.5 and 9, or 3 and 6.
+`payload_window_us` computes that window and `test_the_payload_ratios_say_a_factor_of_two...`
+demonstrates the invariance rather than hiding it.
+
+**The absolute rates come from Apple's filing**, which declares exactly two proprietary rates
+for this device, HDR4 at 4 Mb/s and HDR8 at 8 Mb/s [docs/ulla.md 2.2]. What the firmware
+supplies is the split into two groups of three, and it supplies that directly: a fifth array at
+acib 0xf7804 holds the eighteen TYPE codes grouped by rate class, six basic-rate codes and then
+four groups of three, so its indices 12 to 17 are these six in two rate groups [read at
+acib 0xd2d92].
 
 The firmware never writes "HDR" anywhere, so the naming below is this project's, marked as
-such: `apple_4mbit` and `apple_8mbit` describe what the numbers show, and the identification
-with Apple's declared HDR4 and HDR8 is stated in the documentation rather than asserted here.
+such: `apple_4mbit` and `apple_8mbit` describe the grouping the firmware gives and the rates
+Apple's filing declares, and the identification of the two is stated in the documentation
+rather than asserted here.
 """
 from __future__ import annotations
 

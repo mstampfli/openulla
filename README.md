@@ -287,23 +287,27 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
   seven bytes over an ordinary Bluetooth channel moves the earbuds' session
   machine through three states and returns a success status. Measured, with
   the bytes, in [docs/measurements.md](docs/measurements.md).
-- **How Apple's HDR packet modes are selected, and what they are.** Apple's
-  escape space carries its own packet-type-table request, 0x7B/0x0D, which is
-  the specification's 0x7F/0x0B in every respect but one: its table selector
-  admits a **third** table. One function in the firmware sends whichever of the
-  two forms the link's capability allows, both receive arms refuse an
-  out-of-range table with the same error at the same instruction, and nothing
-  else in the payload calls the collision check they share. The controller then
-  holds an eighteen-entry packet-type table where Bluetooth defines twelve, and
-  the twelve specified payload maxima are all present, byte for byte, which is
-  what proves the table is what it looks like. The six left over are selectable
-  only in that third table, carry 112, 242, 703, 1288, 1416 and 2586 bytes, and
-  reuse table 1's own TYPE codes pair for pair, so their slot counts and which
-  of each pair is faster carry straight across. Dividing the payloads by 4 and
-  8 Mb/s gives one consistent payload window per slot length, exactly as the
-  specified entries do at 1, 2 and 3. Apple declares two proprietary rates for
-  this device, HDR4 and HDR8, and names its five-slot pair 4-DH5 and 8-DH5.
-  [docs/protocol.md](docs/protocol.md) 5.13.
+- **How Apple's extra packet modes are selected, and what the firmware says
+  about them.** Apple's escape space carries its own packet-type-table request,
+  0x7B/0x0D, which is the specification's 0x7F/0x0B in every respect but the
+  bound: its table selector admits a **third** table. One function sends
+  whichever of the two forms the link's capability allows, both receive arms
+  refuse an out-of-range table with the same error at the same instruction, and
+  nothing else in the payload calls the collision check they share. The
+  controller then holds an eighteen-entry packet-type table where Bluetooth
+  defines twelve, over **four** parallel arrays: an allowed-mask bit, a payload
+  maximum, a baseband TYPE code and a slot count. All twelve specified payload
+  maxima are present byte for byte, which is what proves the table is what it
+  looks like. The six left over are selectable only in that third table and
+  carry 112, 242, 703, 1288, 1416 and 2586 bytes. Their slot counts are stated
+  by the firmware, and a fifth array groups the eighteen by rate class so that
+  the six fall into **two groups of three**. The payload ratios confirm the two
+  groups differ by a factor of about two for the three- and five-slot pairs; the
+  one-slot pair sits at 2.16 and does not fit, for a reason not established.
+  **The rates themselves are Apple's own words, not the firmware's**: its
+  filings declare HDR4 and HDR8 at 4 and 8 Mb/s and name a five-slot pair 4-DH5
+  and 8-DH5, and the identification of those with these two groups is this
+  project's reading. [docs/protocol.md](docs/protocol.md) 5.13.
 - **And one vendor command reaches them without negotiating at all.** 0xFDEE's
   handler takes one flag byte and, when it is set, writes the permission that
   leaves all six packet types selectable, the immediate 0x3F0000 which is

@@ -1,9 +1,10 @@
 # What this project needs tested, and by whom
 
-Everything the AirPods' own firmware can answer has been answered: the setup protocol is
+Most of what the AirPods' own firmware can answer has been answered: the setup protocol is
 documented field by field in [protocol.md](protocol.md), an implementation of it is in
 `openulla/`, and `tools/verify_claims.py` re-derives twenty-nine groups of claims from the
-firmware image itself. What is left needs hardware this project does not have.
+firmware image itself. Some firmware questions are still open and protocol.md marks each one
+`[open]` where it arises. What is left beyond those needs hardware this project does not have.
 
 Two different kinds of hardware answer two different questions, and it is worth being precise
 about which:
@@ -140,7 +141,8 @@ against directly:
   0xA and 0xB for three, 0xE and 0xF for five. So the four TYPE bits of a captured packet header
   mean something known.
 - **The payload header**, whose length field is **twelve bits at bit offset 3**, not the
-  specification's ten. A decoder that assumes ten will mis-read every multi-slot Apple packet,
+  specification's ten. A decoder that assumes ten will mis-read **every** Apple packet, the
+  one-slot ones included, since all six take the wider field,
   and that is the single most likely reason for a capture that demodulates but does not parse.
 
 What is still missing is everything below the payload header: the access code, the header

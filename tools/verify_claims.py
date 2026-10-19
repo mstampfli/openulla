@@ -156,6 +156,8 @@ APPLE_TABLE_CMP = 0x3C0C2  # cmp r0, #2, where the specification's arm has cmp r
 PACKET_MASKS = 0xF11A0  # one 32-bit allowed mask per entry
 PACKET_PAYLOADS = 0xF11E8  # one halfword payload maximum per entry
 PACKET_TYPE_CODES = 0xF120C  # one byte of baseband TYPE per entry
+PACKET_SLOTS = 0xF121E  # one byte of slot count per entry, coded 0, 1, 2 for 1, 3, 5 slots
+PACKET_RATE_CLASS = 0xF7804  # the same TYPE codes grouped by rate class, not in table order
 MASK_IMMEDIATE_AT = 0x169E0  # mov.w r0, #0x3f0000 in 0xFDEE's handler, which is those six bits
 # The sender that chooses between the two forms: (where the immediate is, what it must be).
 TABLE_SENDER_ARMS = (
@@ -1382,6 +1384,13 @@ def check_packet_type_table(acib, rkof, ctab, sbd1):
         code = acib[PACKET_TYPE_CODES + entry.index]
         if code != entry.type_code:
             return False, f"entry {entry.index} has TYPE 0x{code:x}, not 0x{entry.type_code:x}"
+        # The fourth array states the slot count, so it is checked rather than derived.
+        slots = acib[PACKET_SLOTS + entry.index]
+        if slots != (entry.slots - 1) // 2:
+            return False, (
+                f"entry {entry.index} ({entry.name}) is coded {slots} slots, "
+                f"not {(entry.slots - 1) // 2} for {entry.slots}"
+            )
     present = {u16(acib, PACKET_PAYLOADS + 2 * i) for i in range(len(packets.TABLE))}
     if not set(packets.SPECIFIED_PAYLOADS) <= present:
         missing = sorted(set(packets.SPECIFIED_PAYLOADS) - present)
@@ -1411,11 +1420,19 @@ def check_packet_type_table(acib, rkof, ctab, sbd1):
             f"0x{MASK_IMMEDIATE_AT:x} carries {got and hex(got)}, not the six mask bits "
             f"0x{six:x}"
         )
+    # The fifth array groups the same TYPE codes by rate class: six basic-rate codes, then
+    # groups of three, so its last six are these six as two rate groups. [5.13, 7.3]
+    classes = acib[PACKET_RATE_CLASS: PACKET_RATE_CLASS + len(packets.TABLE)]
+    if len(classes) != 18 or classes[:6] != bytes((0x3, 0x4, 0xA, 0xB, 0xE, 0xF)):
+        opening = classes[:6].hex(" ")
+        return False, f"the rate-class array opens with {opening}, not the basic-rate six"
+    if classes[6:9] != classes[12:15] or classes[9:12] != classes[15:18]:
+        return False, "its four groups of three are no longer two repeated patterns"
     return True, (
-        f"{len(packets.TABLE)} entries, all twelve specified payloads present, "
-        f"{len(extra)} more at mask bits {packets.APPLE_MASK_BITS[0]} to "
-        f"{packets.APPLE_MASK_BITS[-1]}, Apple's request bounded to {packets.MAX_TABLE}, "
-        f"and 0xFDEE writes 0x{six:x}"
+        f"{len(packets.TABLE)} entries over four arrays with the slot counts agreeing, all "
+        f"twelve specified payloads present, {len(extra)} more at mask bits "
+        f"{packets.APPLE_MASK_BITS[0]} to {packets.APPLE_MASK_BITS[-1]}, Apple's request "
+        f"bounded to {packets.MAX_TABLE}, 0xFDEE writes 0x{six:x}"
     )
 
 
