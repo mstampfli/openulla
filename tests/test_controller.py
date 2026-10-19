@@ -197,3 +197,16 @@ def test_a_feature_reply_is_kept_and_not_answered():
     responder = Responder()
     assert responder.receive(lmp.Features(0x11223344, reply=True).to_bytes()) == b""
     assert responder.peer_features == 0x11223344
+
+
+def test_a_received_configuration_advances_the_sinks_procedure():
+    """Receiving 0x74 is what posts event 3 to a responder. [protocol.md 5.2, 5.9]"""
+    responder = Responder()
+    responder.receive(Initiator().setup_request(SETUP))
+    assert responder.procedure.state is SinkState.AWAIT_MODULE_CALL
+    assert responder.receive(lmp.Configuration(0, 0).to_bytes()) == b""
+    assert responder.procedure.state is SinkState.AWAIT_MODULE_RESULT
+    assert responder.procedure.history[-1].event == Event.MODULE_CALL
+    # And a second one, out of that state, changes nothing and is not an error.
+    assert responder.receive(lmp.Configuration(0, 0).to_bytes()) == b""
+    assert responder.procedure.state is SinkState.AWAIT_MODULE_RESULT

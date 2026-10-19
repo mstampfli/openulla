@@ -117,7 +117,12 @@ class Responder:
                 return b""
             return lmp.Features(self.features, reply=True, tid=parsed.tid).to_bytes()
         if isinstance(parsed, lmp.Configuration):
-            return b""  # stored without checks [fw acib 0x6352c]
+            # No checks, and no answer on the air: what a received 0x74 does is post event 3
+            # to this procedure, which is the step that builds the request block
+            # [fw acib 0x6352c into the slot at +0xC8, protocol.md 5.2 and 5.9].
+            if self.procedure.state is SinkState.AWAIT_MODULE_CALL:
+                self.procedure.feed(Event.MODULE_CALL)
+            return b""
         if isinstance(parsed, lmp.AllowedBands):
             return b""  # applied through the intersection rule, see bands.link_mask
         if isinstance(parsed, lmp.BandRanges):

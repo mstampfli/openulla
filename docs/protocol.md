@@ -476,8 +476,16 @@ context's offset 0x10 [fw acib 0x685cc..0x685d2 and section 5.5].
 | 5 | 2 | configuration value, read by id from the controller's parameter table |
 
 In the build examined, the two parameter getters for these ids are stubs that return nothing
-[fw acib 0xcf9ac, 0xcf9ae], so this firmware contributes zeroes for both. The receiver passes
-the two values straight to its session object with no checks of its own [fw acib 0x6352c].
+[fw acib 0xcf9ac, 0xcf9ae], so this firmware contributes zeroes for both. The receiver checks
+nothing of its own: it reads the word and the halfword and hands both, with the procedure
+object, to the slot at +0xC8 of the module block [fw acib 0x6352c]. That slot is the one 5.9
+and 5.10 map, so **receiving a 0x74 is what posts event 3** to a responder's procedure, and
+the gap in the source's set is the same slot holding a function that only traces.
+
+One detail for a decoder: that receiver reads the halfword **signed** [fw acib 0x63530,
+`ldrsh`], while 0x75's reads it unsigned [fw acib 0x487ac, `ldrh`]. The same two bytes
+therefore reach the layer above as a negative number in one message and a large positive one
+in the other, once the top bit is set.
 
 **0x75 has the same seven bytes.** It shares 0x74's case in the sender, so its layout is
 identical [fw acib 0x3a832 serves both opcodes], but its receiver is a different function and
@@ -896,8 +904,10 @@ not traced.
 **One event has no poster.** Event 3, the one state 2 waits for, is posted by exactly one
 function, acib 0x66db0: no branch in the image reaches it and no word in the image equals its
 address, so nothing in this build calls it. The sink posts its own event 3 from the slot at
-+0xC8, and in the source's set that slot holds a function that writes a trace line and returns
-[fw acib 0x66e10]. Every other event of this machine has a reachable poster, so the gap is one
++0xC8, which is where a received 0x74 goes (5.2), and in the source's set that slot holds a
+function that writes a trace line and returns [fw acib 0x66e10] - consistent, since a source
+sends 0x74 rather than receiving one, and its event 3 was meant to come from its own module
+instead. Every other event of this machine has a reachable poster, so the gap is one
 step wide: a source built from this firmware gets as far as sending 0x74 and stops there, and
 an implementation of the source role has to drive that step itself. This is the step 5.5 was
 missing when it said the chain was complete.
