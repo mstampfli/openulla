@@ -1589,6 +1589,22 @@ What stays open is narrower than before: the specification assigns a meaning to 
 values, and this document does not claim which of Apple's five fields belongs to which rate.
 The structure is recovered; the per-field mapping is not.
 
+**One more message in the same family, and it only applies in table 2.** 0x7B/0x0C carries a
+single byte (5.7). Its arm stores the byte, sign-extends it, and logs a second time when it is
+negative, so the value is **signed** even though what it passes on is the byte
+[fw acib 0x3c216, 0x3c226, 0x3c228, 0x3c23e]. The consumer is the interesting part: it reads the
+link's active packet-type table and **applies the value only when that table is 2**, taking an
+error path otherwise [fw acib 0x25c28, 0x25c2c the test, 0x25c4a the application, 0x25c50 the
+error]. It lands as one byte in a per-link record, in an array based at 0x1000B494 with a stride
+of **0xC4** indexed by the link's byte at +7, written at the record's +0x6B and gated on its
++0x6A [fw acib 0x154e4 the writer, 0x154d0 the gate]. That same base carries the global this
+controller's five-slot maximum is written into, which 6.8 reaches from the other direction.
+
+So the 0x7B space holds, so far: five messages that mirror a standard procedure one for one, one
+that exists only for Apple's packet-type table, and the band messages of section 6. What it does
+**not** hold is anything resembling a second protocol; it is this controller's own link
+management, extended where the extra radio needed it.
+
 ## 6. Controller interface: HCI vendor commands
 
 The source's host starts the whole thing with vendor command **0xFE50** [fw acib table at
