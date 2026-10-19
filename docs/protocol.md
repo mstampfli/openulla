@@ -1679,6 +1679,12 @@ really resolve to. The rest:
 | 0x25 | acib 0xde972 | 0xdb6a8 |
 | 0x2B | acib 0xde96a | 0xdb9ac with the argument |
 
+The two numbering spaces overlap, which is the trap: **0x02 is a table id at one call site and
+an inner id at another** [fw acib 0x554e2 against 0x1de0e], and so is 0x23 [fw acib 0x16714
+against 0x66b22]. Every other number this document calls a property id was checked against its
+own call site and is a table id: 0x63, 0xC9, 0xB9, 0x19A, 0x19F, 0x1A4, 0x1AB and 0x1AF to
+0x1B3. The only way to tell is to read the wrapper, which is how the error in 5.2 was found.
+
 So the ids these commands drive can be followed, and here is where each one lands:
 
 | id | driven by | getter |
