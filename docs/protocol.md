@@ -2901,7 +2901,8 @@ That last point can be made sharper than "names no codec", because the DSP's own
 manager names are in the image and they are worth reading as a group. The only codec named
 anywhere in that payload is **Opus**, as `[OPUS]` and `OpusEncodeConnector`, and it sits among
 the Siri uplink names rather than on this path [fw sbd1 0x10cc3f, next to
-`SiriPreClientManager.cpp` at 0x10cc21]; AAC, SBC, LC3, ALAC and FLAC appear nowhere in it.
+`SiriPreClientManager.cpp` at 0x10cc21]; AAC, SBC, LC3, ALAC, FLAC, AptX and LDAC appear
+nowhere in it, in any case.
 The ULLA path's own pieces are named for what they do: two receive client managers, the
 ordinary one and the lite one [fw sbd1 `UllaRxClientMgr.cpp` at 0x10cbd5 and
 `UllaLiteRxClientMgr.cpp` at 0x10c841], and an encode node whose strings are `ULLA 1.0`,

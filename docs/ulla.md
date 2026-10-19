@@ -493,7 +493,13 @@ Not recovered, and not to be filled in until it is:
   narrower than the file: it has far more than "about two dozen" printable
   strings, and more than one source path. Detail in
   [protocol.md](protocol.md) sections 7 and 7.4.
-- The audio codec. The DSP payload `sbd1` names none on this path.
+- The audio codec. The DSP payload `sbd1` names exactly one codec, Opus, and
+  that one sits among the Siri uplink names and is called from there; AAC, SBC,
+  LC3, ALAC, FLAC, AptX and LDAC appear nowhere in it. So the one codec this
+  firmware implements is on another path, and this one has a configuration
+  entry point of its own instead - `ullaDecConfig`, beside the standard
+  `encConfig` in the same module. What that entry point sets is not
+  established. [protocol.md](protocol.md) section 7.
 - Whether the audio payload is encrypted. The setup establishes no key material
   of its own, but whether the radio keeps applying the ordinary link cipher
   after the mode change is a hardware question these files cannot answer.
