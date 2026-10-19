@@ -240,6 +240,12 @@ PAIR_IMMEDIATES = (
     ("0x18 copies fifteen bytes", 0x23266, 0x220F),
 )
 PACKET_TABLE_PROCEDURE_AT = 0x29E0E  # cmp r0, #0x20 on the link's +0x7D, in its sender
+# 0x7B/0x14's three gates: the length, a link bit, and feature bit 0. [5.15]
+GATE_14_LENGTH = (0x3C02C, 0x2804)  # cmp r0, #4 on the whole PDU length
+GATE_14_LENGTH_ERROR = (0x3C31E, 0x2019)  # movs r0, #0x19
+GATE_14_LINK_BIT = (0x3C038, 0x0700)  # lsls r0, r0, #0x1c, so bit 3 of the link's +0x3C
+GATE_14_FEATURE_BIT = (0x3C046, 0xF000, 0x0001)  # and r0, r0, #1, so feature bit 0
+GATE_14_ERROR = (0x3C054, 0x2011)  # movs r0, #0x11, Unsupported Feature
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
@@ -1464,6 +1470,13 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
     # The packet-table sender's own procedure gate, which 5.15 names beside the band module's.
     if u16(acib, PACKET_TABLE_PROCEDURE_AT) != 0x2800 | lmp.PROCEDURE_PACKET_TABLE:
         return False, f"0x{PACKET_TABLE_PROCEDURE_AT:x} no longer gates on that procedure"
+    # 0x7B/0x14's gates, including the one that gives feature bit 0 its only known use.
+    for at, want in (GATE_14_LENGTH, GATE_14_LENGTH_ERROR, GATE_14_LINK_BIT, GATE_14_ERROR):
+        if u16(acib, at) != want:
+            return False, f"0x{at:x} is 0x{u16(acib, at):04x}, not 0x{want:04x}"
+    at, first, second = GATE_14_FEATURE_BIT
+    if (u16(acib, at), u16(acib, at + 2)) != (first, second):
+        return False, f"0x{at:x} no longer masks the feature byte to bit 0"
     both, maxed = POWER_RESPONSE_MASKS
     if sorted(v for v in range(16) if both & (1 << v)) != [0, 3, 12, 15]:
         return False, "the first mask no longer selects the codes whose two fields are 0 or 3"

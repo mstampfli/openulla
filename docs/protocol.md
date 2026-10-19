@@ -1022,8 +1022,10 @@ The 0xA9 and 0x56 masks are complementary, so that
 byte really is two groups of four bits, and the identity check below reduces an advertised copy
 to the first group. The three other opcodes in that table were resolved the same way as
 0xFDF3, by finding the handler the store belongs to and reading its key [fw acib handler table
-0xf1230, keys 0xf1928]; what their bits gate is not traced, and only bits 1, 2, 5 and 6 have
-known uses so far.
+0xf1230, keys 0xf1928]; what their bits gate is not traced. Bits **0, 1, 2, 5 and 6** have
+known uses: bit 0 gates 0x7B/0x14 (5.15), bits 1 and 2 steer the reply of 5.11 and bit 2 steers
+four of the five mirrored procedures of 5.14, bit 5 is the band family and also steers the two
+classification forms (5.14), and bit 6 is 0xFE50's non-zero path.
 
 One quirk, for anyone comparing against a capture: when a per-link identity check matches (a
 halfword of 0xF, a byte of at most 10, and a ten-byte comparison at the link's 0x4E), the low
@@ -1644,7 +1646,7 @@ attributed to an arm that merely sits before it.
 | 0x0D | 0x3c0be | 0x29f40 | the packet-type-table request (5.13) |
 | 0x0E, 0x0F | 0x3c0ea, 0x3c104 | 0x2919c, 0x29318 | the power control pair (5.11, 5.14) |
 | 0x10, 0x11 | 0x3c256, 0x3c246 | 0x2978c, 0x297c8 | a halfword request and its answer, below |
-| 0x14 | 0x3c01e | none in the arm | gated, and its body length is checked against 4 [fw acib 0x3c02c] |
+| 0x14 | 0x3c01e | 0x24ec2, on a branch | one halfword, three gates, below |
 | 0x15, 0x16 | 0x3c0d4, 0x3c062 | 0x29a1c, 0x29a70 | a band request and its answer, below |
 | 0x17 | 0x3c004 | 0x29ab4 | the allowed-band mask (6.2) |
 | 0x18 | 0x3c120 | 0x23230 | fifteen bytes, copied whole into the link's +0x36F [fw acib 0x23268] |
@@ -1667,6 +1669,20 @@ immediates [fw acib 0x2978c, 0x297a0, 0x297a2, 0x29798]. 0x11's consumer stores 
 halfword at the same +0x62 and requires the link to be in procedure state 0x2F with its +0x80
 at 1 [fw acib 0x297d6, 0x297da, 0x297e2], which is the state 5.11 records 0x10's own sender
 writing. So the pair 5.11 traced from the sending side closes here from the receiving side.
+
+**0x14 is the most heavily gated message in the space, and it names a new feature bit.** Its
+body is one halfword, which the arm enforces by comparing the whole PDU length against 4 and
+answering **0x19** otherwise [fw acib 0x3c02c, 0x3c31e]. Then two gates, both answering **0x11**,
+Unsupported Feature: **bit 3 of the link's +0x3C** [fw acib 0x3c038, 0x3c054], and **bit 0** of
+the peer's feature byte ANDed with the controller's own [fw acib 0x3c03c to 0x3c050]. That bit 0
+matters beyond this message: 5.8 records bits 1, 2, 5 and 6 as the only ones with known uses,
+and this is bit 0's. Only then is the halfword stored and its low byte passed on, to a consumer
+that sits on a branch rather than on the arm's straight-line path [fw acib 0x3c324 to 0x3c32e].
+
+That last detail is a caveat on the table above. "None" in its consumer column means no call on
+the path the arm falls through, which is not the same as no consumer; 0x14 is the case where the
+difference shows. The arms whose consumer is given were followed along that path on purpose,
+because a scan that follows branches cannot tell which arm it has wandered into.
 
 **0x22, 0x23, 0x25 and 0x26 resisted the same approach, and the reason is worth recording.**
 Their four consumers are neighbours and all four read the same two globals, which looked like a
