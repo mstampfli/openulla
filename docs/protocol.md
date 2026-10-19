@@ -1117,6 +1117,17 @@ function in either case and a second one when bit 5 is [fw acib 0x296f2 to 0x297
 bits are not a one-off for the pair above: they gate a small group of messages, which is one
 more reason the feature exchange is where an implementation starts.
 
+**And that sender is not called directly.** It is one arm of a **per-link procedure
+scheduler**: a jump table of 89 entries, indexed by a procedure number, whose arms each call
+one sender and return to a common exit [fw acib the table at 0x3dbb6, the arm at 0x3df80, the
+exit at 0x3db60]. The 89 indexes resolve to 40 distinct arms, and most of them share one that
+does nothing. **Index 0x1A is the arm that sends 0x7B/0x10**, and seven arms in all call into
+the module that owns the 0x7B space [fw acib 0x293d0 at index 0x19, 0x296a0 at 0x1A, 0x28fc8
+at 0x24, 0x2a53c at 0x46, 0x29cfc at 0x47, 0x29c5c at 0x48, 0x2a364 at 0x4C]. So "when does
+this message go out" has the same answer here as in a textbook link manager: when the link's
+pending-procedure number comes round. It is also why a list of senders read off the call sites
+is a floor and not a ceiling (5.6).
+
 ## 6. Controller interface: HCI vendor commands
 
 The source's host starts the whole thing with vendor command **0xFE50** [fw acib table at
