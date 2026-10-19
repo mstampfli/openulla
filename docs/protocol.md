@@ -170,9 +170,24 @@ subscribes the host to the ULLA report streams, tells the sibling earbud, and te
 controller to begin reporting [fw rkof 0x6d116, 0x27f60].
 
 Those reports are link statistics, and they only carry content once a ULLA link is actually
-running. Two notification ids feed them, each with a size the worker validates: **0xE910 with
-185 bytes and 0xE911 with 61** [fw rkof 0x25baa and 0x25bec compare against 0xB9 and 0x3D;
-the collector is around 0x25ad0].
+running. **Three notification ids feed them, one per report type, each with a fixed payload
+length**, and subscribing is what registers the three listeners [fw rkof 0x27f60 registers
+them, and 0x27bb0 registers the same three, both through 0x23950(id, handler, 0)]:
+
+| report type | notification id | data | the whole report |
+|---|---|---|---|
+| 0 | 0x0A08 | 56 bytes | 59 |
+| 1 | 0xE910 | 185 bytes | 188 |
+| 2 | 0xE911 | 61 bytes | 64 |
+
+Each listener is the same four lines: ask for its own length, then hand `{length, payload}` to
+the entry that stamps its type and tail-calls the builder [fw rkof 0x27cb0 with 0x38 and
+0x27f42, 0x27cdc with 0xB9 and 0x27f38, 0x27d08 with 0x3D and 0x27e84; each entry is
+`ldrh r2,[r0]; ldr r1,[r0,#4]; movs r0,#type; b 0x27e90`]. The notification dispatcher declares
+the same three lengths and **logs a mismatch rather than truncating** [fw rkof 0x258f2,
+0x25bb2, 0x25bf4 against 0x38, 0xB9 and 0x3D], so a report of another length did not come from
+this firmware. What the bytes inside each payload mean is still not established: nothing in
+this payload reads a field of them, because the report path copies them through.
 
 The report the host receives is [fw rkof 0x27e90, which zeroes a 185-byte buffer first]:
 
@@ -185,8 +200,9 @@ The report the host receives is [fw rkof 0x27e90, which zeroes a 185-byte buffer
 
 There are **three report types, 0, 1 and 2**, each with its own entry into that builder, and
 each taking a descriptor whose halfword at +0 is the data length and whose word at +4 is the
-data [fw rkof 0x27f42, 0x27f38 and 0x27e84, which pass 0, 1 and 2 respectively]. What each
-type carries is not established.
+data [fw rkof 0x27f42, 0x27f38 and 0x27e84, which pass 0, 1 and 2 respectively]. The table
+above says which notification feeds each one and how long its data is; what the bytes inside
+mean is still open.
 
 The same report goes to the **sibling** instead when no host session is open, with a four-byte
 header: a constant 4, then the type, then those same two bytes, sent as message 12 of section

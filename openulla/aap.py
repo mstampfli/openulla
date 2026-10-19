@@ -11,8 +11,10 @@
   wrapper 0x17                 [fw rkof 0x6cefa receiving, 0x6e198 sending]; the class field
                                is four bytes above version pair 0x00010001, two below
                                [fw rkof 0x6cf1a, 0x6e0ae]
-  report bodies                type, mode, role, then data [fw rkof 0x27e90]; the two report
-                               sizes are 185 and 61 [fw rkof 0x25bb2, 0x25bf4]
+  report bodies                type, mode, role, then data [fw rkof 0x27e90]; three types,
+                               each with one notification id and one fixed data length:
+                               0 is 0x0A08 and 56 bytes, 1 is 0xE910 and 185, 2 is 0xE911
+                               and 61 [fw rkof 0x27f60, 0x27cb4, 0x27ce0, 0x27d0c]
 
 The session the accessory acts on is the one the L2CAP connection itself identifies: it
 stores the peer address from the connection, not from any field [fw rkof 0x6ca6c, 0x4075a].
@@ -35,9 +37,17 @@ HEADER_LENGTH = 4
 OPEN_REQUEST_LENGTH = 16
 OPEN_REPLY_BODY_LENGTH = 14
 CLASS_ULLA_REPORTS = 0x00200000
-REPORT_SIZES = (185, 61)  # validated against 0xB9 and 0x3D [fw rkof 0x25baa, 0x25bec]
-REPORT_NOTIFICATIONS = (0xE910, 0xE911)  # the two ids those sizes belong to, in that order
-REPORT_TYPES = (0, 1, 2)  # one entry into the builder each [fw rkof 0x27f42, 0x27f38, 0x27e84]
+# One row per report type: the notification id that feeds it and the fixed length of its data.
+# The ids are registered when the host subscribes [fw rkof 0x27f60, and again at 0x27bb0, both
+# through 0x23950(id, handler, 0)]; each handler declares that length and hands {length,
+# payload} to the entry that stamps the type [fw rkof 0x27cb4 and 0x27f42 for 0, 0x27ce0 and
+# 0x27f38 for 1, 0x27d0c and 0x27e84 for 2]; and the notification dispatcher declares the same
+# lengths, logging a mismatch rather than truncating [fw rkof 0x258f2, 0x25bb2, 0x25bf4].
+REPORTS = {
+    0: (0x0A08, 56),
+    1: (0xE910, 185),
+    2: (0xE911, 61),
+}
 VERSION_PAIR_WIDE_CLASS = 0x00010001  # above this, the wrapper's class field is four bytes
 
 
@@ -253,9 +263,21 @@ class Report:
 
     SIBLING_MARKER = 4
 
+    @property
+    def notification(self) -> int | None:
+        """The notification id this type's data came from, where the type is one of the three."""
+        row = REPORTS.get(self.report_type)
+        return None if row is None else row[0]
+
 
 def parse_report(body: bytes, sibling: bool = False) -> Report:
-    """Read a report body, either the host's three-byte header or the sibling's four."""
+    """Read a report body, either the host's three-byte header or the sibling's four.
+
+    A known type's data length is fixed (REPORTS), so a different length means the sender is
+    not this firmware: the firmware's own dispatcher logs exactly that mismatch rather than
+    truncating [fw rkof 0x25baa, 0x25bec]. An unknown type is passed through, because only
+    three of them have been read and the builder does not bound the byte it stamps.
+    """
     header_length = 4 if sibling else 3
     if len(body) < header_length:
         raise ProtocolError(f"a report body is at least {header_length} bytes")
@@ -263,4 +285,10 @@ def parse_report(body: bytes, sibling: bool = False) -> Report:
         if body[0] != Report.SIBLING_MARKER:
             raise ProtocolError(f"a sibling report starts with {Report.SIBLING_MARKER}")
         body = body[1:]
-    return Report(body[0], (body[1], body[2]), body[3:])
+    report = Report(body[0], (body[1], body[2]), body[3:])
+    row = REPORTS.get(report.report_type)
+    if row is not None and len(report.data) != row[1]:
+        raise ProtocolError(
+            f"report type {report.report_type} carries {row[1]} bytes, not {len(report.data)}"
+        )
+    return report

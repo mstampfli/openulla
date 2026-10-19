@@ -85,9 +85,8 @@ def test_the_siblings_copy_of_a_report_carries_one_byte_more():
         aap.parse_report(bytes((4, 7, 1)), sibling=True)
 
 
-def test_the_two_report_notification_sizes():
-    assert aap.REPORT_SIZES == (185, 61)
-    assert aap.REPORT_NOTIFICATIONS == (0xE910, 0xE911)
+def test_each_report_type_has_one_notification_id_and_one_length():
+    assert aap.REPORTS == {0: (0x0A08, 56), 1: (0xE910, 185), 2: (0xE911, 61)}
 
 
 def test_wrapper_length_must_match_its_payload():
@@ -96,8 +95,24 @@ def test_wrapper_length_must_match_its_payload():
         aap.parse_wrapper(aap.parse_frame(bad).body)
 
 
-def test_the_three_report_types():
-    assert aap.REPORT_TYPES == (0, 1, 2)
-    for report_type in aap.REPORT_TYPES:
-        report = aap.parse_report(bytes((report_type, 1, 0)) + b"data")
+def test_the_three_report_types_carry_their_own_length_and_name_their_notification():
+    for report_type, (notification, length) in aap.REPORTS.items():
+        report = aap.parse_report(bytes((report_type, 1, 0)) + bytes(length))
         assert report.report_type == report_type
+        assert report.notification == notification
+        assert len(report.data) == length
+
+
+def test_a_known_report_type_with_the_wrong_length_is_refused():
+    """The firmware's own dispatcher logs this mismatch, so a decoder may not shrug at it."""
+    with pytest.raises(ProtocolError):
+        aap.parse_report(bytes((1, 1, 0)) + bytes(184))
+    sibling = bytes((aap.Report.SIBLING_MARKER, 2, 1, 0))
+    aap.parse_report(sibling + bytes(61), sibling=True)
+    with pytest.raises(ProtocolError):
+        aap.parse_report(sibling + bytes(62), sibling=True)
+
+
+def test_a_report_type_nobody_has_read_is_passed_through():
+    report = aap.parse_report(bytes((7, 1, 0)) + b"whatever")
+    assert (report.report_type, report.notification, report.data) == (7, None, b"whatever")

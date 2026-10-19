@@ -167,6 +167,15 @@ MODE_NAME_LOAD = 0x2781C  # the formatter's literal for the mode list [5.9, sect
 RESULT_NAME_LOAD = 0x27820  # and for the result list
 REASON_LOW_TABLE = 0x2777C  # byte table, reasons 0..6
 REASON_HIGH_TABLE = 0x2778C  # byte table, reasons 0x81..0x87
+# The report path of 2.6: one listener per type, each with its own length and builder entry.
+REPORT_SUBSCRIBE = 0x27F60  # where subscribing registers the three
+REPORT_LISTENERS = {  # report type: (notification id, data length, listener, builder entry)
+    0: (0x0A08, 0x38, 0x27CB0, 0x27F42),
+    1: (0xE910, 0xB9, 0x27CDC, 0x27F38),
+    2: (0xE911, 0x3D, 0x27D08, 0x27E84),
+}
+REPORT_SIZE_CHECKS = {0x0A08: 0x258F2, 0xE910: 0x25BB2, 0xE911: 0x25BF4}  # id, then size, in
+REPORT_BUILDER = 0x27E90  # the one builder all three entries tail-call
 A2DP_DESCRIPTORS = (0x1C14D0, 0x1C14E8, 0x1C1500)
 A2DP_CAPABILITIES = {
     0xFF: bytes.fromhex("4c00000001800080008c0083e800"),
@@ -231,10 +240,15 @@ def movw(img, off):
     )
 
 
-def bl_target(img, off):
-    """Where a Thumb-2 BL at this address goes: S:I1:I2:imm10:imm11, doubled, from off + 4."""
+def wide_branch(img, off, link=True):
+    """Where a Thumb-2 BL or B.W goes: S:I1:I2:imm10:imm11, doubled, from off + 4.
+
+    The two encodings differ in one bit of the second halfword, bit 14: set for the call.
+    """
     first, second = u16(img, off), u16(img, off + 2)
-    if first & 0xF800 != 0xF000 or second & 0xD000 != 0xD000:
+    if first & 0xF800 != 0xF000 or second & 0x9000 != 0x9000:
+        return None
+    if bool(second & 0x4000) != link:
         return None
     sign = (first >> 10) & 1
     first_j = 1 - (((second >> 13) & 1) ^ sign)
@@ -593,6 +607,46 @@ def check_name_table_bounds(acib, rkof, ctab):
     return True, f"{len(Mode)} modes then {past_modes!r}, {len(Result)} results then a null"
 
 
+def check_report_listeners(acib, rkof, ctab):
+    """One listener per report type, each with its own length and builder entry. [2.6]
+
+    Read as instructions, because every number here is an immediate: the length the listener
+    asks for, the type its entry stamps, and the length the dispatcher declares for the id.
+    """
+    for report_type, (notification, length, listener, entry) in REPORT_LISTENERS.items():
+        asked = u16(rkof, listener + 4)
+        if asked != 0x2100 | length:
+            return False, f"listener 0x{listener:x} asks for 0x{asked:04x}, not {length} bytes"
+        pool = u32(rkof, listener + 0x24)
+        if pool != entry | 1:
+            return False, f"listener 0x{listener:x} hands it to 0x{pool:x}, not 0x{entry:x}"
+        if (u16(rkof, entry), u16(rkof, entry + 2)) != (0x8802, 0x6841):
+            return False, f"entry 0x{entry:x} no longer reads the descriptor's length and data"
+        stamped = u16(rkof, entry + 4)
+        if stamped != 0x2000 | report_type:
+            return False, f"entry 0x{entry:x} stamps 0x{stamped:04x}, not type {report_type}"
+        goes = wide_branch(rkof, entry + 6, link=False)
+        if goes != REPORT_BUILDER:
+            return False, f"entry 0x{entry:x} goes to {goes and hex(goes)}, not the builder"
+        at = REPORT_SIZE_CHECKS[notification]
+        if movw(rkof, at) != notification:
+            return False, f"0x{at:x} no longer names notification 0x{notification:x}"
+        declared = u16(rkof, at + 4)
+        if declared != 0x2300 | length:
+            return False, f"the dispatcher declares 0x{declared:04x} for 0x{notification:x}"
+    registered = {u32(rkof, REPORT_SUBSCRIBE + off) for off in (0x68, 0x6C)}
+    for report_type in (1, 2):
+        if REPORT_LISTENERS[report_type][2] | 1 not in registered:
+            return False, f"subscribing no longer registers type {report_type}'s listener"
+    return True, (
+        f"{len(REPORT_LISTENERS)} types: "
+        + ", ".join(
+            f"0x{notification:04x} {length} bytes"
+            for notification, length, _, _ in REPORT_LISTENERS.values()
+        )
+    )
+
+
 def check_procedure_scheduler(acib, rkof, ctab):
     """The per-link procedure scheduler: its id space, its table and two of its arms. [5.11]
 
@@ -617,7 +671,7 @@ def check_procedure_scheduler(acib, rkof, ctab):
         at = SCHEDULER_TABLE + 2 * u16(acib, SCHEDULER_TABLE + 2 * index)
         if u16(acib, at) != MOV_R0_R8:
             return False, f"index 0x{index:x}'s arm at 0x{at:x} does not open with mov r0, r8"
-        goes = bl_target(acib, at + 2)
+        goes = wide_branch(acib, at + 2)
         if goes != sender:
             return False, f"index 0x{index:x} calls {goes and hex(goes)}, not 0x{sender:x}"
     return True, (
@@ -694,6 +748,7 @@ CHECKS = (
     ("feature bit commands", check_feature_bit_commands),
     ("procedure state tables", check_procedure_tables),
     ("A2DP stream endpoints", check_a2dp_endpoints),
+    ("report listeners", check_report_listeners),
     ("procedure scheduler", check_procedure_scheduler),
     ("ctab is the table again", check_ctab_manifest),
 )
