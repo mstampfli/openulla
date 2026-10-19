@@ -43,6 +43,7 @@ EXT_FEATURE_REQUEST = 0x0A  # in the 0x7B space: one word, the sender's feature 
 EXT_FEATURE_REPLY = 0x0B
 EXT_SELECTOR_REQUEST = 0x0E  # 0x7B: one selector byte, answered with the pair below (5.11)
 EXT_VALUE_AND_CODE = 0x0F  # 0x7B: a value byte and a four-bit code; 0x7F/0x20 is the same
+EXT_PACKET_PERMISSION = 0x0C  # 0x7B: the byte that decides which of Apple's packets are allowed
 EXT_PACKET_TABLE = 0x0D  # 0x7B: Apple's packet-type-table request, the counterpart of 0x7F/0x0B
 EXT_LINK_HALFWORD_REQUEST = 0x10  # 0x7B: one halfword each way, kept at the link's +0x62
 EXT_LINK_HALFWORD_REPLY = 0x11
@@ -334,6 +335,83 @@ def mode_procedure_agreed(own: int, peer: int) -> bool:
     return agreed(own, peer, FEATURE_BIT_MODE_PROCEDURE) or agreed(
         own, peer, FEATURE_BIT_MODE_PROCEDURE, byte=3
     )
+
+
+@dataclass(frozen=True)
+class PacketPermission:
+    """Escape 0x7B, extended opcode 0x0C: one byte, and it gates Apple's six packet types.
+
+    The name is this project's description of what the firmware does with the byte, not a name
+    the firmware uses. What it does is a chain, every step of it in the image:
+
+      the arm stores the byte, sign-extends it and logs a second time when it is negative, so
+      the value is signed in the diagnostic even though a byte is what it passes on
+      [fw acib 0x3c216, 0x3c226, 0x3c228], then calls the applier [fw acib 0x3c23e];
+
+      the applier branches on a per-link gate. With the gate set it only *stores* the byte, and
+      only while the link's active packet-type table is 2; with the table anything else it takes
+      an error path [fw acib 0x25c28, 0x25c2c, 0x25c4a, 0x25c50];
+
+      with the gate clear it *applies*: it compares the byte against the link's current
+      permission, writes it if they differ, and re-runs the packet-type chooser
+      [fw acib 0x25c6e, 0x25c8c, 0x25c9a into 0x1373c];
+
+      and the field it writes is the record's +0x69, which is exactly the byte the table-2
+      branch of the packet-type mask filter consults to decide which of mask bits 16 to 21
+      survive [fw acib 0x15498 with its flag set writing +0x69, read at 0x13772 and tested at
+      0x13778 and 0x13782].
+
+    Those six mask bits are the six packet types of `packets.py` that only table 2 can select,
+    so this message is how a link is told which of them it may use. The gate is what separates
+    the two paths: the one function that replays a stored byte clears it first [fw acib 0x15636],
+    and the message's own arm does not.
+
+    What the byte's individual bits mean beyond 3 and 4 is open, and so is why the diagnostic
+    reads it as signed.
+    """
+
+    permission: int
+    tid: int = 0
+
+    LENGTH = 3  # header, extended opcode, the byte
+    MASK_BITS = (3, 4)  # the two bits the filter tests [fw acib 0x13778, 0x13782]
+
+    def to_bytes(self) -> bytes:
+        if not 0 <= self.permission <= 0xFF:
+            raise ProtocolError("the permission is one byte")
+        return bytes((header(ESCAPE_7B, self.tid), EXT_PACKET_PERMISSION, self.permission))
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> PacketPermission:
+        head = parse_header(data)
+        if head.opcode != ESCAPE_7B or head.ext_opcode != EXT_PACKET_PERMISSION:
+            raise ProtocolError("not the packet-permission message")
+        if len(data) != cls.LENGTH:
+            raise ProtocolError(f"its body is one byte, got {len(data) - 2}")
+        return cls(permission=data[2], tid=head.tid)
+
+    def signed(self) -> int:
+        """The byte as the firmware's own diagnostic reads it [fw acib 0x3c226]."""
+        return self.permission - 0x100 if self.permission & 0x80 else self.permission
+
+    def allows(self) -> tuple[packets.PacketType, ...]:
+        """Which of Apple's six packet types this byte leaves selectable.
+
+        The filter clears the odd mask bits when bits 3 and 4 are not both set, and the even
+        ones when bit 4 is clear [fw acib 0x13778 to 0x13786]. So the byte does not name a
+        packet; it names which half of each pair survives, and this reports what is left.
+        """
+        both_set = self.permission & 0x18 == 0x18
+        bit_four = bool(self.permission & 0x10)
+        allowed: list[packets.PacketType] = []
+        for entry in packets.for_table(packets.TABLE_APPLE):
+            if entry.mask_bit not in packets.APPLE_MASK_BITS:
+                allowed.append(entry)  # DM1 is not one of the six and is not filtered here
+                continue
+            odd = entry.mask_bit % 2 == 1
+            if (both_set if odd else bit_four):
+                allowed.append(entry)
+        return tuple(allowed)
 
 
 @dataclass(frozen=True)
@@ -753,6 +831,8 @@ def parse(data: bytes) -> object:
         EXT_FEATURE_REPLY,
     ):
         return Features.from_bytes(data)
+    if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_PACKET_PERMISSION:
+        return PacketPermission.from_bytes(data)
     if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_PACKET_TABLE:
         return PacketTableRequest.from_bytes(data)
     if head.opcode == ESCAPE_7B and head.ext_opcode in (

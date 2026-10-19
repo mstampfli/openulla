@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 
-from . import aap, bands, hci, lmp, sibling
+from . import aap, bands, hci, lmp, packets, sibling
 from .codes import HciError, SessionStatus, reason_name
 from .errors import ProtocolError
 
@@ -147,6 +147,17 @@ def describe_lmp(data: bytes) -> list[str]:
             f"    bit {lmp.FEATURE_BIT_MODE_PROCEDURE} (the mode procedure) is "
             + ("set" if parsed.word & (1 << lmp.FEATURE_BIT_MODE_PROCEDURE) else "clear"),
             "    a feature is usable only where both ends' words carry its bit",
+        ]
+    elif isinstance(parsed, lmp.PacketPermission):
+        allowed = parsed.allows()
+        extra = [p.name for p in allowed if p.mask_bit in packets.APPLE_MASK_BITS]
+        lines += [
+            f"  the packet permission (0x7B/0x0C): 0x{parsed.permission:02x}, "
+            f"{parsed.signed()} read signed as the firmware's own log does",
+            "    it is applied only while the link's packet-type table is 2, protocol.md 5.14",
+            f"    bits {lmp.PacketPermission.MASK_BITS} leave "
+            + (", ".join(extra) if extra else "none of Apple's six packet types")
+            + " selectable",
         ]
     elif isinstance(parsed, lmp.LinkHalfword):
         lines += [

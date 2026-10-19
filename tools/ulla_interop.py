@@ -74,6 +74,8 @@ def vectors():
         ("sibling", "configure-statistics", "4", sibling.configure_statistics(1, 0x20, 0)),
         ("lmp", "features-request", "5.8", lmp.Features(0x60).to_bytes()),
         ("lmp", "features-reply", "5.8", lmp.Features(0x60, reply=True).to_bytes()),
+        ("lmp", "packet-permission-both", "5.14", lmp.PacketPermission(0x18).to_bytes()),
+        ("lmp", "packet-permission-slower", "5.14", lmp.PacketPermission(0x10).to_bytes()),
         ("lmp", "halfword-request", "5.15", lmp.LinkHalfword(0x5B).to_bytes()),
         ("lmp", "halfword-reply", "5.15", lmp.LinkHalfword(0x5B, reply=True).to_bytes()),
         ("lmp", "band-block-request", "5.15",

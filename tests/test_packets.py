@@ -241,3 +241,50 @@ def test_the_firmware_reply_block_and_the_halfword_pair_agree():
     assert kind == 0
     assert int.from_bytes(value, "little") == lmp.LinkHalfword.SEEN_IN_REPLY
     assert lmp.BandBlock.ITEM_FIELDS[kind] == 0x62
+
+
+def test_the_permission_byte_has_one_bit_per_rate():
+    """A third, independent confirmation of which of the six is 4 and which is 8 Mb/s.
+
+    The rate assignment in `packets.py` rests on two arguments: the TYPE codes carried over from
+    table 1, and the payload arithmetic. This is a third and it comes from neither. The
+    packet-type mask filter keeps the even mask bits when bit 4 of the permission byte is set,
+    and the odd ones only when bits 3 and 4 are both set [fw acib 0x13778 to 0x13786]. So one
+    bit enables one rate and a second bit adds the other, which is the shape EDR uses for its
+    own two rates, and the sets it picks out are exactly the two this project named.
+    """
+    def names(value):
+        pdu = lmp.PacketPermission(permission=value)
+        return {p.name for p in pdu.allows() if p.mask_bit in packets.APPLE_MASK_BITS}
+
+    four = {e.name for e in packets.for_table(packets.TABLE_APPLE) if "4mbit" in e.name}
+    eight = {e.name for e in packets.for_table(packets.TABLE_APPLE) if "8mbit" in e.name}
+    assert len(four) == 3 and len(eight) == 3
+    # Bit 4 alone: exactly the slower set.
+    assert names(0x10) == four
+    # Bits 3 and 4: both sets.
+    assert names(0x18) == four | eight
+    # Bit 3 alone, or neither: none of the six.
+    assert names(0x08) == set()
+    assert names(0x00) == set()
+    # The even mask bits are the slower set and the odd ones the faster, which is what makes
+    # the filter's two tests line up with the two rates at all.
+    assert {e.mask_bit % 2 for e in packets.for_table(packets.TABLE_APPLE)
+            if e.name in four} == {0}
+    assert {e.mask_bit % 2 for e in packets.for_table(packets.TABLE_APPLE)
+            if e.name in eight} == {1}
+
+
+def test_the_permission_message_round_trips_and_reads_signed():
+    from openulla import lmp as module
+
+    assert module.PacketPermission(permission=0x18).to_bytes() == bytes((0xF6, 0x0C, 0x18))
+    assert module.parse(bytes((0xF6, 0x0C, 0xFF))) == module.PacketPermission(permission=0xFF)
+    assert module.PacketPermission(permission=0xFF).signed() == -1
+    assert module.PacketPermission(permission=0x7F).signed() == 127
+    with pytest.raises(module.ProtocolError):
+        module.PacketPermission(permission=0x100).to_bytes()
+    with pytest.raises(module.ProtocolError):
+        module.PacketPermission.from_bytes(bytes((0xF6, 0x0C)))
+    with pytest.raises(module.ProtocolError):
+        module.PacketPermission.from_bytes(bytes((0xF6, 0x0D, 0x00)))
