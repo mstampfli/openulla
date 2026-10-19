@@ -226,6 +226,19 @@ PROCEDURE_BITS = (
 # The three answers the responder gives, which are one two-bit code five times. [5.11, 5.14]
 POWER_RESPONSE_PAIRS = ((0x15, 5), (0x2A, 10), (0x3F, 15))
 POWER_RESPONSE_MASKS = (0x9009, 0x504)  # the receiver's two classes over the four-bit code
+# The two request-and-answer pairs of 5.15, and two destinations, as immediates. These were
+# read by hand first, and this is what holds them to the same standard as the rest. [5.15]
+PAIR_IMMEDIATES = (
+    ("the halfword request answers with 0x11", 0x29798, 0x2211),
+    ("and in the 0x7B space", 0x297A0, 0x217B),
+    ("the one value seen in that answer", 0x297A6, 0x205B),
+    ("the band request answers in the 0x7B space", 0x29A2A, 0x217B),
+    ("with 0x16", 0x29A2C, 0x2216),
+    ("the halfword answer wants procedure state 0x2F", 0x297DE, 0x282F),
+    ("the band answer wants it too", 0x29A7C, 0x282F),
+    ("0x0C only applies in packet-type table 2", 0x25C2C, 0x2802),
+    ("0x18 copies fifteen bytes", 0x23266, 0x220F),
+)
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
@@ -1442,6 +1455,11 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
     tested = {bit for _, bit in PROCEDURE_BITS}
     if tested != {2, lmp.FEATURE_BIT_BANDS}:
         return False, f"the deciding bits are now {sorted(tested)}"
+    for what, at, want in PAIR_IMMEDIATES:
+        if u16(acib, at) != want:
+            return False, f"{what}: 0x{at:x} is 0x{u16(acib, at):04x}, not 0x{want:04x}"
+    if lmp.LinkHalfword.SEEN_IN_REPLY != 0x5B or lmp.PROCEDURE_STATE != 0x2F:
+        return False, "the library's own copies of those two values have changed"
     both, maxed = POWER_RESPONSE_MASKS
     if sorted(v for v in range(16) if both & (1 << v)) != [0, 3, 12, 15]:
         return False, "the first mask no longer selects the codes whose two fields are 0 or 3"
@@ -1449,7 +1467,8 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
         return False, "the second mask no longer selects the codes with a 2 in a field"
     return True, (
         f"{len(PAIRED_PROCEDURES)} senders choose between the two forms on bits "
-        f"{sorted(tested)}, the three power answers are one two-bit code five times"
+        f"{sorted(tested)}, the three power answers are one two-bit code five times, "
+        f"{len(PAIR_IMMEDIATES)} pair immediates hold"
     )
 
 
