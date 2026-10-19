@@ -19,9 +19,12 @@ stated otherwise.
 
 Most of what follows can be re-checked mechanically. `tools/verify_claims.py` reads these
 offsets in a firmware image on your own machine and prints one line per claim: the session
-manager's whole transition table, the band plan, the command table with every handler
-address, the PDU lengths, both dispatch tables, the event's shape, the reason names and the
-stream endpoints. It fails on a single changed byte, and it needs no firmware from us.
+manager's whole transition table, the band plan, the command table with every handler address,
+the PDU lengths, both dispatch tables, every body builder, the event's shape, the mode, result
+and reason names and the bounds of their tables, all three procedures' state tables, the
+eleven session commands with 0xFE16's bound, the two commands that write the controller's
+feature bits, and the stream endpoints. It fails on a single changed byte, and it needs no
+firmware from us.
 
 ## 1. Layer map
 
@@ -402,9 +405,12 @@ packs them, so the two paths corroborate each other.
 
 ## 5. Controller to controller: the link-manager PDUs
 
-Two vendor link-manager PDUs carry the setup. They travel on the existing ACL link between
-the two controllers and **never cross the host interface**, so an ordinary host capture cannot
-show them [measured: nothing of the sort appears in an HCI trace].
+A family of vendor link-manager PDUs carries the setup: 0x73 to 0x76 among the ordinary
+opcodes (5.1 to 5.3) and a set of extended messages behind two escape opcodes (5.6 and 5.7).
+They travel on the existing ACL link between the two controllers and **never cross the host
+interface**, so an ordinary host capture cannot show them [measured: nothing of the sort
+appears in an HCI trace]. Which end sends what, and which of them this build sends at all, is
+in 5.2; the procedures that drive them are 5.9 and 5.10.
 
 Every PDU begins with one byte holding the transaction id in bit 0 and the opcode in bits 1
 to 7 [fw acib 0x3a634].
@@ -1092,7 +1098,10 @@ used for something.
    and 2 [fw acib 0x291b0].
 2. Each branch asks the controller the same thing with a different parameter: property 0xB9
    about this link, with 0, 1 or 4 [fw acib 0x5b55e, 0x5b550 and 0x5b56c, all through 0x5b622
-   and the property call 0x79454].
+   and the property call 0x79454]. That id's getter is acib 0xe0ac4: it takes the two input
+   bytes, calls one function with them and writes back a single byte, so what the branches
+   read is one boolean per parameter [fw acib 0xe0ac8 to 0xe0ad4, the call at 0xe0ce8 into the
+   radio layer].
 3. The answer picks one of exactly three two-byte pairs for the reply: **0x15 and 0x05**,
    **0x2A and 0x0A**, or **0x3F and 0x0F**, which are the same two numbers at one, two and
    three times [fw acib 0x291c4, 0x291d2 and 0x291de, each storing it at the block's +0x10].
@@ -1485,13 +1494,31 @@ are one property of the session object:
 | 0xFE58 | property **0x1B3**, then reports to the host [fw acib 0x48722 into 0x11e8c] | 0x0C |
 | 0xFE7B | property **0x1AB** with the byte, and no role branch at all [fw acib 0x1d47c] | - |
 
-"Property" is this document's word for them, and it is worth saying what they really are,
-because it marks where the trail ends. The call takes an id, an input pointer and an output
-pointer, packs the three into a record and hands it to the controller's internal messaging
-primitive [fw acib 0x79454 building it, 0xe422c sending it; the thin wrappers 0x7951a, 0x79522,
-0x79448 and 0x793a4 differ only in which pointers they pass]. So what an id does is implemented
-wherever that message is received, not in the command handler, and these payloads do not say
-where. The ids are worth recording anyway: they are what a host's command turns into.
+"Property" is this document's word for them, and they are not opaque: **every id resolves to a
+function in this image.** The call packs the id with an input and an output pointer
+[fw acib 0x79454, the wrappers 0x7951a and 0x79522] and the dispatcher looks the id up in a
+**534-entry table of getter functions at acib 0xf7d60**, one-based, valid for ids 1 to 0x216,
+with bit 31 of each entry masked off before the call [fw acib 0xe422c, the range check at
+0xe423a, the entry read at 0xe425a and the mask at 0xe427c]. Two claims elsewhere in this
+document are the proof that the indexing is right: id 0x63 resolves to the hardware read with
+retries that fills 0x73's 32-bit field (5.1), and ids 0x12 and 0x13, which fill 0x74, resolve
+to the two `bx lr` stubs that make this firmware contribute zeroes (5.2).
+
+So the ids these commands drive can be followed, and here is where each one lands:
+
+| id | driven by | getter |
+|---|---|---|
+| 0x1AF | 0xFE53 reads it | acib 0xdc35c |
+| 0x1B0 | 0xFE52, one role | acib 0xdc388 |
+| 0x1B1 | 0xFE57 | acib 0xdc198 |
+| 0x1B2 | 0xFE52, the other role | acib 0xdc1b4 |
+| 0x1B3 | 0xFE58 | acib 0xdc200 |
+| 0x1AB | 0xFE7B | acib 0xdc168 |
+| 2 | 0xFE55 | acib 0x846bc |
+| 0x1A4 | 0xFE57's other path | acib 0xda944 |
+
+They sit together in one region, which is itself worth knowing: five of the six ULLA session
+properties are consecutive handlers in acib 0xdc1xx to 0xdc3xx.
 
 So four of them, 0x1B0 to 0x1B3, are driven by three of these commands, one command reads a
 fifth and one writes a sixth; and the refusals are not uniform, which matters for a host: 2

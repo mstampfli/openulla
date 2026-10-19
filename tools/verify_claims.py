@@ -128,6 +128,20 @@ EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
 PROCEDURE_LITERAL = 0x682FC  # where the dispatcher loads that address from
+GETTER_TABLE = 0xF7D60  # 534 property getters, one-based, 6.6
+GETTER_TABLE_LITERAL = 0xE42C4
+GETTERS = {
+    0x12: 0xCF9AC,  # 0x74's word: a bx lr stub, 5.2
+    0x13: 0xCF9AE,  # 0x74's halfword: the same
+    0x63: 0xDC9C0,  # 0x73's 32-bit field: the hardware read with retries, 5.1
+    0xB9: 0xE0AC4,  # the three queries of 5.11
+    0x1AF: 0xDC35C,  # the six ULLA session properties of 6.6
+    0x1B0: 0xDC388,
+    0x1B1: 0xDC198,
+    0x1B2: 0xDC1B4,
+    0x1B3: 0xDC200,
+    0x1AB: 0xDC168,
+}
 SINK_TABLE = 0xF2628  # the sink's eight, 5.10
 SINK_LITERAL = 0x67370
 THIRD_TABLE = 0xF2648  # the third role's seven, 5.10
@@ -360,6 +374,19 @@ def check_names(acib, rkof):
     return True, f"{len(Mode)} modes, {len(Result)} results, {checked} reasons, 2 unnamed"
 
 
+def check_getter_table(acib, rkof):
+    """The property getter table: one-based, and the two ids whose getters we already cite."""
+    if u32(acib, GETTER_TABLE_LITERAL) != GETTER_TABLE:
+        return False, f"the dispatcher no longer loads 0x{GETTER_TABLE:x} from its literal"
+    for ident, getter in sorted(GETTERS.items()):
+        entry = u32(acib, GETTER_TABLE + 4 * (ident - 1))
+        if entry & 0x7FFFFFFE != getter:
+            return False, (
+                f"id 0x{ident:x} now resolves to 0x{entry & 0x7FFFFFFE:x}, not 0x{getter:x}"
+            )
+    return True, f"{len(GETTERS)} ids checked against the table at acib 0x{GETTER_TABLE:x}"
+
+
 def check_session_commands(acib, rkof):
     """The eleven commands of 6.6, each resolving to the handler we publish for it."""
     keys = [u16(acib, HCI_KEYS + 2 * i) & HCI_KEY_MASK for i in range(HCI_KEY_COUNT)]
@@ -496,6 +523,7 @@ CHECKS = (
     ("mode-change event shape", check_event_shape),
     ("mode, result and reason names", check_names),
     ("name table bounds", check_name_table_bounds),
+    ("property getter table", check_getter_table),
     ("ULLA session commands", check_session_commands),
     ("feature bit commands", check_feature_bit_commands),
     ("procedure state tables", check_procedure_tables),

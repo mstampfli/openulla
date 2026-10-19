@@ -182,11 +182,12 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  mode-change event shape          event 0xff, 7 parameters, id 0x0a00
   PASS  mode, result and reason names    3 modes, 5 results, 12 reasons, 2 unnamed
   PASS  name table bounds                3 modes then 'ULLA_MGR_EVENT_UNKNOWN', 5 results then a null
+  PASS  property getter table            10 ids checked against the table at acib 0xf7d60
   PASS  ULLA session commands            11 handlers as published, 0xFE16 bounded to 125 to 10000
   PASS  feature bit commands             0xFF77 sets bit 5, 0xFDF3 adds 0x56 over 0xa9, both at 0x10003290
   PASS  procedure state tables           8 sink, 7 third and 9 source states, acib 0xf2628 to 0xf2664
   PASS  A2DP stream endpoints            vendor 0xFF, AAC 0x02 and SBC 0x00, lengths and bytes as published
-14 of 14 claims hold
+15 of 15 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows
