@@ -88,3 +88,28 @@ def test_the_protocol_reference_has_a_table_of_contents_that_matches_its_heading
     assert have == wanted, (
         "the table of contents is stale; the headings now want:\n" + "\n".join(wanted)
     )
+
+
+def test_the_escape_space_inventory_covers_every_opcode_it_implements():
+    """Section 5.15 claims to be the whole 0x7B space, so it must be [protocol.md 5.15].
+
+    The implemented set comes from `openulla/lmp.py`, which the verifier checks against the
+    firmware's own dispatch table, so this ties the prose to the image through two links rather
+    than restating a list by hand.
+    """
+    sys.path.insert(0, str(ROOT))
+    from openulla import lmp
+
+    doc = (ROOT / "docs" / "protocol.md").read_text()
+    section = doc.split("### 5.15")[1].split("\n###")[0]
+    listed = set()
+    for row in re.findall(r"^\| (0x[0-9A-Fa-f, x]+) \|", section, re.M):
+        for item in row.split(","):
+            item = item.strip()
+            if item.startswith("0x"):
+                listed.add(int(item, 16))
+    implemented = set(lmp.ESCAPE_7B_IMPLEMENTED)
+    assert listed == implemented, {
+        "listed but not implemented": sorted(hex(x) for x in listed - implemented),
+        "implemented but not listed": sorted(hex(x) for x in implemented - listed),
+    }

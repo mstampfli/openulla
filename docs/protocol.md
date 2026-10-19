@@ -60,6 +60,7 @@ firmware from us.
   - [5.12 One of those escape spaces is Bluetooth's own, and it closes every standard road](#512-one-of-those-escape-spaces-is-bluetooths-own-and-it-closes-every-standard-road)
   - [5.13 Apple's own packet-type table, and the six packets in it](#513-apples-own-packet-type-table-and-the-six-packets-in-it)
   - [5.14 Apple's space mirrors five standard procedures, one function each](#514-apples-space-mirrors-five-standard-procedures-one-function-each)
+  - [5.15 The whole 0x7B space, by the function that consumes each message](#515-the-whole-0x7b-space-by-the-function-that-consumes-each-message)
 - [6. Controller interface: HCI vendor commands](#6-controller-interface-hci-vendor-commands)
   - [6.0 What a source actually puts in those seven bytes](#60-what-a-source-actually-puts-in-those-seven-bytes)
   - [6.1 Which bands are allowed: command 0xFF79](#61-which-bands-are-allowed-command-0xff79)
@@ -1604,6 +1605,52 @@ So the 0x7B space holds, so far: five messages that mirror a standard procedure 
 that exists only for Apple's packet-type table, and the band messages of section 6. What it does
 **not** hold is anything resembling a second protocol; it is this controller's own link
 management, extended where the extra radio needed it.
+
+### 5.15 The whole 0x7B space, by the function that consumes each message
+
+5.6 lists which extended opcodes exist and 5.7 how long each is. This is the third axis: what
+consumes each one. Every arm of the 39-entry table was resolved and then followed to its first
+call that is not a shared helper, stopping at the arm's own closing branch so that nothing is
+attributed to an arm that merely sits before it.
+
+| extended opcode | arm | consumer | what is known |
+|---|---|---|---|
+| 0x01, 0x02 | acib 0x3bc62, 0x3bc66 | 0x3ccd4 | the extended accept and reject, shared with the 0x7F space (5.6) |
+| 0x0A, 0x0B | 0x3c0a8, 0x3c202 | 0x29470 | the feature exchange (5.8) |
+| 0x0C | 0x3c214 | 0x25c00 | a signed byte, applied only in packet-type table 2 (above) |
+| 0x0D | 0x3c0be | 0x29f40 | the packet-type-table request (5.13) |
+| 0x0E, 0x0F | 0x3c0ea, 0x3c104 | 0x2919c, 0x29318 | the power control pair (5.11, 5.14) |
+| 0x10, 0x11 | 0x3c256, 0x3c246 | 0x2978c, 0x297c8 | a halfword request and its answer, below |
+| 0x14 | 0x3c01e | none in the arm | gated, and its body length is checked against 4 [fw acib 0x3c02c] |
+| 0x15, 0x16 | 0x3c0d4, 0x3c062 | 0x29a1c, 0x29a70 | a band request and its answer, below |
+| 0x17 | 0x3c004 | 0x29ab4 | the allowed-band mask (6.2) |
+| 0x18 | 0x3c120 | 0x23230 | fifteen bytes, in the same module as 0x1A and 0x1B |
+| 0x19, 0x1A | 0x3c19c, 0x3c272 | 0x23680 | the channel classification pair (5.14) |
+| 0x1B | 0x3c266 | 0x238a4 | one byte, same module again |
+| 0x1C | 0x3bfc2 | 0x29b38 | the band ranges (6.5) |
+| 0x1F | 0x3c070 | 0x2111c | a fourteen-byte body (5.7), unmapped |
+| 0x20, 0x21 | 0x3c294, 0x3bff4 | 0x21c44, 0x21fc8 | a halfword pair, both gated on the link's +0x185 reading 0xF0 [fw acib 0x21c4e, 0x21fdc] |
+| 0x22, 0x23, 0x25, 0x26 | 0x3c058, 0x3c016, 0x3c0e2, 0x3c00e | 0x309c4, 0x3173c, 0x31e58, 0x32064 | four neighbouring functions, each handed the raw PDU, unmapped |
+| 0x27 | 0x3c2b8 | none | logs and joins the common exit |
+
+The consumers cluster, and the clusters are modules rather than coincidence: 0x2919c, 0x29318
+and 0x29470 within one 0x200; 0x2978c and 0x297c8 within 0x40; and 0x29a1c, 0x29a70, 0x29ab4
+and 0x29b38 within one 0x200, which puts **0x15 and 0x16 in the same module as both band
+messages this document already decodes**.
+
+**0x10 and 0x11 are a request and its answer.** 0x10's consumer stores the halfword at the
+link's +0x62, sets the link's +0x3E, and replies with escape 0x7B extended opcode **0x11** as
+immediates [fw acib 0x2978c, 0x297a0, 0x297a2, 0x29798]. 0x11's consumer stores the same
+halfword at the same +0x62 and requires the link to be in procedure state 0x2F with its +0x80
+at 1 [fw acib 0x297d6, 0x297da, 0x297e2], which is the state 5.11 records 0x10's own sender
+writing. So the pair 5.11 traced from the sending side closes here from the receiving side.
+
+**0x15 and 0x16 are a band request and its answer.** 0x15's consumer replies with escape 0x7B
+extended opcode **0x16** [fw acib 0x29a2a, 0x29a2c]. 0x16's consumer requires the same 0x2F and
+1, then tests **bit 5** of the link's +0x47 ANDed with the first byte of 0x10003290 and gives up
+when it is set [fw acib 0x29a78 to 0x29a96]. Bit 5 is the band family bit this document already
+names in 5.8, which is what puts these two in section 6's family rather than anywhere else.
+Their body is a counted byte block, N bytes behind a count (5.7); what the block holds is open.
 
 ## 6. Controller interface: HCI vendor commands
 
