@@ -1575,6 +1575,37 @@ Once the mode change succeeds the radio carries the audio. The parts that are es
   a packed descriptor: a buffer count, a length with a 1 KB boundary rule, and per-buffer
   flags [fw acib 0xdabcc].
 
+### 7.1 The stream's control path, which is not open any more
+
+The format is still unknown; how a host **starts and stops** the stream is not. It runs
+through the session commands of 6.6 and their property ids, and one of the firmware's own
+asserts names the thing they configure:
+
+```
+ULLA stream started but ADMA address is not configured
+```
+
+That string is logged by the function that id 0x1B2 resolves to, on the path it takes when a
+word at its module's +4 is zero [fw acib 0xdc1be to 0xdc1f2, the string at acib 0xf8fa7].
+What writes that word is id 0x1B1, which stores the caller's 32-bit value at its +0x14 and +4
+[fw acib 0xdc198]. So:
+
+| command | property | what it does |
+|---|---|---|
+| 0xFE57, a word | 0x1B1 | **the audio DMA address**: the value is kept, and the start path refuses without it |
+| 0xFE52, no parameters | 0x1B2, or 0x1B0 on the other role | **start the stream**: it checks that address, then passes the link's own byte with a **1** to the layer below and tells the DMA side [fw acib 0xdc1c4 to 0xdc1ea] |
+| 0xFE58 | 0x1B3 | **stop the stream**: the same call with a **0** in place of that 1 [fw acib 0xdc200 to 0xdc218] |
+| 0xFE53, a read | 0x1AF | returns a four-word descriptor: 1, 0, 0xF0, and a word whose top fourteen bits are set to 0x14A6 over the link's own byte [fw acib 0xdc35c to 0xdc382] |
+| 0xFE7B, a byte | 0x1AB | passes that byte into the same low-level call the start uses with 1, gated on the same module flag [fw acib 0xdc168] |
+
+The two layers underneath are one call that takes the pair {link byte, flag}
+[fw acib 0xdc070] and one that takes the link byte and a value [fw acib 0xa9298]; what they
+program is the DMA and radio side, which is as far as this document follows them.
+
+So an implementation that gets as far as a working link has a defined way to drive the stream:
+hand the controller a DMA address, start, stop, and read that descriptor back. What travels
+through the DMA is the part that is still open, and the next three notes say why.
+
 **[open] The over-the-air packet format.** The air packet is produced by radio hardware
 configured through registers; the PHY image contains no symbols or strings, and the register
 semantics are not public. It is not recoverable from the firmware alone.

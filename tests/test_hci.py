@@ -179,3 +179,17 @@ def test_the_three_refusals_the_session_commands_use():
     assert {HciError.NO_CONNECTION, HciError.COMMAND_DISALLOWED, HciError.UNSUPPORTED_FEATURE} <= {
         int(code) for code in HciError
     }
+
+
+def test_the_streams_control_path():
+    """Hand over a DMA address, start, stop, read the descriptor. [protocol.md 7.1]"""
+    assert hci.stream_dma_address(0x10044000) == bytes.fromhex("57 fe 04 00 40 04 10")
+    assert hci.stream_start() == bytes.fromhex("52 fe 00")
+    assert hci.stream_stop() == bytes.fromhex("58 fe 04 00 00 00 00")
+    assert hci.read_stream_descriptor() == bytes.fromhex("53 fe 00")
+    with pytest.raises(ProtocolError):
+        hci.stream_dma_address(0x1_0000_0000)
+    # All four are commands that reach the session, so the list of 6.6 covers them.
+    for packet in (hci.stream_dma_address(0), hci.stream_start(), hci.stream_stop(),
+                   hci.read_stream_descriptor()):
+        assert int.from_bytes(packet[0:2], "little") in hci.ULLA_SESSION_COMMANDS
