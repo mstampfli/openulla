@@ -26,6 +26,51 @@ eleven session commands with 0xFE16's bound, the two commands that write the con
 feature bits, and the stream endpoints. It fails on a single changed byte, and it needs no
 firmware from us.
 
+## Contents
+
+- [1. Layer map](#1-layer-map)
+- [2. The host interface: AAP service 4](#2-the-host-interface-aap-service-4)
+  - [2.1 Framing](#21-framing)
+  - [2.2 Opening the service](#22-opening-the-service)
+  - [2.3 Which device the session is for](#23-which-device-the-session-is-for)
+  - [2.4 Commands](#24-commands)
+  - [2.5 The status reply](#25-the-status-reply)
+  - [2.6 The wrapper, opcode 0x17](#26-the-wrapper-opcode-0x17)
+- [3. The session manager](#3-the-session-manager)
+  - [3.1 How it is driven](#31-how-it-is-driven)
+  - [3.2 States](#32-states)
+  - [3.3 Events](#33-events)
+  - [3.4 Transitions](#34-transitions)
+  - [3.5 Starting a session, in detail](#35-starting-a-session-in-detail)
+  - [3.6 The order it all happens in](#36-the-order-it-all-happens-in)
+- [4. Earbud to earbud](#4-earbud-to-earbud)
+- [5. Controller to controller: the link-manager PDUs](#5-controller-to-controller-the-link-manager-pdus)
+  - [5.1 Opcode 0x73, the setup request](#51-opcode-0x73-the-setup-request)
+  - [5.2 Opcodes 0x74, 0x75 and 0x76, the messages after the setup](#52-opcodes-0x74-0x75-and-0x76-the-messages-after-the-setup)
+  - [5.3 Accept and reject](#53-accept-and-reject)
+  - [5.4 What the receiver actually checks](#54-what-the-receiver-actually-checks)
+  - [5.5 What each side does with the request](#55-what-each-side-does-with-the-request)
+  - [5.6 The two escape spaces, and which messages exist in them](#56-the-two-escape-spaces-and-which-messages-exist-in-them)
+  - [5.7 How long each extended message is, in both spaces](#57-how-long-each-extended-message-is-in-both-spaces)
+  - [5.8 The feature exchange, which gates everything else](#58-the-feature-exchange-which-gates-everything-else)
+  - [5.9 The source's own procedure, state by state](#59-the-sources-own-procedure-state-by-state)
+  - [5.10 The sink runs the same kind of machine, and there is a third](#510-the-sink-runs-the-same-kind-of-machine-and-there-is-a-third)
+  - [5.11 One extended pair, traced end to end](#511-one-extended-pair-traced-end-to-end)
+- [6. Controller interface: HCI vendor commands](#6-controller-interface-hci-vendor-commands)
+  - [6.0 What a source actually puts in those seven bytes](#60-what-a-source-actually-puts-in-those-seven-bytes)
+  - [6.1 Which bands are allowed: command 0xFF79](#61-which-bands-are-allowed-command-0xff79)
+  - [6.2 Allowed bands on the air](#62-allowed-bands-on-the-air)
+  - [6.3 What each band bit means](#63-what-each-band-bit-means)
+  - [6.4 The rest of the band command family](#64-the-rest-of-the-band-command-family)
+  - [6.5 The second band PDU: escape 0x7B, extended opcode 0x1C](#65-the-second-band-pdu-escape-0x7b-extended-opcode-0x1c)
+  - [6.6 The other vendor commands that reach the ULLA session](#66-the-other-vendor-commands-that-reach-the-ulla-session)
+  - [6.7 Two commands that read the procedure's own request block](#67-two-commands-that-read-the-procedures-own-request-block)
+- [7. The audio layer, and what is not known](#7-the-audio-layer-and-what-is-not-known)
+  - [7.1 The stream's control path, which is not open any more](#71-the-streams-control-path-which-is-not-open-any-more)
+  - [7.2 The buffer descriptor the stream module programs](#72-the-buffer-descriptor-the-stream-module-programs)
+- [8. What an implementation can do today](#8-what-an-implementation-can-do-today)
+  - [8.1 The order to implement it in](#81-the-order-to-implement-it-in)
+
 ## 1. Layer map
 
 ```
@@ -2080,7 +2125,8 @@ rule that was read from the firmware or measured.
 4. **Expect the status reply,** 0 once the manager reaches the state that waits for its local
    audio path, or 0x1776 if its sibling transport is not ready (2.5, 3.6).
 5. **Subscribe with the 0x17 wrapper and class 0x00200000** if you want the reports, and parse
-   their three-byte header (2.6).
+   their three-byte header (2.6). Do not wait for one: the subscription is accepted and this
+   build produces no report at all, which 2.6 shows from both ends.
 6. On the controller side, if your controller lets you: **answer the feature exchange** first,
    because every band message and the mode procedure are gated on the AND of the two words
    (5.8), and **set your own half of that AND** with 0xFF77 for the band family and 0xFDF3 for
@@ -2101,7 +2147,12 @@ rule that was read from the firmware or measured.
     firmware receives that message and never sends it (5.2). Expect the session commands of
     6.6 too, answer them with 0x0C while no session is active, and remember that the second
     half of the procedure is a teardown with its own entry point (5.9).
-11. **Do not expect to send back everything you receive**: a third of service 4's opcodes have
+11. **Drive the stream with the four commands of 7.1** once a link is up: hand the controller
+    an audio DMA address, start, stop, and read the four-word descriptor back. Expect the
+    same four to go through a different set of ids depending on whether a link is already up,
+    and expect three of them to refuse the wrong role with 0x0C (6.6, 6.7). The format that
+    travels through the DMA is open; driving it is not.
+12. **Do not expect to send back everything you receive**: a third of service 4's opcodes have
     no inbound handler at all, the status reply among them (2.4).
 
 Steps 1 to 5 are what a Linux host can do today, and `openulla/` does them. Steps 6 to 8 need

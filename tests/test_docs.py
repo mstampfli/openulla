@@ -70,3 +70,21 @@ def test_every_firmware_citation_is_inside_its_payload():
             cited += 1
             assert address < PAYLOAD_SIZES[payload], f"{doc.name}: {payload} {match.group(2)}"
     assert cited > 300, f"only {cited} citations found; the pattern stopped matching"
+
+
+def test_the_protocol_reference_has_a_table_of_contents_that_matches_its_headings():
+    """A reference nobody can navigate is a worse reference, and a stale index is worse still."""
+    text = (ROOT / "docs" / "protocol.md").read_text()
+    wanted = []
+    for line in text.splitlines():
+        heading = re.match(r"^(#{2,3}) (.+)$", line)
+        if not heading or heading.group(2) == "Contents":
+            continue
+        title = heading.group(2)
+        slug = re.sub(r"\s+", "-", re.sub(r"[^\w\s-]", "", title.lower()).strip())
+        wanted.append(f"{'  ' * (len(heading.group(1)) - 2)}- [{title}](#{slug})")
+    contents = text.split("## Contents\n", 1)[1].split("\n## ", 1)[0]
+    have = [line for line in contents.splitlines() if line.strip()]
+    assert have == wanted, (
+        "the table of contents is stale; the headings now want:\n" + "\n".join(wanted)
+    )
