@@ -437,7 +437,12 @@ what an independent implementation actually needs:
 
 Not recovered, and not to be filled in until it is:
 
-- The over-the-air packet format. The air packet is produced by radio hardware
+- The over-the-air packet format **below the payload header**: the access code,
+  the header coding, the guard and trailer, and the hopping sequence. The parts
+  above it are no longer open, and are in [protocol.md](protocol.md) 5.13 and
+  7.3: the six packet types with their payload maxima, their baseband TYPE
+  codes, their slot counts, and the payload header's twelve-bit length field.
+  What remains is produced by radio hardware
   programmed through registers, and the register semantics are not public. The
   PHY payload `phyb` does carry about two dozen strings, which is worth stating
   correctly: a build tag, one source path under `WxBtPhy/firmware/w3`, the fault
@@ -455,8 +460,12 @@ Not recovered, and not to be filled in until it is:
   print is unreachable. The field a maximum packet size actually lives in is
   known, along with everything that writes it, including a hard-coded 1024;
   [protocol.md](protocol.md) sections 6.8 and 7.2.
-- Meaning of HDRp4, HDRp8, and which devices other than the Vision Pro use the
-  lite mode.
+- Meaning of HDRp4 and HDRp8, with one thing now ruled out: they are **not**
+  separate packet types in the controller's table. Its rate-class array holds
+  exactly four groups beyond the basic set, two of them EDR's and two Apple's,
+  and it stops there ([protocol.md](protocol.md) 5.13). Whatever the "p"
+  variants are, this table has no entry for them.
+- Which devices other than the Vision Pro use the lite mode.
 - The eight codec-specific bytes of the Apple vendor A2DP capability (4.6). The
   bytes themselves are recorded; their field layout is not established.
 - The two setup fields whose values come from a runtime hardware read and from

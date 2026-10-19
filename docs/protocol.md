@@ -1532,11 +1532,29 @@ which is why section 9 of [measurements.md](measurements.md) found no way to ask
 feeding the recovered table nothing but that sixteen-bit field reproduces that result, since the
 best it can then choose is 3-DH5.
 
-**The split into two rate groups is also the firmware's own.** A fifth array holds the eighteen
-TYPE codes grouped by rate class rather than in table order: six basic-rate codes, then four
-groups of three, so its indices 12 to 17 are these six as two groups of three [fw acib the array
-at 0xf7804, read at 0xd2d92]. 7.3 shows the same index deciding the payload header's width, so
-the grouping is load-bearing rather than incidental.
+**The split into two rate groups is also the firmware's own, and it says which group is which.**
+A fifth array holds the eighteen TYPE codes grouped by rate class rather than in table order
+[fw acib the array at 0xf7804, read at 0xd2d92]. Its contents are six basic-rate codes and then
+four groups of three:
+
+| rate-class indices | TYPE codes | which rate class |
+|---|---|---|
+| 0 to 5 | 0x3, 0x4, 0xA, 0xB, 0xE, 0xF | the basic-rate six |
+| 6 to 8 | 0x4, 0xA, 0xE | EDR's 2 Mb/s, matching the table's own 2-DH1, 2-DH3, 2-DH5 |
+| 9 to 11 | 0x8, 0xB, 0xF | EDR's 3 Mb/s, matching 3-DH1, 3-DH3, 3-DH5 |
+| 12 to 14 | 0x4, 0xA, 0xE | the **lower** of Apple's two, reusing the 2 Mb/s pattern |
+| 15 to 17 | 0x8, 0xB, 0xF | the **higher**, reusing the 3 Mb/s pattern |
+
+7.3 shows the same index deciding the payload header's width, and indices 12 to 17 are exactly
+the ones that get the wider header, which is what ties these rate classes to these six packet
+types. The two Apple groups repeat EDR's two TYPE patterns, so **which of them is the faster is
+stated by the layout** and not only by the payloads: the group that reuses the 3 Mb/s pattern is
+the one whose entries carry the larger payloads.
+
+**And the array stops at eighteen.** The bytes after it are unrelated, so there are exactly four
+rate classes beyond the basic set and Apple's filings' two extra mode names, HDRp4 and HDRp8,
+are **not** separate packet types in this table. Whatever they are, they are not a fifth and
+sixth group here.
 
 **What the payloads add is the factor between the two rates, and no more than that.** Dividing a
 payload by a rate gives the time it occupies, and the three- and five-slot pairs agree to about
@@ -2739,6 +2757,12 @@ of digital-pre-distortion and analog-front-end logging: two interrupt names, `RS
 `DPD mode %d>%d set up`, `DPD actuation %d`, `GTB DPD test`. That is the transmit chain's
 calibration, not packet framing. So the PHY image does have a voice, and it talks about
 linearising a power amplifier.
+
+What this item now excludes is worth stating, so nobody re-derives it: the packet family, the
+six payload maxima, the baseband TYPE codes, the slot counts and the payload header's twelve-bit
+length field are all recovered (5.13 and 7.3), and so is which permission byte decides what a
+link may send (5.14). What is left open is everything below the payload header: the access code,
+the header coding, the guard and trailer, and the hopping sequence.
 
 **[open] The codec, the sample rate, the frame size and the bit depth, with a reason.** None
 of them is a constant in the DSP image, and that was checked rather than assumed: no
