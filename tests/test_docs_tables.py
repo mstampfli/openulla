@@ -134,6 +134,25 @@ def test_the_state_table_in_5_9_is_the_table_in_the_code():
     assert events == len(procedure.Event)
 
 
+def test_the_sink_table_in_5_10_is_the_table_in_the_code():
+    documented = {}
+    machines = {}
+    for cells in rows(section("5.10")):
+        if len(cells) == 5 and cells[1].startswith("acib"):
+            documented[numbers(cells[0])[0]] = numbers(cells[1])[0]
+        elif len(cells) == 6 and cells[0] in ("source", "sink", "third"):
+            machines[cells[0]] = (numbers(cells[2])[0], numbers(cells[3])[0])
+    assert documented == {int(state): address
+                          for state, address in procedure.SINK_HANDLER_ADDRESSES.items()}
+    assert machines == {
+        "source": (0xF2664, len(procedure.HANDLER_ADDRESSES)),
+        "sink": (0xF2628, len(procedure.SINK_HANDLER_ADDRESSES)),
+        "third": (0xF2648, len(procedure.THIRD_HANDLER_ADDRESSES)),
+    }
+    assert all(f"0x{address:x}" in section("5.10")
+               for address in procedure.THIRD_HANDLER_ADDRESSES)
+
+
 def test_every_section_the_tests_read_is_still_there():
-    for number in ("2.4", "3.4", "5.4", "5.6", "5.9", "6.3"):
+    for number in ("2.4", "3.4", "5.4", "5.6", "5.9", "5.10", "6.3"):
         assert rows(section(number)), number

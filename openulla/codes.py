@@ -15,8 +15,9 @@ Nothing here is invented. Each group cites where its numbering was read:
                       out-of-range value, so the secondary list is 0, 1, 3, 4, 5, 6.
   session status      rkof 0x6e9cc, and its only two callers 0x271f8 (0) and 0x2751c (0x1776)
   AAP open rejections rkof 0x40600, 0x406b4, 0x407ae, 0x406ea
-  HCI error codes     acib 0x1da40 and 0x19430 return them; the names are BlueZ's, from
-                      /usr/include/bluetooth/hci.h lines 156-167
+  HCI error codes     acib 0x1da40 and 0x19430 return them, and acib 0x6783c sends 0x24 as
+                      a link-manager reason; the names are BlueZ's, from
+                      /usr/include/bluetooth/hci.h lines 156-180
 
 Names are shortened from the firmware's own (REASON_SECONDARY_ROLE_NOT_INITIATED becomes
 SECONDARY_ROLE_NOT_INITIATED); the numbers are untouched.
@@ -111,9 +112,15 @@ class AapReject(IntEnum):
 
 
 class HciError(IntEnum):
-    """The standard HCI error codes this firmware returns. Names from BlueZ hci.h 156-167."""
+    """The standard error codes this firmware uses. Names from BlueZ hci.h 156-180.
+
+    The last one is not an HCI reply but a link-manager reason: the sink sends it in a
+    not-accepted PDU when it cannot hand a setup request to its sibling, and the firmware's
+    own reason formatter has no name for it [fw acib 0x6783c, protocol.md 5.10].
+    """
 
     COMMAND_DISALLOWED = 0x0C
     UNSUPPORTED_FEATURE = 0x11
     INVALID_PARAMETERS = 0x12
     REPEATED_ATTEMPTS = 0x17
+    LMP_PDU_NOT_ALLOWED = 0x24

@@ -1,16 +1,20 @@
-"""The source's nine-state setup procedure, state by state and event by event."""
+"""The controller's procedures, state by state and event by event."""
 import pytest
 
-from openulla.codes import Mode, RejectReason, Result
+from openulla.codes import HciError, Mode, RejectReason, Result
 from openulla.errors import ProtocolError
 from openulla.procedure import (
     DEFAULT_PARAMETERS,
     HANDLER_ADDRESSES,
+    SINK_HANDLER_ADDRESSES,
+    THIRD_HANDLER_ADDRESSES,
     THREE_FLAGS,
     Action,
     Event,
     Flag,
     Procedure,
+    SinkProcedure,
+    SinkState,
     State,
 )
 
@@ -169,3 +173,97 @@ def test_the_history_keeps_every_step_in_order():
 
 def test_the_four_parameters_are_the_initialisers_own_defaults():
     assert DEFAULT_PARAMETERS == (3, 8, 8, 8)
+
+
+# the sink's machine ---------------------------------------------------------------------
+
+
+def test_each_table_is_as_long_as_its_dispatcher_indexes():
+    assert set(SINK_HANDLER_ADDRESSES) == set(SinkState)
+    assert len(HANDLER_ADDRESSES) == 9
+    assert len(SINK_HANDLER_ADDRESSES) == 8
+    assert len(THIRD_HANDLER_ADDRESSES) == 7
+    # The three tables are consecutive runs of words, in this order.
+    assert max(SINK_HANDLER_ADDRESSES.values()) < min(THIRD_HANDLER_ADDRESSES)
+    assert max(THIRD_HANDLER_ADDRESSES) < min(HANDLER_ADDRESSES.values())
+
+
+def test_the_sink_forwards_to_its_sibling_and_waits_for_both_links():
+    sink = SinkProcedure(handle=0x000B)
+    step = sink.begin()
+    assert (step.after, step.action) == (
+        SinkState.AWAIT_BOTH_LINKS, Action.FORWARD_TO_SIBLING
+    )
+    sink.both_links_ready = False
+    step = sink.feed(Event.SETUP_ACCEPTED)
+    assert (step.after, step.action) == (SinkState.AWAIT_BOTH_LINKS, Action.NOTHING)
+    assert sink.ready
+    sink.both_links_ready = True
+    step = sink.feed(Event.LINK_STATE_ADVANCED)
+    assert (step.after, step.action) == (SinkState.AWAIT_MODULE_CALL, Action.SEND_ACCEPTED)
+
+
+def test_the_sink_answers_alone_when_the_role_byte_says_so():
+    sink = SinkProcedure(role_byte_is_one=True)
+    step = sink.begin()
+    assert (step.after, step.action) == (SinkState.AWAIT_MODULE_CALL, Action.CLAIM_SLOT)
+
+
+def test_a_sibling_that_cannot_take_the_request_is_a_refusal_with_the_standard_code():
+    sink = SinkProcedure(sibling_accepts=False)
+    step = sink.begin()
+    assert (step.after, step.action) == (SinkState.AWAIT_SETUP_REQUEST, Action.REFUSE)
+    assert step.reason == HciError.LMP_PDU_NOT_ALLOWED == 0x24
+    # And nothing is sent at all when the link can no longer carry a reply.
+    quiet = SinkProcedure(sibling_accepts=False, can_answer=False)
+    step = quiet.begin()
+    assert (step.after, step.action) == (SinkState.AWAIT_SETUP_REQUEST, Action.NOTHING)
+    assert step.reason is None
+
+
+def test_the_sinks_whole_run_to_the_established_state():
+    sink = SinkProcedure(handle=5, role_byte_is_one=True)
+    sink.begin()
+    step = sink.feed(Event.MODULE_CALL)
+    assert (step.after, step.action) == (
+        SinkState.AWAIT_MODULE_RESULT, Action.BUILD_REQUEST_BLOCK
+    )
+    step = sink.feed(Event.MODULE_RESULT)
+    assert step.after == SinkState.AWAIT_SETUP_REQUEST  # a responder has nothing left to drive
+    assert step.host_event is not None
+    assert (step.host_event.mode, step.host_event.result) == (Mode.ULLA_ON, Result.SUCCESS)
+    step = sink.begin_phase_two()
+    assert step.after == SinkState.AWAIT_BOTH_PATHS
+    step = sink.feed(Event.BOTH_PATHS_READY)
+    assert (step.after, step.action) == (SinkState.AWAIT_CALLBACK_A, Action.REGISTER_CALLBACK)
+    assert sink.feed(Event.CALLBACK_A).after == SinkState.ESTABLISHED
+    step = sink.feed(Event.CALLBACK_B)
+    assert (step.after, step.action) == (SinkState.AWAIT_SETUP_REQUEST, Action.TEAR_DOWN)
+    assert step.host_event is not None
+    assert (step.host_event.mode, step.host_event.result) == (Mode.BT_ACL_ACTIVE, Result.SUCCESS)
+
+
+def test_the_sink_resends_the_accepted_pdu_on_the_link_event():
+    sink = SinkProcedure(state=SinkState.AWAIT_MODULE_CALL)
+    step = sink.feed(Event.LINK_STATE_ADVANCED)
+    assert (step.after, step.action) == (SinkState.AWAIT_MODULE_CALL, Action.SEND_ACCEPTED)
+
+
+def test_a_failed_module_result_keeps_the_sink_where_it_is():
+    sink = SinkProcedure(state=SinkState.AWAIT_MODULE_RESULT, module_result=0)
+    step = sink.feed(Event.MODULE_RESULT)
+    assert step.after == SinkState.AWAIT_MODULE_RESULT
+    assert step.host_event is not None
+    assert step.host_event.result == Result.ERROR
+
+
+def test_the_sink_keeps_its_state_on_an_event_it_does_not_expect():
+    sink = SinkProcedure(state=SinkState.AWAIT_CALLBACK_A)
+    step = sink.feed(Event.STOP)
+    assert (step.after, step.expected) == (SinkState.AWAIT_CALLBACK_A, False)
+
+
+def test_the_sinks_dispatcher_also_refuses_to_run_inside_itself():
+    sink = SinkProcedure(busy=True)
+    with pytest.raises(ProtocolError):
+        sink.feed(Event.BEGIN)

@@ -606,8 +606,10 @@ to the bytes on the air is complete:
 3. When the peer accepts, the next state sends 0x74 with the two values its parameter table
    returns [fw acib 0x685f8, the send at 0x6866c].
 
-So nothing about the source role is missing from the controller; what is missing in this build
-is a host that asks for it, which is the point 3.6 makes about the field that would.
+So the source role is in the controller, byte for byte, and what is missing in this build is a
+host that asks for it, which is the point 3.6 makes about the field that would. One step of it
+is missing too, though, and 5.9 says exactly which: the procedure's third state waits for an
+event that nothing in this image posts.
 
 **The sink.** It copies the parsed fields into its own context, forwards an identical 0x73 to
 the second link [fw acib 0x303a8, the send at 0x30410], and only sends the accepted PDU back
@@ -828,13 +830,96 @@ at its own +0x10C [fw acib 0x68300, installed at 0x6246c]; and state 2 copies th
 request block at +0x6C and +0x6D to +0x6F [fw acib 0x6871a onwards]. What the four mean is
 not traced.
 
-Two limits worth stating plainly. Nothing in the image takes the address of the function that
-posts event 3, so what calls it is open. And the request block that state 2 builds is
+**One event has no poster.** Event 3, the one state 2 waits for, is posted by exactly one
+function, acib 0x66db0: no branch in the image reaches it and no word in the image equals its
+address, so nothing in this build calls it. The sink posts its own event 3 from the slot at
++0xC8, and in the source's set that slot holds a function that writes a trace line and returns
+[fw acib 0x66e10]. Every other event of this machine has a reachable poster, so the gap is one
+step wide: a source built from this firmware gets as far as sending 0x74 and stops there, and
+an implementation of the source role has to drive that step itself. This is the step 5.5 was
+missing when it said the chain was complete.
+
+One more limit worth stating plainly: the request block that state 2 builds is
 only known by its offsets, because what the three calls it is handed to do with it was not
 followed [fw acib 0x68748 to 0x68762]; the one field traced into it on purpose is bit 2 of the
 host's flag byte, at the block's +0x50 (5.1).
 
 `openulla/procedure.py` is this table, and `tests/test_procedure.py` walks it.
+
+### 5.10 The sink runs the same kind of machine, and there is a third
+
+The source's machine is not a special case. The firmware holds **three** of them, one per
+role, each with its own dispatcher, its own table and its own state field in the procedure
+object:
+
+| role | dispatcher | table | states | state field | re-entry guard |
+|---|---|---|---|---|---|
+| source | acib 0x6829c | acib 0xf2664 | 9 | +0x24 | bit 0 of +0x23 |
+| sink | acib 0x67318 | acib 0xf2628 | 8 | +0x1F | the byte at +0x1C |
+| third | acib 0x67ba4 | acib 0xf2648 | 7 | +0x1E | the byte at +0x1C |
+
+The three tables are one consecutive run of words in that order, and the run ends with a zero
+after the source's ninth entry. The state fields overlap, so only one role can be live in an
+object at a time, which is how the installer treats them: it writes one of three sets of
+callbacks into the module block and nothing else, choosing on the byte at 0x1000df69 and, for
+the two responder sets, on a second byte and one test [fw acib 0x6218c, the source set at
+0x621ac, the sink's at 0x62238 and the third at 0x622d0].
+
+**The slots and the event numbers line up between the roles.** That is what makes them the
+same machine: slot +0xE0 posts event 1 in both sets, +0xEC event 2, +0xC8 event 3, +0xD4
+event 4, +0xF0 event 5, +0xF4 event 6, +0xF8 event 7, and +0xD8 the last one, which is 8 for
+the sink and 9 for the source [fw acib 0x67706, 0x67584, 0x677aa, 0x677ba, 0x675a8, 0x675e0,
+0x675e8, 0x675f0 against the source's list in 5.9].
+
+The sink's eight states:
+
+| state | handler | events it expects | what it does | next |
+|---|---|---|---|---|
+| 0 | acib 0x677c8 | 0 | with the module's second role byte at 1, claims the link's slot and keeps the request; otherwise hands it to the second link; if that fails, refuses | 2, 1 or 0 |
+| 1 | acib 0x67858 | 1, 2 | event 1 claims the slot on both links; once its flag and both link tests pass, sends the accepted PDU | 2 or 1 |
+| 2 | acib 0x678f8 | 2, 3 | event 2 sends the accepted PDU, event 3 builds the request block and hands it down | 2 or 3 |
+| 3 | acib 0x679f8 | 4 | reports to the host, mode 1 and success or mode 0 and result 1 | 0 or 3 |
+| 4 | acib 0x67a6c | 5 | three calls into its module | 5 |
+| 5 | acib 0x67aa0 | 6 | registers a callback | 6 |
+| 6 | acib 0x67af0 | 7 | one call back into the module | 7 |
+| 7 | acib 0x67b18 | 8 | tears the link down and reports mode 0 with the success result | 0 |
+
+Two differences from the source are worth the ink. The sink's state 3 goes back to **0** when
+the mode is on, not forward: a responder has nothing left to drive, and the rest of its run is
+started by its second entry point, which sets the state to 4 and posts event 5 [fw acib
+0x67a20 returning 0, 0x675ac entering at 4]. And the sink keeps its one flag as a whole byte
+at +0x1D rather than as a bit [fw acib 0x67880].
+
+Its first entry point is the receive path: the handler for an incoming 0x73 runs the
+feature-enabled test and then the four checks of 5.4, and on acceptance calls the entry that
+puts the link in mode 0x35, sets the state to 0 and posts event 0
+[fw acib 0x63448, the checks at 0x675f4, the entry at 0x67588]. The caller tests only the low
+nibble of the byte the checks return and sends the whole byte, which is the other half of the
+0x81 to 0x86 encoding of 5.4 [fw acib 0x63492 onwards].
+
+**A refusal that is not in the reason list.** When the sink cannot hand the request to its
+second link, and the link can still carry a reply at all, it refuses with a reason byte of
+**0x24**, the standard "LMP PDU not allowed" code, not one of the ULLA reasons
+[fw acib 0x6781c to 0x67848]. The firmware's own reason formatter has no name for 0x24, so it
+prints the invalid-reason text for a byte the firmware itself sends. There is one more such
+site: when the role test before the four checks fails, the refusal is sent with 0x81, which
+is in the list [fw acib 0x634ce]. So a decoder has to pass an unknown reason byte through
+rather than treat it as malformed, which is what `openulla.lmp` does.
+
+Both answers go out through two senders worth naming, since they are the whole of the reply
+side: **accepted** is acib 0x3d1c6 and **not accepted** acib 0x3c934, which writes the
+rejected opcode and the reason into the body and sends it with opcode 4; the hold until both
+links are ready goes through acib 0x302f8, which picks one of the two by its verdict argument
+and is gated on two bytes of the sink's module block [fw acib 0x30300, 0x30306].
+
+**The third role** is published as its table and its two entry points only, because that is
+all that was read: the handlers are acib 0x67fac, 0x67fec, 0x68104, 0x68184, 0x681b4, 0x681f8
+and 0x6821c; its first entry sets the state to 0, puts the link in mode 0x35 and posts event 0
+[fw acib 0x67dd8], and a second posts event 5 [fw acib 0x67f58]. Its first state neither
+answers a peer nor hands anything to a second link [fw acib 0x67fbe]. The receive path picks
+it for a request arriving on a link other than the one whose handle the sink's module has
+stored, and ignores a second request on that stored link [fw acib 0x634e4] - so this earbud
+can hold two responder procedures at once, on two different links, in two different machines.
 
 ## 6. Controller interface: HCI vendor commands
 

@@ -36,7 +36,11 @@ from openulla.codes import (
     RejectReason,
     Result,
 )
-from openulla.procedure import HANDLER_ADDRESSES
+from openulla.procedure import (
+    HANDLER_ADDRESSES,
+    SINK_HANDLER_ADDRESSES,
+    THIRD_HANDLER_ADDRESSES,
+)
 from openulla.session import TRANSITIONS
 
 # acib, the Bluetooth controller image
@@ -120,6 +124,10 @@ EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
 PROCEDURE_LITERAL = 0x682FC  # where the dispatcher loads that address from
+SINK_TABLE = 0xF2628  # the sink's eight, 5.10
+SINK_LITERAL = 0x67370
+THIRD_TABLE = 0xF2648  # the third role's seven, 5.10
+THIRD_LITERAL = 0x67BFC
 
 # rkof, the RTKitOS features image
 TRANSITION_INDEX = 0x1BE53C
@@ -348,21 +356,36 @@ def check_names(acib, rkof):
     return True, f"{len(Mode)} modes, {len(Result)} results, {checked} reasons, 2 unnamed"
 
 
-def check_procedure_table(acib, rkof):
-    """The source procedure's nine state handlers, and the dispatcher that indexes them. [5.9]"""
-    if u32(acib, PROCEDURE_LITERAL) != PROCEDURE_TABLE:
-        return False, (
-            f"the dispatcher's literal at 0x{PROCEDURE_LITERAL:x} is now "
-            f"0x{u32(acib, PROCEDURE_LITERAL):x}, not the table"
-        )
-    for state, address in HANDLER_ADDRESSES.items():
-        got = u32(acib, PROCEDURE_TABLE + 4 * state.value)
-        if got != address | 1:
-            return False, f"state {state.value} now runs 0x{got & ~1:x}, not 0x{address:x}"
+def check_procedure_tables(acib, rkof):
+    """The three procedures' state handlers, and the dispatchers that index them. [5.9, 5.10]"""
+    for name, table, literal, addresses in (
+        ("sink", SINK_TABLE, SINK_LITERAL, list(SINK_HANDLER_ADDRESSES.values())),
+        ("third", THIRD_TABLE, THIRD_LITERAL, list(THIRD_HANDLER_ADDRESSES)),
+        ("source", PROCEDURE_TABLE, PROCEDURE_LITERAL, list(HANDLER_ADDRESSES.values())),
+    ):
+        if u32(acib, literal) != table:
+            return False, (
+                f"the {name} dispatcher's literal at 0x{literal:x} is now "
+                f"0x{u32(acib, literal):x}, not 0x{table:x}"
+            )
+        for state, address in enumerate(addresses):
+            got = u32(acib, table + 4 * state)
+            if got != address | 1:
+                return False, (
+                    f"{name} state {state} now runs 0x{got & ~1:x}, not 0x{address:x}"
+                )
+    # The three tables are one run of words, in that order, and the run ends after the last.
+    if SINK_TABLE + 4 * len(SINK_HANDLER_ADDRESSES) != THIRD_TABLE:
+        return False, "the sink's table no longer ends where the third's begins"
+    if THIRD_TABLE + 4 * len(THIRD_HANDLER_ADDRESSES) != PROCEDURE_TABLE:
+        return False, "the third table no longer ends where the source's begins"
     after = u32(acib, PROCEDURE_TABLE + 4 * len(HANDLER_ADDRESSES))
     if after != 0:
-        return False, f"the table does not end after nine entries: 0x{after:x}"
-    return True, f"table at acib 0x{PROCEDURE_TABLE:x}, {len(HANDLER_ADDRESSES)} states"
+        return False, f"the run does not end after the source's nine entries: 0x{after:x}"
+    return True, (
+        f"{len(SINK_HANDLER_ADDRESSES)} sink, {len(THIRD_HANDLER_ADDRESSES)} third and "
+        f"{len(HANDLER_ADDRESSES)} source states, acib 0x{SINK_TABLE:x} to 0x{PROCEDURE_TABLE:x}"
+    )
 
 
 def check_name_table_bounds(acib, rkof):
@@ -415,7 +438,7 @@ CHECKS = (
     ("mode-change event shape", check_event_shape),
     ("mode, result and reason names", check_names),
     ("name table bounds", check_name_table_bounds),
-    ("source procedure state table", check_procedure_table),
+    ("procedure state tables", check_procedure_tables),
     ("A2DP stream endpoints", check_a2dp_endpoints),
 )
 
