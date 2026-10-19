@@ -1615,16 +1615,46 @@ What stays open is narrower than before: the specification assigns a meaning to 
 values, and this document does not claim which of Apple's five fields belongs to which rate.
 The structure is recovered; the per-field mapping is not.
 
-**One more message in the same family, and it only applies in table 2.** 0x7B/0x0C carries a
-single byte (5.7). Its arm stores the byte, sign-extends it, and logs a second time when it is
-negative, so the value is **signed** even though what it passes on is the byte
-[fw acib 0x3c216, 0x3c226, 0x3c228, 0x3c23e]. The consumer is the interesting part: it reads the
-link's active packet-type table and **applies the value only when that table is 2**, taking an
-error path otherwise [fw acib 0x25c28, 0x25c2c the test, 0x25c4a the application, 0x25c50 the
-error]. It lands as one byte in a per-link record, in an array based at 0x1000B494 with a stride
-of **0xC4** indexed by the link's byte at +7, written at the record's +0x6B and gated on its
-+0x6A [fw acib 0x154e4 the writer, 0x154d0 the gate]. That same base carries the global this
-controller's five-slot maximum is written into, which 6.8 reaches from the other direction.
+**One more message in the same family, and it is how a link is told which of Apple's packets it
+may use.** 0x7B/0x0C carries a single byte (5.7). Its arm stores the byte, sign-extends it, and
+logs a second time when it is negative, so the value is **signed** in the diagnostic even though
+a byte is what it passes on, and then calls the applier [fw acib 0x3c216, 0x3c226, 0x3c228,
+0x3c23e]. The applier branches on a per-link gate, and the two paths are different things.
+
+- **Gate set**: it only *stores* the byte, at the record's +0x6B, and only while the link's
+  active packet-type table is 2; with any other table it takes an error path [fw acib 0x25c28,
+  0x25c2c the test, 0x25c4a the store through 0x154e4, 0x25c50 the error].
+- **Gate clear**: it *applies*. It compares the byte against the link's current permission,
+  writes it if they differ, and re-runs the packet-type chooser [fw acib 0x25c6e the read,
+  0x25c8c the write, 0x25c9a into 0x1373c, which is the function 5.13's chooser and mask filter
+  live in].
+
+The record is in the array based at 0x1000B494 with a stride of **0xC4** indexed by the link's
+byte at +7, the same base and stride 6.8 reaches from the other direction. **And the field the
+apply path writes is the record's +0x69, which is exactly the byte the table-2 branch of the
+mask filter consults** to decide which of mask bits 16 to 21 survive [fw acib 0x15498 writing
++0x69 when its flag is set, read at 0x13772 and tested at 0x13778 and 0x13782]. Those six bits
+are the six packet types of 5.13, so this byte is the permission for them. The gate is what
+separates storing from applying: the one function that replays a stored byte clears the gate
+first, and the message's own arm does not [fw acib 0x15636].
+
+**That gives a third confirmation of which of the six is 4 Mb/s and which is 8, and it comes
+from neither of the first two arguments.** The filter keeps the **even** mask bits when **bit 4**
+of the permission is set, and the **odd** ones only when **bits 3 and 4** are both set. One bit
+enables one rate and a second bit adds the other, which is the shape the specification uses for
+EDR's own two rates, and the two sets those tests pick out are precisely the two 5.13 named from
+the TYPE codes and from the payload arithmetic. `openulla/lmp.py` encodes the message and reports
+which types a given byte leaves selectable.
+
+There is a **standard counterpart**: the same reader and writer take a flag, and with it clear
+they touch the record's **+0x67** instead, which is the byte the filter's standard branch
+consults [fw acib 0x1547c and 0x15498 choosing between +0x69 and +0x67, the standard branch at
+0x1378c]. So there is one permission byte per packet-type family and the filter picks which to
+read.
+
+What the byte's other bits do is open, and so is why the diagnostic reads it signed. The
+replay's only caller is a function that clears the link's +0x185 and decrements a counter; what
+that function is has **not** been established, so it is not named here.
 
 So the 0x7B space holds, so far: five messages that mirror a standard procedure one for one, one
 that exists only for Apple's packet-type table, and the band messages of section 6. What it does
@@ -1722,14 +1752,21 @@ Their bodies, as each consumer reads them:
 | message | body fields |
 |---|---|
 | 0x22 | +6, low three bits; +0x14, bit 4 [fw acib 0x30a04, 0x30a0c, 0x30a1e] |
-| 0x23 | +4 and +5 bytes; +6 byte; +7 word; **+0xB flags**, bits 0, 1, 2, 3 and the sign each used; +0xC word; +0x10 halfword; and behind bit 3 of +0xB, +0x12 and **sixteen bytes at +0x13** [fw acib 0x3179e to 0x31828] |
-| 0x25 | +0x28, +0x29, +0x2F, so at least 48 bytes [fw acib 0x31ed0 to 0x31eda] |
+| 0x23 | +4 and +5 bytes; **+6 the standard permission byte**; +7 word; **+0xB flags**, bits 0, 1, 2, 3 and the sign each used; +0xC word; +0x10 halfword; and behind bit 3 of +0xB, +0x12 and **sixteen bytes at +0x13** [fw acib 0x3179e to 0x31828] |
+| 0x25 | +0x28, +0x29, +0x2F, so at least 48 bytes [fw acib 0x31ed0 to 0x31eda]; and **+0x2A and +0x2B are the two permission bytes**, the standard one and Apple's [fw acib 0x31f30 to 0x31f48] |
 | 0x26 | a byte whose low nibble is kept, a word at +1, a byte at +5 [fw acib 0x320a4, 0x320aa, 0x320ae, 0x320b6] |
 
 0x23 is much the largest, and what it does is write a whole link's worth of state: its fields
 land at the link's +0x6C, +0x70, +0x78, +0x8A, +0x16D, +0x16F, +0x171, +0x17A, +0x17B, +0x187,
 +0x18C and sixteen bytes at +0x18E, and one of its words goes out with the link's active
 packet-type table to a common call [fw acib 0x3178e to 0x31828, the table at 0x317c4].
+
+**And two of this sequence's fields are the permission bytes of 5.14**, which ties these four
+messages to the packet table rather than leaving them beside it. 0x23's byte at +6 goes to the
+standard permission, and 0x25 carries **both**: its +0x2A to the standard one and its +0x2B to
+Apple's, the byte that decides which of the six packet types the link may use [fw acib 0x317b4
+to 0x317ba, and 0x31f30 to 0x31f48 for the pair]. So whatever else this sequence is, part of
+what it configures is which packets the link is allowed to send.
 
 **What the sixteen bytes at 0x23's +0x13 are is not established, and this document does not
 guess.** Sixteen is the size of a great many things. It is flagged here for one practical

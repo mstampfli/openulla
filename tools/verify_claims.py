@@ -265,6 +265,23 @@ PROSE_CITATIONS = (
     ("the byte setter stores +0x730", 0x153E6, 0xF881, 0x0730),
     ("the twelve-bit length writer", 0x78CF4, 0xF361, 0x00CE),
     ("the ten-bit length writer", 0x78CE8, 0xF361, 0x00CC),
+    # The permission chain of 5.14, and the two messages of 5.15 that carry the same bytes.
+    ("0x0C's arm calls the applier", 0x3C23E, 0xF7E9, 0xFCDF),
+    ("the applier reads the permission", 0x25C6E, 0xF7EF, 0xFC05),
+    ("and writes it", 0x25C8C, 0xF7EF, 0xFC04),
+    ("then re-runs the chooser", 0x25C9A, 0xF7ED, 0xBD4F),
+    ("the replay clears the gate", 0x15636, 0xF880, 0x106A),
+    ("the writer picks Apple's permission", 0x154A2, 0xF880, 0x1069),
+    ("or the standard one", 0x154B0, 0xF880, 0x1067),
+    ("the table-2 branch reads Apple's", 0x13772, 0xF894, 0x0069),
+    ("testing bits 3 and 4", 0x13778, 0xF011, 0x0F18),
+    ("and bit 4 alone", 0x13782, 0x06C0, None),
+    ("the standard branch reads +0x67", 0x1378C, 0xF894, 0x1067),
+    ("0x23's standard permission at body+6", 0x317B4, 0x79A1, None),
+    ("with the flag clear", 0x317B8, 0x2200, None),
+    ("0x25's standard permission at body+0x2a", 0x31F30, 0xF894, 0x102A),
+    ("and Apple's at body+0x2b", 0x31F3C, 0xF894, 0x102B),
+    ("with the flag set", 0x31F42, 0x2201, None),
 )
 # The TLV parser behind the counted block, and the block this firmware's own reply opens with.
 TLV_TYPE_MASK_AT = 0x2983A  # and r1, r2, #0xf, the low nibble is the type

@@ -256,7 +256,7 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  shared host commands             7 of their twelve present and 5 absent, 0xFD02 mode 1 -> 2586 bytes, otherwise 339, landing at 0x1000b494+0x718 whose default is 2586, over 9 records of 0xc4
   PASS  payload header width             ten-bit length at bit 3 under mask 0xe007, twelve-bit under 0x8007, the wide builder tests table 2 and mask 0x3f0000
   PASS  the five paired procedures       5 senders choose between the two forms on bits [2, 5], the three power answers are one two-bit code five times, 9 pair immediates hold, 10 sequence gates, the TLV reply opens with type 0 carrying 0x5b
-  PASS  prose-only citations             22 prose citations hold their instruction
+  PASS  prose-only citations             38 prose citations hold their instruction
 29 of 29 claims hold
 ```
 
