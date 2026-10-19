@@ -246,6 +246,19 @@ GATE_14_LENGTH_ERROR = (0x3C31E, 0x2019)  # movs r0, #0x19
 GATE_14_LINK_BIT = (0x3C038, 0x0700)  # lsls r0, r0, #0x1c, so bit 3 of the link's +0x3C
 GATE_14_FEATURE_BIT = (0x3C046, 0xF000, 0x0001)  # and r0, r0, #1, so feature bit 0
 GATE_14_ERROR = (0x3C054, 0x2011)  # movs r0, #0x11, Unsupported Feature
+# The four-stage sequence of 0x22, 0x23, 0x25 and 0x26, ordered by two state bytes. [5.15]
+SEQUENCE_GATES = (
+    ("0x22 runs only while the outer state is 0", 0x309D4, 0xB108),  # cbz r0, ...
+    ("0x23 wants the outer state at 2", 0x31768, 0x2902),  # cmp r1, #2
+    ("0x23 wants the inner state at 0", 0x31770, 0x2A00),  # cmpeq r2, #0
+    ("0x25 wants the outer state at 2", 0x31E9E, 0x2A02),
+    ("0x25 wants the inner state at 0", 0x31EA2, 0x2B00),
+    ("0x25 writes 6 to the inner state", 0x31ECE, 0x2006),  # movs r0, #6
+    ("0x26 wants the outer state at 2", 0x32086, 0x2A02),
+    ("0x26 wants the inner state at 6", 0x3208A, 0x2B06),
+    ("the outer state is set to 2 elsewhere", 0x2F7DA, 0x2002),
+    ("and to 3 after that", 0x30190, 0x2003),
+)
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
@@ -1477,6 +1490,13 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
     at, first, second = GATE_14_FEATURE_BIT
     if (u16(acib, at), u16(acib, at + 2)) != (first, second):
         return False, f"0x{at:x} no longer masks the feature byte to bit 0"
+    # The sequence: what 0x25 writes has to be what 0x26 then requires, or it is not a sequence.
+    for what, at, want in SEQUENCE_GATES:
+        if u16(acib, at) != want:
+            return False, f"{what}: 0x{at:x} is 0x{u16(acib, at):04x}, not 0x{want:04x}"
+    writes = dict((at, want) for _, at, want in SEQUENCE_GATES)
+    if writes[0x31ECE] & 0xFF != writes[0x3208A] & 0xFF:
+        return False, "0x25 no longer writes the value 0x26 waits for"
     both, maxed = POWER_RESPONSE_MASKS
     if sorted(v for v in range(16) if both & (1 << v)) != [0, 3, 12, 15]:
         return False, "the first mask no longer selects the codes whose two fields are 0 or 3"
@@ -1485,7 +1505,7 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
     return True, (
         f"{len(PAIRED_PROCEDURES)} senders choose between the two forms on bits "
         f"{sorted(tested)}, the three power answers are one two-bit code five times, "
-        f"{len(PAIR_IMMEDIATES)} pair immediates hold"
+        f"{len(PAIR_IMMEDIATES)} pair immediates hold, {len(SEQUENCE_GATES)} sequence gates"
     )
 
 

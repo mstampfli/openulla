@@ -1694,17 +1694,52 @@ gives, but 5.7's *transmit* layout for the same message is a word and a halfword
 length split into different fields each way, which 5.7 already warns of in general and this is
 an instance of.
 
-**0x22, 0x23 and 0x25 resisted the same approach, and the reason is worth recording.** Their
-consumers are neighbours of 0x26's and all four read the same two globals, which looked like a
-module until the globals were counted: 0x1000329C is referenced 206 times in this payload and
-the hardware aperture three of them read is referenced 142 times. Shared use of the most-used
-addresses in an image is not evidence of anything, so nothing is claimed from it, and following
-their fields needs each consumer read by hand rather than scanned, because the pointer is moved
-between registers and reassigned. What is left is one real asymmetry, and it is this document's
-own: **0x22, 0x23 and 0x25 have no builder at all** (5.7), so they are messages this end accepts
-and never sends, while 0x26 has one. That belongs with the observation 5.6 already makes about
-0x24 and 0x28, and points the same way: the other end of this link implements more of the space
-than the earbud does.
+**0x22, 0x23, 0x25 and 0x26 are four stages of one sequence.** That their consumers are
+neighbours proves nothing on its own: the globals they share are referenced 206 and 142 times in
+this payload, and shared use of an image's most-used addresses is not evidence. Reading each
+consumer by hand is what settled it, and what they share is not the address but **two state
+bytes in it**, at the global's +1 and +4.
+
+| byte | written with | where |
+|---|---|---|
+| +1 | 1, then 2, then 3 | [fw acib 0x2f6c2, 0x2f7dc, 0x30196] |
+| +4 | 0, 2, 5, 6, 8 and 9 | [fw acib 0x31240, 0x3134e, 0x31ed8, 0x31d06, 0x31c30, 0x31d98] |
+
+Those two order the four messages:
+
+- **0x22** takes its main path only while +1 still reads **0**, and otherwise hands a reason of
+  9 to the common exit [fw acib 0x309d2, 0x309d4, 0x309f6].
+- **0x23, 0x25 and 0x26** all require +1 to read **2** [fw acib 0x31768, 0x31e9e, 0x32086].
+- Within that, +4 separates them: 0x23 wants **0**, 0x25 wants **0 and writes 6**, and 0x26
+  wants **6** [fw acib 0x31770, 0x31ea2, 0x31ed8, 0x3208a].
+
+So **0x25 is what makes 0x26 acceptable**, and the four are stages rather than four unrelated
+messages. 0x23 and 0x25 also look up the same link, by the halfword at the global's +0x1C, which
+is a handle rather than an index [fw acib 0x3177c, 0x31ec0, both through 0x5c2d4].
+
+Their bodies, as each consumer reads them:
+
+| message | body fields |
+|---|---|
+| 0x22 | +6, low three bits; +0x14, bit 4 [fw acib 0x30a04, 0x30a0c, 0x30a1e] |
+| 0x23 | +4 and +5 bytes; +6 byte; +7 word; **+0xB flags**, bits 0, 1, 2, 3 and the sign each used; +0xC word; +0x10 halfword; and behind bit 3 of +0xB, +0x12 and **sixteen bytes at +0x13** [fw acib 0x3179e to 0x31828] |
+| 0x25 | +0x28, +0x29, +0x2F, so at least 48 bytes [fw acib 0x31ed0 to 0x31eda] |
+| 0x26 | a byte whose low nibble is kept, a word at +1, a byte at +5 [fw acib 0x320a4, 0x320aa, 0x320ae, 0x320b6] |
+
+0x23 is much the largest, and what it does is write a whole link's worth of state: its fields
+land at the link's +0x6C, +0x70, +0x78, +0x8A, +0x16D, +0x16F, +0x171, +0x17A, +0x17B, +0x187,
++0x18C and sixteen bytes at +0x18E, and one of its words goes out with the link's active
+packet-type table to a common call [fw acib 0x3178e to 0x31828, the table at 0x317c4].
+
+**What the sixteen bytes at 0x23's +0x13 are is not established, and this document does not
+guess.** Sixteen is the size of a great many things. It is flagged here for one practical
+reason: anyone capturing this message should treat its body as sensitive and scrub it, which is
+the same rule the rest of this project already applies to captures.
+
+One real asymmetry remains and it is this document's own: **0x22, 0x23 and 0x25 have no builder
+at all** (5.7), so they are messages this end accepts and never sends, while 0x26 has one. That
+belongs with the observation 5.6 already makes about 0x24 and 0x28, and points the same way: the
+other end of this link implements more of the space than the earbud does.
 
 **0x15 and 0x16 are a band request and its answer.** 0x15's consumer replies with escape 0x7B
 extended opcode **0x16** [fw acib 0x29a2a, 0x29a2c]. 0x16's consumer requires the same 0x2F and

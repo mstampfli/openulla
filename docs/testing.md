@@ -227,6 +227,9 @@ Measured here already, with the bytes in [measurements.md](measurements.md):
 ## Sharing results
 
 Open an issue at <https://github.com/mstampfli/openulla/issues>. **Scrub captures before
-sharing**: a real Bluetooth trace can carry link keys and other people's device addresses. The
+sharing**: a real Bluetooth trace can carry link keys and other people's device addresses. One
+message found here deserves naming for the same reason: 0x7B/0x23 carries a whole link's worth
+of state including a sixteen-byte field whose contents are not established
+([protocol.md](protocol.md) 5.15). Treat its body as sensitive and do not post it. The
 opcodes, the parameters and the status codes are the part this project needs; the raw trace can
 stay with you, as both contributors in ulla.md section 8 chose to do.
