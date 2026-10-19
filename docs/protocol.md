@@ -1677,7 +1677,25 @@ resolve to addresses outside the payload, in the separately shipped text table; 
 data payloads that ship beside the code are filter coefficients, RIFF blobs and a manifest of
 per-blob hashes, not a graph description that names formats. So the audio format is
 configuration the node is handed at runtime, which makes it a measurement question, not a
-reading question. The DSP image names no audio codec anywhere relevant to this path either.
+reading question.
+
+That last point can be made sharper than "names no codec", because the DSP's own node and
+manager names are in the image and they are worth reading as a group. The only codec named
+anywhere in that payload is **Opus**, as `[OPUS]` and `OpusEncodeConnector`, and it sits among
+the Siri uplink names rather than on this path [fw sbd1 0x10cc3f, next to
+`SiriPreClientManager.cpp` at 0x10cc21]; AAC, SBC, LC3, ALAC and FLAC appear nowhere in it.
+The ULLA path's own pieces are named for what they do: two receive client managers, the
+ordinary one and the lite one [fw sbd1 `UllaRxClientMgr.cpp` at 0x10cbd5 and
+`UllaLiteRxClientMgr.cpp` at 0x10c841], and an encode node whose strings are `ULLA 1.0`,
+`ULLA 1.1`, `processBufferUllav11` and a generic `_prepareCodec` [fw sbd1 0x10cd11 onwards].
+So the DSP does name a codec, for another path, and names none for this one, which is what the
+paragraph above would predict of a format handed over at runtime.
+
+The same group of names settles what the "ADMA" of 7.1 is: the DSP side carries
+`admac_rx_src1`, `admac_rx_src4`, `admac_rx_src5` and a `DMAController.cpp` with
+`_allocateChannelBuffer` and `_enableChannel` [fw sbd1 0x10c700 onwards, 0x10ce0c], so the
+address the controller's start path insists on is a channel of the same Apple DMA controller
+the audio graph reads from. Both sides of that transfer are named; only its contents are not.
 
 **[open] Whether the audio payload is encrypted.** The setup adds no encryption of its own and
 establishes no key material (section 5.4), but whether the radio keeps applying the ordinary
