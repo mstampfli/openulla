@@ -2782,6 +2782,16 @@ comparison against 8000 there is a signed threshold on a computed value rather t
 [fw acib 0xda0c4]. What 7.2 does give is a hard bound of a different kind: a ten-bit length
 field, so no single buffer above 1023 bytes.
 
+**This is narrower than it was, and one part of the earlier search has to be withdrawn.** 6.8
+found the field a maximum packet size actually lives in, the halfword at 0x1000B494 + 0x718, and
+what writes it: it boots at 2586, 0xFD02 sets it to 2586 or 339, 0xFD7C and 0xFD7D set it to any
+halfword from their request, and **one internal path writes a hard-coded 1024** [fw acib
+0x57ac2]. That last one is a 0x400 this paragraph's own search would never have found, because it
+searched the audio transmit path for *comparisons* and this is a *write* three hundred kilobytes
+away from it. So "the only two comparisons against 0x400" was true and not the right question.
+What remains open is only the original one: the format string is unreferenced, so whichever
+constant that particular message would have printed is still unreachable.
+
 ## 8. What an implementation can do today
 
 With the above, a host that is already paired with the earbuds can [measured]:

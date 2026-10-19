@@ -449,8 +449,12 @@ Not recovered, and not to be filled in until it is:
 - Whether the audio payload is encrypted. The setup establishes no key material
   of its own, but whether the radio keeps applying the ordinary link cipher
   after the mode change is a hardware question these files cannot answer.
-- The maximum ULLA packet size: the firmware carries a message about it, but
-  only through a numbered trace mechanism whose text table ships separately.
+- The maximum ULLA packet size, in one narrow sense only: the firmware carries a
+  message about it through a numbered trace mechanism whose text table ships
+  separately, and that entry is unreferenced, so whatever constant it would
+  print is unreachable. The field a maximum packet size actually lives in is
+  known, along with everything that writes it, including a hard-coded 1024;
+  [protocol.md](protocol.md) sections 6.8 and 7.2.
 - Meaning of HDRp4, HDRp8, and which devices other than the Vision Pro use the
   lite mode.
 - The eight codec-specific bytes of the Apple vendor A2DP capability (4.6). The
