@@ -94,6 +94,15 @@ packet types permitted, with no negotiation at all (protocol.md 6.9). Neither is
 a host was previously known to need, and both are in the earbuds' own command table. On
 commodity silicon both should be refused, and which refusal arrives is the information.
 
+That last sentence now has a control. Both were sent to an Intel AX211 with no parameters, and
+both were refused exactly like an opcode nobody implements, as were the three other writers of
+the packet size ([measurements.md](measurements.md) 10a). They go out empty on purpose: a
+controller that has the opcode but wants arguments answers 0x12 and refuses before acting, so an
+empty request tells you whether the command exists without handing the controller a value that
+would change its state. `tools/ulla_probe.py` sends all five, and it will not report a verdict
+unless a command the controller *does* implement answers first - without that, a path reaching
+no controller looks exactly like a controller implementing none of them.
+
 **Then the exchange itself.** `openulla/` builds every PDU in the order a source must send them
 (protocol.md 8.1), and `tools/ulla_sink.py` answers as an earbud on a real L2CAP channel, so the
 host half of an implementation can be exercised before it touches earbuds. What to report: the
@@ -228,8 +237,10 @@ Measured here already, with the bytes in [measurements.md](measurements.md):
   (section 12).
 - A standard host cannot ask for the HDR packet types: the Create Connection packet-type field
   has no bit for 4-DH5 or 8-DH5 (section 9).
-- An Intel AX211 implements none of the vendor commands documented here, and answers 0x0C to
-  every unimplemented opcode in that group (section 10).
+- An Intel AX211 implements none of the vendor commands documented here, including the two
+  short levers above, and answers Command Status with 0x0C to every unimplemented opcode in
+  that group while answering Command Complete to the ones it does implement, which is the
+  discriminator (sections 10 and 10a).
 - **How HDR is selected, and what its packets are** (protocol.md 5.13, 6.8, 7.3). Apple's own
   LMP request negotiates a third packet-type table; six packet types live in it with known
   payload maxima and TYPE codes; vendor command 0xFD02's mode byte configures the controller for

@@ -72,7 +72,10 @@ class PacketType:
 
 # TYPE codes 3 and 4 are one-slot, 8 is one-slot in the higher tables, 0xA and 0xB are three
 # slots, 0xE and 0xF are five. That mapping is the specification's, and the six extra entries
-# reuse it, which is how their slot counts are known rather than guessed.
+# reuse it, which is how their slot counts are known rather than guessed. The firmware's fourth
+# parallel array agrees with every entry, but it states a three-valued *class* that its consumer
+# uses as an index, not a number of slots, so it corroborates the grouping and not the values
+# [fw acib the array at 0xf121e, indexed at 0x149f8 and scaled by eight at 0x149fc; 5.13].
 #
 # The `tables` column is not inferred at all: the firmware states each table's legal entries as
 # a single immediate, and `TABLE_LEGAL` below holds the three of them. An earlier version of
