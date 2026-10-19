@@ -390,7 +390,15 @@ def check_dma_descriptor(acib, rkof):
             return False, f"{what} is now bits {lsb} to {lsb + width - 1}"
     if u32(acib, 0xDAC94) != 0x3FFF8 or u32(acib, 0xDAC98) != 0x52980000:
         return False, "the channel register's mask or aperture changed"
-    return True, "count at 3+3, length at 6+10, flags at 16+4, aperture 0x52980000"
+    if u32(acib, 0x88404) != 0x521C01F0:
+        return False, "the descriptor is no longer read from 0x521c01f0"
+    # The two address windows the firmware's own pointer check accepts (7.2).
+    if u32(acib, 0x793FC) != 0x10030000 or u32(acib, 0x79400) != 0x521BFFFF:
+        return False, "the two accepted address windows changed"
+    return True, (
+        "count at 3+3, length at 6+10, flags at 16+4, descriptor at 0x521c01f0, "
+        "windows to 0x1002ffff and 0x521cffff"
+    )
 
 
 def check_getter_table(acib, rkof):

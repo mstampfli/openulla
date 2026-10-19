@@ -183,7 +183,7 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  mode, result and reason names    3 modes, 5 results, 12 reasons, 2 unnamed
   PASS  name table bounds                3 modes then 'ULLA_MGR_EVENT_UNKNOWN', 5 results then a null
   PASS  property getter table            10 ids checked against the table at acib 0xf7d60
-  PASS  audio DMA descriptor             count at 3+3, length at 6+10, flags at 16+4, aperture 0x52980000
+  PASS  audio DMA descriptor             count at 3+3, length at 6+10, flags at 16+4, descriptor at 0x521c01f0, windows to 0x1002ffff and 0x521cffff
   PASS  ULLA session commands            11 handlers as published, 0xFE16 bounded to 125 to 10000
   PASS  feature bit commands             0xFF77 sets bit 5, 0xFDF3 adds 0x56 over 0xa9, both at 0x10003290
   PASS  procedure state tables           8 sink, 7 third and 9 source states, acib 0xf2628 to 0xf2664

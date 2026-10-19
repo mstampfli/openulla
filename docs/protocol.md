@@ -1623,7 +1623,10 @@ the address **0x521C01F0** in a table slot and the programmer reads the word fro
 [fw acib 0x883f0 storing that address, 0x88658 handing it back, 0xdabcc reading through it].
 That address is in the same hardware aperture as the DMA register and the fixed buffer address
 below, so the descriptor is produced by the other side of that aperture rather than written by
-this firmware, which is why no writer for it exists to find. The function that unpacks it says
+this firmware, which is why no writer for it exists to find. The firmware draws that boundary
+itself: the pointer check in its property path accepts two windows and nothing else, RAM from
+0x10000000 to 0x1002FFFF and the aperture from **0x521C0000 to 0x521CFFFF**
+[fw acib 0x793ae to 0x793c4, the constants 0x10030000 and 0x521BFFFF plus 0x10001]. The function that unpacks it says
 exactly what each field is:
 
 | bits | meaning | where |
