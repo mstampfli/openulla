@@ -2341,6 +2341,15 @@ identifier as a halfword in a queue entry at 0x23ac6]. The absence means somethi
 same sender is how the earbud sends commands this document already attributes to it, 0x250 for
 6.0's own mode-change command and 0x377 for 5.8's feature-bit one, so the path is in use.
 
+Those 55 identifiers also split cleanly, which is what rules out the absence being an artefact
+of how they are encoded. Thirteen of them are below 0x40 and the rest are 0x116 or above, and
+**every one of the high group is a key in the controller's own vendor command table while not
+one of the low group is**. A random sample of the same size hits that table 22 times, so the
+high group is well above chance, and the partition by magnitude is sharper still. 0x102 would
+sit in the high group, where the hit rate is total; it is not there. What the low group is
+remains open, because the function that drains the queue and forms the actual opcode has not
+been found, so this document does not claim a mapping for them.
+
 Put beside the boot default, that settles who sets the packet size: **the controller comes up at
 the 8 Mb/s five-slot maximum, its own software never changes it, and only an external host
 narrows it.**
