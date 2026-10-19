@@ -206,6 +206,58 @@ class Reject:
         return f"category 0x{self.category:02x}, {error_name(self.error)}"
 
 
+class SimulatedSink:
+    """An in-process sink, so the probe's own code can be exercised without hardware.
+
+    What it answers is split deliberately. Discover and the capability reads answer from
+    `a2dp.ENDPOINTS`, which is the firmware's own table, so those replies are as proven as the
+    rest of this project. **Its SetConfiguration policy is its own invention**: it accepts the
+    advertised bytes exactly and refuses anything else with INVALID_CODEC_PARAMETER. That is a
+    choice made to exercise both branches of the probe, not a claim about what the earbuds do,
+    and it is the question the probe exists to ask. Reading a simulated refusal as evidence
+    about the device would be reading this docstring backwards.
+    """
+
+    def __init__(self, endpoints: dict[int, tuple[str, bytes]]) -> None:
+        # One SEID per codec, numbered from 1 in the order the firmware registers them.
+        self.by_seid: dict[int, tuple[int, bytes]] = {
+            seid: (codec, endpoints[codec][1])
+            for seid, codec in enumerate(sorted(endpoints), start=1)
+        }
+
+    def answer(self, message: bytes) -> bytes:
+        head = parse_header(message)
+        if head.signal == SIG_DISCOVER:
+            body = b"".join(
+                bytes(((seid << 2), 0x08)) for seid in sorted(self.by_seid)
+            )
+            return header(head.label, SIG_DISCOVER, RESPONSE_ACCEPT) + body
+        if head.signal in (SIG_GET_CAPABILITIES, SIG_GET_ALL_CAPABILITIES):
+            seid = message[2] >> 2
+            if seid not in self.by_seid:
+                return header(head.label, head.signal, RESPONSE_REJECT) + bytes((0x12,))
+            codec, specific = self.by_seid[seid]
+            body = MEDIA_TRANSPORT.to_bytes() + media_codec(codec, specific).to_bytes()
+            return header(head.label, head.signal, RESPONSE_ACCEPT) + body
+        if head.signal == SIG_SET_CONFIGURATION:
+            seid = message[2] >> 2
+            if seid not in self.by_seid:
+                return header(head.label, head.signal, RESPONSE_REJECT) + bytes(
+                    (CATEGORY_MEDIA_CODEC, 0x12)
+                )
+            codec, specific = self.by_seid[seid]
+            offered = parse_capabilities(message[4:])
+            for capability in offered:
+                if capability.category != CATEGORY_MEDIA_CODEC:
+                    continue
+                if capability.codec != codec or capability.codec_specific != specific:
+                    return header(head.label, head.signal, RESPONSE_REJECT) + bytes(
+                        (CATEGORY_MEDIA_CODEC, 0xE0)
+                    )
+            return header(head.label, head.signal, RESPONSE_ACCEPT)
+        return header(head.label, head.signal, GENERAL_REJECT)
+
+
 def parse_set_configuration_response(data: bytes) -> Reject | None:
     """None when the configuration was accepted, otherwise what the sink objected to.
 

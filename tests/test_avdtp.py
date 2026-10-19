@@ -105,3 +105,60 @@ def test_the_probe_alters_only_the_eight_bytes_and_offers_the_whole_capability()
         differing = [i for i in range(len(whole)) if whole[i] != candidate[i]]
         assert differing == [first + index]
         assert candidate[:first] == whole[:first]
+
+
+def test_the_simulated_sink_answers_from_the_firmware_s_own_table():
+    """Discovery and the capability reads are as proven as the rest of the project."""
+    sink = avdtp.SimulatedSink(a2dp.ENDPOINTS)
+    endpoints = avdtp.parse_discover(sink.answer(avdtp.discover()))
+    assert len(endpoints) == len(a2dp.ENDPOINTS)
+    assert all(e.is_sink and not e.in_use for e in endpoints)
+    seen = {}
+    for endpoint in endpoints:
+        reply = sink.answer(avdtp.get_capabilities(endpoint.seid, every=True))
+        assert avdtp.parse_header(reply).message_type == avdtp.RESPONSE_ACCEPT
+        capabilities = avdtp.parse_capabilities(reply[2:])
+        assert capabilities[0] == avdtp.MEDIA_TRANSPORT
+        codec = capabilities[1].codec
+        assert codec is not None
+        seen[codec] = capabilities[1].codec_specific
+    assert seen == {codec: bytes(value[1]) for codec, value in a2dp.ENDPOINTS.items()}
+    # An unknown endpoint is refused rather than answered with somebody else's capability.
+    assert avdtp.parse_header(
+        sink.answer(avdtp.get_capabilities(0x3F, every=True))
+    ).message_type == avdtp.RESPONSE_REJECT
+
+
+def test_the_simulated_sink_exercises_both_branches_of_the_probe():
+    """Its refusal policy is its own; what is checked here is that both paths are reachable."""
+    sink = avdtp.SimulatedSink(a2dp.ENDPOINTS)
+    endpoints = avdtp.parse_discover(sink.answer(avdtp.discover()))
+    vendor = next(
+        e.seid for e in endpoints
+        if avdtp.parse_capabilities(
+            sink.answer(avdtp.get_capabilities(e.seid, every=True))[2:]
+        )[1].codec == 0xFF
+    )
+    whole = a2dp.ENDPOINTS[0xFF][1]
+    unaltered = avdtp.set_configuration(
+        acp_seid=vendor, int_seid=1,
+        capabilities=(avdtp.MEDIA_TRANSPORT, avdtp.media_codec(0xFF, whole)),
+    )
+    assert avdtp.parse_set_configuration_response(sink.answer(unaltered)) is None
+    changed = bytearray(whole)
+    changed[-1] ^= 0x01
+    altered = avdtp.set_configuration(
+        acp_seid=vendor, int_seid=1,
+        capabilities=(avdtp.MEDIA_TRANSPORT, avdtp.media_codec(0xFF, bytes(changed))),
+    )
+    reject = avdtp.parse_set_configuration_response(sink.answer(altered))
+    assert reject is not None and reject.category == avdtp.CATEGORY_MEDIA_CODEC
+
+
+def test_the_probe_runs_end_to_end_against_the_simulation():
+    """The tool's own path, verified without hardware, which is all a simulation can verify."""
+    import a2dp_probe
+
+    assert a2dp_probe.main(["--simulate", "--probe", "--live", "00:00:00:00:00:00"]) == 0
+    # The dry run needs no address check either way and must send nothing.
+    assert a2dp_probe.main(["--simulate", "--probe"]) == 0

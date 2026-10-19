@@ -511,8 +511,11 @@ link keys and other people's device addresses.
   again cannot settle their layout, because a read returns what the device
   offers rather than what it checks. Read-only by default, and the probe is a
   dry run unless `--live` is passed: a SetConfiguration changes the sink's
-  state and needs BlueZ's own media plugin out of the way. **Not yet run
-  against hardware.**
+  state and needs BlueZ's own media plugin out of the way. `--simulate` runs
+  the whole path against an in-process sink, whose capability answers come from
+  the firmware's own table while its refusal policy is the simulator's own
+  invention and says nothing about the earbuds. **Not yet run against
+  hardware.**
 
 ## Reproducing
 

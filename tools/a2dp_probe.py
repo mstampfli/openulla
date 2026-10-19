@@ -38,7 +38,23 @@ from openulla.transport import L2capTransport
 MAC_LENGTH = 17
 
 
-def exchange(link: L2capTransport, message: bytes, timeout: float) -> bytes:
+class Simulated:
+    """Stands in for a real channel, answering from `openulla.avdtp.SimulatedSink`."""
+
+    def __init__(self) -> None:
+        self.sink = avdtp.SimulatedSink(a2dp.ENDPOINTS)
+
+    def send(self, data: bytes) -> None:
+        self.pending = self.sink.answer(data)
+
+    def recv(self, timeout: float | None = None) -> bytes:
+        return self.pending
+
+    def close(self) -> None:
+        return None
+
+
+def exchange(link: L2capTransport | Simulated, message: bytes, timeout: float) -> bytes:
     link.send(message)
     return link.recv(timeout=timeout)
 
@@ -85,8 +101,8 @@ def alterations(capability: bytes, first: int) -> list[tuple[int, bytes]]:
     return out
 
 
-def probe(link: L2capTransport | None, seid: int, codec: int, capability: bytes, first: int,
-          timeout: float) -> int:
+def probe(link: L2capTransport | Simulated | None, seid: int, codec: int, capability: bytes,
+          first: int, timeout: float) -> int:
     """Offer the whole capability unaltered, then with each byte from `first` on flipped."""
     refused = 0
     offers: list[tuple[str, bytes]] = [("unaltered", capability)]
@@ -115,16 +131,21 @@ def probe(link: L2capTransport | None, seid: int, codec: int, capability: bytes,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("address", help="the earbuds' Bluetooth address")
+    parser.add_argument("address", nargs="?",
+                        help="the earbuds' Bluetooth address; not needed with --simulate")
     parser.add_argument("--probe", action="store_true",
                         help="offer configurations with one byte altered at a time")
     parser.add_argument("--live", action="store_true",
                         help="actually send them; without this --probe is a dry run")
+    parser.add_argument("--simulate", action="store_true",
+                        help="run against an in-process sink instead of hardware, which"
+                             " exercises this tool's own path; its refusal policy is the"
+                             " simulator's invention and says nothing about the earbuds")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args(argv)
 
-    if len(args.address) != MAC_LENGTH:
-        parser.error("an address looks like AA:BB:CC:DD:EE:FF")
+    if not args.simulate and (args.address is None or len(args.address) != MAC_LENGTH):
+        parser.error("an address looks like AA:BB:CC:DD:EE:FF, or pass --simulate")
     if args.live and not args.probe:
         parser.error("--live only means anything with --probe")
 
@@ -141,11 +162,17 @@ def main(argv: list[str] | None = None) -> int:
         print("\nPass --live to send them, with BlueZ's media plugin out of the way.")
         return 0
 
-    try:
-        link = L2capTransport.connect(args.address, psm=avdtp.PSM)
-    except (OSError, ProtocolError) as exc:
-        print(f"could not open the signalling channel: {exc}")
-        return 1
+    link: L2capTransport | Simulated
+    if args.simulate:
+        print("\nsimulated: the capability reads come from the firmware's own table, and the")
+        print("refusals are this simulator's policy, not the earbuds'.")
+        link = Simulated()
+    else:
+        try:
+            link = L2capTransport.connect(args.address, psm=avdtp.PSM)
+        except (OSError, ProtocolError) as exc:
+            print(f"could not open the signalling channel: {exc}")
+            return 1
     try:
         endpoints = avdtp.parse_discover(exchange(link, avdtp.discover(), args.timeout))
         print(f"\n{len(endpoints)} endpoints:")
