@@ -263,8 +263,12 @@ other site alone [fw rkof 0x27f60 against 0x27bb0]. So a host should expect type
 still be wrong is a computed branch into that wrapper, which these searches cannot exclude.
 
 What the fields *mean* is still not established, for any of the three types: they are counters
-in a controller block, nothing in rkof reads one, and **no site in acib loads 0xE911 as an
-immediate**, so where type 2's 61 bytes are produced is open as well. The statistics block
+in a controller block and nothing in rkof reads one. **Type 2 has no producer anywhere in this
+firmware.** Searching every payload for the whole notification family, in both Thumb immediate
+encodings and, for the DSP, as an AArch64 MOVZ or MOVK and as aligned data, finds 0x0A08 and
+0xE90D built in the controller and nothing else: rkof holds only its own size checks and
+listener registrations, and aopf, rtpf, rkos, apmu, nerf, phyb and sbd1 do not mention the
+family at all. So 0xE911 has a listener, a declared length and nothing to send it. The statistics block
 itself is reached through a global: the caller loads the producer out of the table at acib
 0xf2284 by an index at `[[0x1000db7c+0xc]]` and passes it `&[0x1000db7c+0x10]`, which is the
 block [fw acib 0x55450..0x55470].
