@@ -773,9 +773,9 @@ block sections 5.10 and 5.2 use is the same structure at +0xC.)
 |---|---|---|
 | byte 0, bit 5 | vendor command 0xFF77 | one parameter byte: non-zero sets it, zero clears it [fw acib 0x192f4 to 0x19306] |
 | byte 0, bits 1, 2, 4 and 6 | vendor command **0xFDF3** | the same shape: the byte is masked to 0xA9 and this group, 0x56, is added when the parameter is non-zero [fw acib 0x16b20, table index 162 of 6] |
-| byte 0, bit 0 | another command of that family | [fw acib 0x18054] |
-| byte 0, bits 1, 3 and 4 | another | [fw acib 0x16a90] |
-| byte 0, bit 7 | another | [fw acib 0x174b8] |
+| byte 0, bit 0 | vendor command 0xFFA1 | [fw acib handler 0x18048, the store at 0x18066] |
+| byte 0, bits 1, 3 and 4 | vendor command 0xFDEF | each bit on its own condition [fw acib handler 0x16a3c, the store at 0x16aa4] |
+| byte 0, bit 7 | vendor command 0xFE8A | [fw acib handler 0x174bc, the store at 0x174cc] |
 | byte 1, bits 2 and 4; byte 3, bits 6 and 7 | the controller itself | one function sets them, after another has zeroed all four bytes [fw acib 0x2965c, the clear at 0x2964c] |
 
 Two of those rows matter for anyone driving this from a host. The band family needs 0xFF77,
@@ -784,7 +784,10 @@ the controller's own half of 0xFE50's gate is zero and the non-zero path is refu
 the gate at acib 0x1db5e). 0xFF78 says the same thing from the other side by refusing outright
 while bit 5 is clear [fw acib 0x19348]. The 0xA9 and 0x56 masks are complementary, so that
 byte really is two groups of four bits, and the identity check below reduces an advertised copy
-to the first group.
+to the first group. The three other opcodes in that table were resolved the same way as
+0xFDF3, by finding the handler the store belongs to and reading its key [fw acib handler table
+0xf1230, keys 0xf1928]; what their bits gate is not traced, and only bits 1, 2, 5 and 6 have
+known uses so far.
 
 One quirk, for anyone comparing against a capture: when a per-link identity check matches (a
 halfword of 0xF, a byte of at most 10, and a ten-byte comparison at the link's 0x4E), the low
