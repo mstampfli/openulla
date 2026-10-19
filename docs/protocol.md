@@ -1612,6 +1612,30 @@ are one property of the session object:
 | 0xFE58 | property **0x1B3**, then reports to the host [fw acib 0x48722 into 0x11e8c] | 0x0C |
 | 0xFE7B | property **0x1AB** with the byte, and no role branch at all [fw acib 0x1d47c] | - |
 
+**The other half of that gate is the interesting half.** When the link is already up, each of
+the five takes a path that never touches the session object, and the role test decides which:
+0x61ab4, the same "the module is on and this end is the source" test as everywhere else. What
+they do there is this same property bus with different ids, and three of the branches are
+refusals:
+
+| command | source role | the other role |
+|---|---|---|
+| 0xFE52 | property **0x25**, after one call with (the module block's +0x64 == 1) [fw acib 0x66b58] | property **0x19** [fw acib 0x63294] |
+| 0xFE53 | answers the host, then property **0x2B** into a buffer whose word at +8 and byte at +0xC it reads back [fw acib 0x1de72..0x1de86] | **refused, 0x0C** [fw acib 0x1deae] |
+| 0xFE55 | the session path's own tail, with the role coming from this test instead [fw acib 0x1ddf2 into 0x1de06] | the same |
+| 0xFE57 | **refused, 0x0C** [fw acib 0x1d93a] | one call, then property **0x1A4** with the command's word [fw acib 0x1d914..0x1d920] |
+| 0xFE58 | **refused, 0x0C** [fw acib 0x1d982] | answers the host, then property **0x1A**, and on a 1 the host report builder [fw acib 0x6329a] |
+
+So on a live link **0xFE53 is the source's to use and 0xFE57 and 0xFE58 are the other role's**,
+while 0xFE52 serves both with different ids. That matters for section 7.1: the stream's address
+command goes to a different property depending on whether a ULLA link is up, 0x1A4 rather than
+0x1B1, and on the source side it is refused outright.
+
+Those five ids resolve through the same table as the rest: 0x19 to acib 0xc79dc, 0x1A to
+0xc7cd4, 0x25 to 0xc7dcc, 0x2B to 0xc80ec and 0x1A4 to 0xda944. The first four are one module
+of their own, which reads a record out of an index and acts on it; what each one does there is
+open, and this document does not guess.
+
 "Property" is this document's word for them, and they are not opaque: **every id resolves to a
 function in this image.** The call packs the id with an input and an output pointer
 [fw acib 0x79454, the wrappers 0x7951a and 0x79522] and the dispatcher looks the id up in a

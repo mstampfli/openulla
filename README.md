@@ -414,7 +414,8 @@ link keys and other people's device addresses.
   address, the PDU lengths, both dispatch tables, every body builder, the
   event's shape, the code names and their tables' bounds, all three procedures'
   state tables, the property getter table, the session commands and the two
-  feature-bit commands, the stream endpoints, the three report listeners with
+  feature-bit commands, the stream endpoints, the five gated session commands'
+  link-up paths, the three report listeners with
   their lengths and the controller-side producer that fills one of them, the
   per-link procedure scheduler's id space and arms, and the
   manifest of the compressed copy the container carries of itself. It fails on

@@ -144,6 +144,28 @@ GETTERS = {
     0x1B3: 0xDC200,
     0x1AB: 0xDC168,
 }
+# The link-up half of the five gated session commands [6.6]
+GATE = 0x1DFE0  # the "is the link already up" gate each of them calls first
+ROLE_TEST = 0x61AB4  # the module is on and this end is the source
+GATED_COMMANDS = {  # opcode: where it calls the gate, where it calls the role test
+    0xFE52: (0x1DD8C, 0x1DD92),
+    0xFE53: (0x1DE66, 0x1DE6C),
+    0xFE55: (0x1DDE8, 0x1DDEE),
+    0xFE57: (0x1D908, 0x1D90E),
+    0xFE58: (0x1D956, 0x1D95C),
+}
+LINK_UP_PROPERTIES = (  # the ids those paths use, where each is loaded
+    (0x66B6C, 0x25),
+    (0x63294, 0x19),
+    (0x6329E, 0x1A),
+    (0x1DE78, 0x2B),
+    (0x1D91C, 0x1A4),
+)
+LINK_UP_REFUSALS = (  # status site, its halfword, opcode site, the opcode it answers for
+    (0x1DEB0, 0x210C, 0x1DEB2, 0xFE53),
+    (0x1D93A, 0x220C, 0x1D948, 0xFE57),
+    (0x1D984, 0x210C, 0x1D986, 0xFE58),
+)
 # The producer of report type 1, in the controller rather than in rkof [2.6]
 PRODUCER = 0x121D2  # held in the module descriptor at acib 0xf2288
 PRODUCER_POINTER = 0xF2288
@@ -282,6 +304,18 @@ def thumb_expand(value):
     rotation = value >> 7
     unrotated = 0x80 | (value & 0x7F)
     return ((unrotated >> rotation) | (unrotated << (32 - rotation))) & 0xFFFFFFFF
+
+
+def mov_imm(img, off):
+    """The immediate a Thumb MOV carries, either the 16-bit form or the wide T2 one."""
+    first = u16(img, off)
+    if first & 0xF800 == 0x2000:
+        return first & 0xFF
+    second = u16(img, off + 2)
+    if first & 0xFBEF != 0xF04F:
+        return None
+    field = (((first >> 10) & 1) << 11) | (((second >> 12) & 7) << 8) | (second & 0xFF)
+    return thumb_expand(field)
 
 
 def add_imm(img, off):
@@ -702,6 +736,35 @@ def check_report_listeners(acib, rkof, ctab):
     )
 
 
+def check_session_command_gates(acib, rkof, ctab):
+    """The link-up half of the five gated session commands: gate, role test, ids, refusals. [6.6]
+
+    Every one of them asks the same two questions in the same order, and what it does next is
+    a property id or a refusal, so all three are read out of the instructions here.
+    """
+    for opcode, (gate_at, role_at) in GATED_COMMANDS.items():
+        goes = wide_branch(acib, gate_at)
+        if goes != GATE:
+            return False, f"0x{opcode:04x} calls {goes and hex(goes)} first, not the gate"
+        goes = wide_branch(acib, role_at)
+        if goes != ROLE_TEST:
+            return False, f"0x{opcode:04x} does not ask the role test at 0x{role_at:x}"
+    for at, want in LINK_UP_PROPERTIES:
+        got = mov_imm(acib, at)
+        if got != want:
+            return False, f"0x{at:x} loads {got and hex(got)}, not property 0x{want:x}"
+    for status_at, status, opcode_at, opcode in LINK_UP_REFUSALS:
+        if u16(acib, status_at) != status:
+            return False, f"the refusal at 0x{status_at:x} is 0x{u16(acib, status_at):04x}"
+        if movw(acib, opcode_at) != opcode:
+            return False, f"0x{opcode_at:x} no longer answers for 0x{opcode:04x}"
+    return True, (
+        f"{len(GATED_COMMANDS)} commands through one gate, "
+        f"{len(LINK_UP_PROPERTIES)} ids on the link-up paths, "
+        f"{len(LINK_UP_REFUSALS)} role refusals of 0x0C"
+    )
+
+
 def check_report_producer(acib, rkof, ctab):
     """The two report producers in the controller: the message, the ids, the two copies. [2.6]
 
@@ -866,6 +929,7 @@ CHECKS = (
     ("procedure state tables", check_procedure_tables),
     ("A2DP stream endpoints", check_a2dp_endpoints),
     ("report listeners", check_report_listeners),
+    ("session command gates", check_session_command_gates),
     ("report producers", check_report_producer),
     ("procedure scheduler", check_procedure_scheduler),
     ("ctab is the table again", check_ctab_manifest),
