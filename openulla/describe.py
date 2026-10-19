@@ -148,6 +148,20 @@ def describe_lmp(data: bytes) -> list[str]:
             + ("set" if parsed.word & (1 << lmp.FEATURE_BIT_MODE_PROCEDURE) else "clear"),
             "    a feature is usable only where both ends' words carry its bit",
         ]
+    elif isinstance(parsed, lmp.PacketTableRequest):
+        selectable = parsed.selectable()
+        names = {0: "the basic-rate packets", 1: "the EDR packets"}
+        lines += [
+            f"  the packet-type table request (0x7B/0x0D): table {parsed.table}",
+            "    " + names.get(
+                parsed.table,
+                "Apple's table, the only one that can select the six packet types of 5.13",
+            ),
+            f"    {len(selectable)} packet types become selectable, the largest carrying "
+            f"{max(p.payload for p in selectable)} bytes",
+            "    the specification's own form of this request, 0x7F/0x0B, bounds the table "
+            "to 1",
+        ]
     elif isinstance(parsed, lmp.AllowedBands):
         lines += [f"  allowed-band mask 0x{parsed.mask:02x}"]
         lines += [f"    band {line}" for line in describe_bands(parsed.mask)]

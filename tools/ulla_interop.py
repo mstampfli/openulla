@@ -74,6 +74,8 @@ def vectors():
         ("sibling", "configure-statistics", "4", sibling.configure_statistics(1, 0x20, 0)),
         ("lmp", "features-request", "5.8", lmp.Features(0x60).to_bytes()),
         ("lmp", "features-reply", "5.8", lmp.Features(0x60, reply=True).to_bytes()),
+        ("lmp", "packet-table-apple", "5.13", lmp.PacketTableRequest(2).to_bytes()),
+        ("lmp", "packet-table-edr", "5.13", lmp.PacketTableRequest(1).to_bytes()),
         ("lmp", "allowed-bands", "6.2", lmp.AllowedBands(BANDS).to_bytes()),
         ("lmp", "band-ranges", "6.5", lmp.BandRanges(
             [lmp.BandRange(1, 0, 4), lmp.BandRange(2, 0, 5), lmp.BandRange(5, 1, 3)]

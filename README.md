@@ -280,15 +280,32 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
   [docs/protocol.md](docs/protocol.md) 2.6.
 - **The implementation exists**, in `openulla/`, with a simulated earbud, a
   decoder, a capture reader, an L2CAP sink server and a verifier that
-  re-derives twenty-four groups of claims from a firmware image, the audio
+  re-derives twenty-five groups of claims from a firmware image, the audio
   DSP's own node among them. See
   [docs/implementation.md](docs/implementation.md).
 - **A Linux laptop can start a ULLA session and be told it succeeded.** Sending
   seven bytes over an ordinary Bluetooth channel moves the earbuds' session
   machine through three states and returns a success status. Measured, with
   the bytes, in [docs/measurements.md](docs/measurements.md).
-- **Apple's HDR packet modes are announced nowhere a standard host can see
-  them**, which is four findings pointing one way rather than a guess. The
+- **How Apple's HDR packet modes are selected, and what they are.** Apple's
+  escape space carries its own packet-type-table request, 0x7B/0x0D, which is
+  the specification's 0x7F/0x0B in every respect but one: its table selector
+  admits a **third** table. One function in the firmware sends whichever of the
+  two forms the link's capability allows, both receive arms refuse an
+  out-of-range table with the same error at the same instruction, and nothing
+  else in the payload calls the collision check they share. The controller then
+  holds an eighteen-entry packet-type table where Bluetooth defines twelve, and
+  the twelve specified payload maxima are all present, byte for byte, which is
+  what proves the table is what it looks like. The six left over are selectable
+  only in that third table, carry 112, 242, 703, 1288, 1416 and 2586 bytes, and
+  reuse table 1's own TYPE codes pair for pair, so their slot counts and which
+  of each pair is faster carry straight across. Dividing the payloads by 4 and
+  8 Mb/s gives one consistent payload window per slot length, exactly as the
+  specified entries do at 1, 2 and 3. Apple declares two proprietary rates for
+  this device, HDR4 and HDR8, and names its five-slot pair 4-DH5 and 8-DH5.
+  [docs/protocol.md](docs/protocol.md) 5.13.
+- **They are announced nowhere a standard host can see them**, which is four
+  findings pointing one way rather than a guess. The
   Create Connection packet-type field has no bit for 4-DH5 or 8-DH5; the LMP
   packet-type-table request, which is how Enhanced Data Rate's packet set was
   switched in, bounds its byte to 0 or 1 and refuses anything above with

@@ -31,7 +31,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla import a2dp, bands, hci, lmp
+from openulla import a2dp, bands, hci, lmp, packets
 from openulla.codes import (
     FIRMWARE_NAMES,
     REASON_FIRMWARE_NAMES,
@@ -149,6 +149,19 @@ FEATURES_PAGE_0 = 0x10003288
 FEATURES_PAGE_12 = 0x100033A4  # page 1, then page 2 in the eight bytes after it
 FEATURES_PAGE_0_LOAD = 0x27750
 FEATURES_PAGE_12_LOAD = 0x27764
+# Apple's own packet-type table, and the six packets only it can select. [5.13]
+APPLE_TABLE_EXT = 0x0D
+APPLE_TABLE_ARM = 0x3C0BE
+APPLE_TABLE_CMP = 0x3C0C2  # cmp r0, #2, where the specification's arm has cmp r0, #1
+PACKET_MASKS = 0xF11A0  # one 32-bit allowed mask per entry
+PACKET_PAYLOADS = 0xF11E8  # one halfword payload maximum per entry
+PACKET_TYPE_CODES = 0xF120C  # one byte of baseband TYPE per entry
+# The sender that chooses between the two forms: (where the immediate is, what it must be).
+TABLE_SENDER_ARMS = (
+    (0x29E46, 0x217F, 0x29E3A, 0x220B),  # movs r1, #0x7f / movs r2, #0xb
+    (0x29E60, 0x217B, 0x29E54, 0x220D),  # movs r1, #0x7b / movs r2, #0xd
+)
+TABLE_SENDER_VALUE = 0x29E1A  # ldrb.w r1, [r4, #0x17f], the value it sends
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
@@ -1177,6 +1190,54 @@ def check_standard_rate_roads(acib, rkof, ctab, sbd1):
     )
 
 
+def check_packet_type_table(acib, rkof, ctab, sbd1):
+    """The eighteen-entry packet-type table, and the request that reaches its third table. [5.13]
+
+    Every number in `openulla/packets.py` is read back out of the image here, so the table the
+    documentation prints cannot drift from the firmware it came from. The twelve specified
+    payload maxima are checked as a set as well, because they are what identifies the table.
+    """
+    for entry in packets.TABLE:
+        mask = u32(acib, PACKET_MASKS + 4 * entry.index)
+        if mask != 1 << entry.mask_bit:
+            return False, (
+                f"entry {entry.index} ({entry.name}) masks 0x{mask:08x}, "
+                f"not bit {entry.mask_bit}"
+            )
+        payload = u16(acib, PACKET_PAYLOADS + 2 * entry.index)
+        if payload != entry.payload:
+            return False, f"entry {entry.index} carries {payload} bytes, not {entry.payload}"
+        code = acib[PACKET_TYPE_CODES + entry.index]
+        if code != entry.type_code:
+            return False, f"entry {entry.index} has TYPE 0x{code:x}, not 0x{entry.type_code:x}"
+    present = {u16(acib, PACKET_PAYLOADS + 2 * i) for i in range(len(packets.TABLE))}
+    if not set(packets.SPECIFIED_PAYLOADS) <= present:
+        missing = sorted(set(packets.SPECIFIED_PAYLOADS) - present)
+        return False, f"the specified payload maxima {missing} are not in the table"
+    extra = sorted(present - set(packets.SPECIFIED_PAYLOADS))
+    if len(extra) != len(packets.APPLE_MASK_BITS):
+        return False, f"{len(extra)} unspecified payloads, not {len(packets.APPLE_MASK_BITS)}"
+
+    arm = ESCAPE_7B_TABLE + 2 * u16(acib, ESCAPE_7B_TABLE + 2 * (APPLE_TABLE_EXT - 1))
+    if arm != APPLE_TABLE_ARM:
+        return False, f"Apple's packet-table arm is now 0x{arm:x}, not 0x{APPLE_TABLE_ARM:x}"
+    if u16(acib, APPLE_TABLE_CMP) != 0x2800 | packets.MAX_TABLE:
+        return False, (
+            f"its bound at 0x{APPLE_TABLE_CMP:x} is 0x{u16(acib, APPLE_TABLE_CMP):04x}, "
+            f"not cmp r0, #{packets.MAX_TABLE}"
+        )
+    for opcode_at, opcode, ext_at, ext in TABLE_SENDER_ARMS:
+        if u16(acib, opcode_at) != opcode or u16(acib, ext_at) != ext:
+            return False, f"the sender's arm at 0x{opcode_at:x} no longer sends 0x{opcode:04x}"
+    if u16(acib, TABLE_SENDER_VALUE) != 0xF894:  # ldrb.w r1, [r4, #0x17f]
+        return False, f"0x{TABLE_SENDER_VALUE:x} no longer reads the value to send"
+    return True, (
+        f"{len(packets.TABLE)} entries, all twelve specified payloads present, "
+        f"{len(extra)} more at mask bits {packets.APPLE_MASK_BITS[0]} to "
+        f"{packets.APPLE_MASK_BITS[-1]}, Apple's request bounded to {packets.MAX_TABLE}"
+    )
+
+
 def check_ctab_manifest(acib, rkof, ctab, sbd1):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
@@ -1253,6 +1314,7 @@ CHECKS = (
     ("procedure scheduler", check_procedure_scheduler),
     ("ctab is the table again", check_ctab_manifest),
     ("no standard road to a new rate", check_standard_rate_roads),
+    ("the packet-type table", check_packet_type_table),
 )
 
 

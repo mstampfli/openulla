@@ -33,11 +33,14 @@ fill it in; it says so, and the tests say so too.
 | `capture.py` | finds this protocol's frames in a btsnoop capture, learning the channel from the L2CAP signalling |
 | `a2dp.py` | the three stream endpoints the earbuds register, in one copy, so the verifier and the link tool compare the same bytes |
 | `features.py` | the specification's LMP feature bit assignments, so a set bit nobody defines can be spotted rather than argued about |
+| `packets.py` | the controller's eighteen-entry ACL packet-type table, including the six entries only Apple's third table can select, and the chooser that picks among them |
 
-That is every module. Two of them hold data rather than protocol, and both exist so that two
+That is every module. Three of them hold data rather than protocol, and each exists so that two
 consumers read one copy: `a2dp.py` is checked against the firmware by `tools/verify_claims.py`
-and against the air by `tools/bt_link_state.py`, and `features.py` is read by that same tool and
-by the tests behind [measurements.md](measurements.md) section 13.
+and against the air by `tools/bt_link_state.py`, `features.py` is read by that same tool and by
+the tests behind [measurements.md](measurements.md) section 13, and `packets.py` is read by
+`lmp.py` for the bound on the packet-table request and by the verifier, which reads all three of
+the firmware's parallel arrays back out of an image.
 
 ## Running it
 
@@ -206,7 +209,7 @@ still works: Apple's catalog served build 9A348 as `A3048.zip`, 11,455,085 bytes
 beginning `a04ff3f0d74e47e4`, the same asset [ulla.md](ulla.md) section 1 names. The
 `firmware.uarp` inside it, SHA-256 beginning `78171265810972c3`, is byte for byte the file
 every address in this repository was read from, and the four payloads extracted from that
-download pass **24 of 24 claims**. If your own download gives those two prefixes, you have the
+download pass **25 of 25 claims**. If your own download gives those two prefixes, you have the
 same bytes; if it does not, Apple has published a new build and the tool will tell you which
 claims moved.
 
@@ -248,7 +251,8 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  procedure scheduler              89 ids from 0xfcd0, 40 arms, 0x1a -> 0x296a0
   PASS  ctab is the table again          'rkosftab' at 0x3d, 20 entries in table order, no block magic
   PASS  no standard road to a new rate   packet-type table bounded to 0 or 1 with error 0x1e, feature pages bounded below 3 and filled with eight zeros above, pages at 0x10003288 and 0x100033a4
-24 of 24 claims hold
+  PASS  the packet-type table            18 entries, all twelve specified payloads present, 6 more at mask bits 16 to 21, Apple's request bounded to 2
+25 of 25 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows

@@ -122,6 +122,18 @@ HDRp figures above, which is consistent with one PHY family. It is not enough to
 claim that a given Mac mode is the earbuds' HDR4 rather than HDRp4, and no such
 mapping is claimed.
 
+**The names 4-DH5 and 8-DH5 have since been matched to the firmware.** The
+earbuds' controller holds an eighteen-entry ACL packet-type table where
+Bluetooth defines twelve, and the six extra entries are selectable only through
+a third packet-type table that Apple's own link-manager request can negotiate
+and the specification's cannot. Those six are three slot lengths times two
+rates; their payload maxima divided by 4 and 8 Mb/s give one consistent payload
+window per slot length, the way the specified entries do at 1, 2 and 3 Mb/s; and
+the five-slot pair carries 1288 and 2586 bytes. [protocol.md](protocol.md)
+section 5.13 has the tables, the addresses and the reasoning. The firmware never
+writes "HDR", so the identification of those two rates with the HDR4 and HDR8 of
+the filings quoted above is this project's reading; the table is not.
+
 Recent iPhones carry a narrowband UNII radio in the same two bands as well: the
 grant for FCC ID BCG-E9198A states that besides 802.11 the device "supports
 narrowband UNII with bandwidths of 1 MHz, 2 MHz, 4 MHz and 8 MHz in UNII bands

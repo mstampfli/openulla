@@ -26,8 +26,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from . import octets
-from .errors import ProtocolError
+from . import octets, packets
+from .errors import ProtocolError, Refused
 
 OPCODE_ACCEPTED = 3
 OPCODE_NOT_ACCEPTED = 4
@@ -42,6 +42,7 @@ EXT_FEATURE_REQUEST = 0x0A  # in the 0x7B space: one word, the sender's feature 
 EXT_FEATURE_REPLY = 0x0B
 EXT_SELECTOR_REQUEST = 0x0E  # 0x7B: one selector byte, answered with the pair below (5.11)
 EXT_VALUE_AND_CODE = 0x0F  # 0x7B: a value byte and a four-bit code; 0x7F/0x20 is the same
+EXT_PACKET_TABLE = 0x0D  # 0x7B: Apple's packet-type-table request, the counterpart of 0x7F/0x0B
 EXT_ALLOWED_BANDS = 0x17  # in the 0x7B space; 0x17 also exists behind 0x7F, unrelated
 EXT_BAND_RANGES = 0x1C
 MAX_BAND_RANGES = 5
@@ -324,6 +325,51 @@ def mode_procedure_agreed(own: int, peer: int) -> bool:
 
 
 @dataclass(frozen=True)
+class PacketTableRequest:
+    """Escape 0x7B, extended opcode 0x0D: which packet-type table the link should use.
+
+    The counterpart of the specification's 0x7F/0x0B request, and the same procedure in the
+    firmware: one function sends whichever of the two the link's capability allows, both arms
+    bound the single byte and refuse above it with 0x1E, both call the same collision check,
+    and both join at the same address [fw acib 0x29e00 the sender, 0x3c0be this arm, 0x3c0c2
+    its bound, 0x3be50 and 0x3be70 the specification's, 0x3bf80 the shared error]. The one
+    difference is the bound: this form admits table 2, where the specification's admits 1
+    [docs/protocol.md 5.13].
+
+    Table 2 is what makes the six packet types of `openulla/packets.py` selectable, and those
+    are the only non-standard ACL packet types this controller has.
+    """
+
+    table: int
+    tid: int = 0
+
+    LENGTH = 3  # header, extended opcode, the table
+
+    def to_bytes(self) -> bytes:
+        if not 0 <= self.table <= packets.MAX_TABLE:
+            raise ProtocolError(
+                f"the packet-type table is 0 to {packets.MAX_TABLE}; the receiver answers "
+                "0x1e above that"
+            )
+        return bytes((header(ESCAPE_7B, self.tid), EXT_PACKET_TABLE, self.table))
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> PacketTableRequest:
+        head = parse_header(data)
+        if head.opcode != ESCAPE_7B or head.ext_opcode != EXT_PACKET_TABLE:
+            raise ProtocolError("not the packet-type-table request")
+        if len(data) != cls.LENGTH:
+            raise ProtocolError(f"its body is one byte, got {len(data) - 1}")
+        if data[2] > packets.MAX_TABLE:
+            raise Refused(0x1E, f"packet-type table {data[2]} is above the bound")
+        return cls(table=data[2], tid=head.tid)
+
+    def selectable(self) -> tuple[packets.PacketType, ...]:
+        """Which packet types this table makes available."""
+        return packets.for_table(self.table)
+
+
+@dataclass(frozen=True)
 class AllowedBands:
     """Escape 0x7B, extended opcode 0x17: the sender's own allowed-band mask.
 
@@ -524,6 +570,8 @@ def parse(data: bytes) -> object:
         EXT_FEATURE_REPLY,
     ):
         return Features.from_bytes(data)
+    if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_PACKET_TABLE:
+        return PacketTableRequest.from_bytes(data)
     if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_ALLOWED_BANDS:
         return AllowedBands.from_bytes(data)
     if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_BAND_RANGES:

@@ -319,8 +319,13 @@ than one of them:
   no vendor page hiding behind the standard ones.
 
 Every standard road to an extra ACL rate is therefore closed in this firmware, by bound or by
-emptiness. Whatever selects HDR is not a Bluetooth mechanism, which leaves Apple's own escape
-space and the vendor command interface, and narrows where to look next rather than widening it.
+emptiness. Whatever selects HDR is not a Bluetooth mechanism, which left Apple's own escape
+space and the vendor command interface to look in; it was the first of those, and
+[protocol.md](protocol.md) section 5.13 has it. Apple's escape space carries its own
+packet-type-table request whose selector admits a third table, and the controller holds six
+packet types that only that table can reach, with their payload maxima and baseband TYPE codes.
+This measurement is why that search was narrow enough to finish: a device that announced its
+extra rate in the ordinary way would not have needed it.
 
 The decoder behind the table is `openulla/features.py`, which holds the specification's bit
 assignments once; the tool and the tests both read them from there.

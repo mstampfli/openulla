@@ -58,6 +58,7 @@ firmware from us.
   - [5.10 The sink runs the same kind of machine, and there is a third](#510-the-sink-runs-the-same-kind-of-machine-and-there-is-a-third)
   - [5.11 One extended pair, traced end to end](#511-one-extended-pair-traced-end-to-end)
   - [5.12 One of those escape spaces is Bluetooth's own, and it closes every standard road](#512-one-of-those-escape-spaces-is-bluetooths-own-and-it-closes-every-standard-road)
+  - [5.13 Apple's own packet-type table, and the six packets in it](#513-apples-own-packet-type-table-and-the-six-packets-in-it)
 - [6. Controller interface: HCI vendor commands](#6-controller-interface-hci-vendor-commands)
   - [6.0 What a source actually puts in those seven bytes](#60-what-a-source-actually-puts-in-those-seven-bytes)
   - [6.1 Which bands are allowed: command 0xFF79](#61-which-bands-are-allowed-command-0xff79)
@@ -1447,7 +1448,90 @@ not define [measurements.md section 13]. Taken with 6.1's packet-type field, whi
 for 4-DH5 or 8-DH5, every standard way to announce or select an extra ACL rate is closed in this
 firmware, by bound or by emptiness. **Whatever selects HDR is not a Bluetooth mechanism.** That
 is a narrowing result, not a dead end: it leaves the 0x7B space and the vendor command
-interface, and both are mapped here.
+interface, and 5.13 found it in the first of those.
+
+### 5.13 Apple's own packet-type table, and the six packets in it
+
+The specification's packet-type-table request has an Apple counterpart in the 0x7B space, and
+**one function decides which of the two to send**. On a link whose capability bit is set it
+emits escape 0x7B with extended opcode 0x0D; otherwise escape 0x7F with extended opcode 0x0B,
+the specification's own. The condition is bit 2 of the link's capability byte at +0x47 ANDed
+with the first byte of the global at 0x10003290 [fw acib 0x29e00 the function, 0x29e1e and
+0x29e26 the two bytes, 0x29e28 the and, 0x29e2a and 0x29e2c the bit, then 0x29e46 with 0x29e3a
+for the standard form and 0x29e60 with 0x29e54 for Apple's]. The value it sends is the byte at
+the link's +0x17F, placed at the field block's +0x10, which is where 5.7's body builder reads
+it [fw acib 0x29e1a, 0x29e22, 0x29e38].
+
+The receiving arms are the same procedure twice over, and differ in **one number**:
+
+| | the specification's | Apple's |
+|---|---|---|
+| escape and extended opcode | 0x7F / 0x0B | 0x7B / 0x0D |
+| total PDU length (5.7) | 3 bytes | 3 bytes |
+| the byte is bounded to | 0 or 1 | 0, 1 or **2** |
+| above that it answers | 0x1E, Invalid LMP Parameters | the same, at the same instruction |
+| arm | acib 0x3be50 | acib 0x3c0be |
+
+Both store the byte at the field block's +0x10, call the same argument thunk at 0x3d476, call
+the same collision check at 0x29f40, and join at the same address 0x3bb4c, Apple's through a
+two-instruction thunk [fw acib 0x3be70 and 0x3c0c2 the two bounds, 0x3bf80 the shared error,
+0x3c0d2 to 0x3c2e2 the thunk]. **Nothing else in the payload calls 0x29f40**, which is what
+says these two arms are one procedure rather than two that look alike. The agreed value is
+compared against the link's +0x17E and becomes the link's active table [fw acib 0x2a020,
+0x2a024, 0x2a02c].
+
+**So there is a third packet-type table, and these are the packets in it.** The controller keeps
+three parallel arrays of eighteen entries: an allowed-mask bit, a maximum payload and the
+four-bit TYPE code that goes in the baseband header [fw acib 0xf11a0, 0xf11e8, 0xf120c, read
+together at 0x137a6 to 0x137ca, 0x14584 and 0x4a3b4]. Twelve of the eighteen are the
+specification's, carrying exactly its payload maxima, and that is the control which identifies
+the table: 17, 27, 54, 83, 121, 183, 224, 339, 367, 552, 679 and 1021 bytes all appear. Six are
+left over:
+
+| mask bit | payload | TYPE | slots | this project's name |
+|---|---|---|---|---|
+| 16 | 112 | 0x4 | 1 | 4 Mb/s, one slot |
+| 17 | 242 | 0x8 | 1 | 8 Mb/s, one slot |
+| 18 | 703 | 0xA | 3 | 4 Mb/s, three slots |
+| 19 | 1416 | 0xB | 3 | 8 Mb/s, three slots |
+| 20 | 1288 | 0xE | 5 | 4 Mb/s, five slots |
+| 21 | 2586 | 0xF | 5 | 8 Mb/s, five slots |
+
+Three things fix those readings and none of them is a guess. **Table 2 has exactly table 1's
+TYPE code layout**, which is the whole argument in one sentence. A packet-type table is a
+reinterpretation of the same four header bits, and the seven codes selectable in table 1 are
+0x3, 0x4, 0x8, 0xA, 0xB, 0xE and 0xF, meaning DM1 and then, in pairs by slot length, 2-DH1 and
+3-DH1, 2-DH3 and 3-DH3, 2-DH5 and 3-DH5. Table 2's seven codes are the same seven, and within
+each pair the lower code again carries the smaller payload. So each code's slot count and which
+of its pair is the faster packet carry straight across from a table the specification defines;
+no arithmetic is needed for either. **The mask bits lie
+at 16 to 21**, above the sixteen-bit packet-type field a host can reach, which is why section 9
+of [measurements.md](measurements.md) found no way to ask for them; feeding the recovered table
+nothing but that sixteen-bit field reproduces that result, since the best it can then choose is
+3-DH5. **And the rates follow from the payloads**, which is a second and independent route to
+the same answer. Dividing each payload by a rate gives the
+time its payload occupies, and at the right rate every entry of one slot length agrees. The
+specified entries agree at 1, 2 and 3 Mb/s, giving about 2712, 2716 and 2723 microseconds for
+five slots. The six extra entries agree at 4 and 8 Mb/s, giving 2576 and 2586 for five slots,
+1406 and 1416 for three, and within each slot length the higher entry is 2.01 times the lower.
+No other pair of rates makes them consistent. Apple declares exactly two proprietary rates for
+this device, 4 and 8 Mb/s, named HDR4 and HDR8 [ulla.md 2.2], and the five-slot pair is what its
+own filing calls 4-DH5 and 8-DH5.
+
+The firmware never writes "HDR", so the identification is ours and stated as such; the table,
+the lengths, the TYPE codes and the arithmetic are not.
+
+Two further places show the table being used rather than merely stored. The packet-type mask
+filter branches on it: when the active table is 2 it clears bits among 16 to 21 according to two
+capability bits at the link's +0x69, in the same shape the standard branch clears the 3 Mb/s
+bits 0x2204 according to +0x67 [fw acib 0x1376a the test, 0x13772 to 0x13786 the table-2 branch,
+0x1378c to 0x13798 the standard one]. And the active table reaches hardware as a two-bit field:
+the halfword at +4 of a descriptor is masked with 0xCFFF and the table ORed into bits 12 and 13
+[fw acib 0x6baaa, 0x6bab4, 0x6bab8, 0x6babc, 0x6bac2]. Two bits allow four tables; the
+negotiation allows three.
+
+`openulla/packets.py` holds the eighteen entries and reproduces the chooser, and
+`tools/verify_claims.py` checks all three arrays against a firmware image.
 
 ## 6. Controller interface: HCI vendor commands
 
