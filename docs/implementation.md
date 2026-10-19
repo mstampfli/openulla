@@ -203,7 +203,7 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  PDU lengths                      accepted 2, not accepted 3, 0x74 7, 0x73 9, including the header byte
   PASS  LMP receive dispatch             table at acib 0x3b254, 5 opcodes checked
   PASS  escape space dispatch            0x7B: 39 entries, 12 refused; 0x7F: 34 entries, 8 refused
-  PASS  extended PDU body builders       69 extended opcodes over both spaces, 19 with no builder
+  PASS  extended PDU body builders       69 extended opcodes over both spaces, 19 with no builder, the entry's own fields as published
   PASS  mode-change event shape          event 0xff, 7 parameters, id 0x0a00
   PASS  mode, result and reason names    3 modes, 5 results, 12 reasons, 2 unnamed
   PASS  name table bounds                3 modes then 'ULLA_MGR_EVENT_UNKNOWN', 5 results then a null

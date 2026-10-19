@@ -881,6 +881,21 @@ three groups: 0x03 to 0x09, 0x12, 0x13, 0x1D and 0x1E can be neither built nor a
 0x14, 0x22, 0x23 and 0x25 can be accepted but not built; and 0x24 and 0x28 can be built but
 not accepted, which is the asymmetry above.
 
+**Where the built body goes, and the one field of the request that is not on the air.** The
+builder is reached through an encoder chosen by the link's type byte [fw acib 0x3ae06 to
+0x3ae1a, the lookup at 0x5e988]. For the type this firmware uses, that encoder allocates the
+transmit entry and fills it [fw acib 0x3ac2c]: **0x24 bytes, or 0xB4** for the 0x7B extended
+opcodes 0x22 to 0x25 [fw acib 0x3ac48 to 0x3ac4e]. The entry holds a 3 at +0, the PDU length
+at +2, the link type at +6 and +8, bit 7 of +0xB set for the opcode range 0x64 to 0x6F and for
+the build-only escape opcodes above, and the PDU bytes from +0x12 [fw acib 0x3ac90 to 0x3ace0].
+**When the entry's +4 reads 0xA**, two more fields are written: the sender's own third argument
+at +9 and the length again at +0xA [fw acib 0x3aca0 to 0x3acaa]. That third argument is 0x11
+for 0x7B/0x0B, 0x1A for 0x7B/0x28 and 0 for 0x7B/0x17, 0x1C and 0x24 [fw acib 0x294ba, 0x33a00,
+0x2993c, 0x299e4, 0x2fe0c]; it is a field of the request and never a byte of the message. The
+entry then goes to the radio driver through a virtual call [fw acib 0x3aed6 into 0x7968c, then
+0x3038, which calls the pointer at +0x24 of the object 0xde50c returns], and that is the same
+boundary 7.1 stops at: below it are the DMA and the radio.
+
 Two rows are the messages this document decodes in full, and this table is how they were
 checked: 0x7B/0x17's one byte is the allowed-band mask of section 6.2, and 0x7B/0x1C's 3N
 bytes are the band ranges of section 6.5, whose count the length carries. A third pair, with

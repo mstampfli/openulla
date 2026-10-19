@@ -174,6 +174,15 @@ LIVE_LINK_STATISTICS = ((0xDA8E2, 1), (0xDA928, 0))  # arm on start, disarm on s
 STATISTICS_PHASE = 0xC281C  # the phase setter both of them call
 LIVE_LINK_DESCRIPTOR = (0xDB9C6, 0xF0)  # movs r0, #0xf0 -> the descriptor's +8
 FE55_BOUND = (0xC9DDC, 0x321, 0x640)  # value - 0x321 against ~0x640: the signed +/- 800 range
+# The transmit entry the encoder fills, and the one field of it that is not on the air [5.7]
+ENTRY_FIELDS = (
+    (0x3AC90, 0x2003, "3 at +0"),
+    (0x3AC98, 0x8028, "store of that 3"),
+    (0x3ACA0, 0x280A, "test of +4 against 0xa"),
+    (0x3AC4A, 0x3822, "escape opcode range, from 0x22"),
+    (0x3AC4C, 0x2803, "and its span of four"),
+)
+ENTRY_STACKED = (0x3ACA4, 0xF885, 0xB009)  # strb.w fp, [r5, #9]
 # The link-up half of the five gated session commands [6.6]
 GATE = 0x1DFE0  # the "is the link already up" gate each of them calls first
 ROLE_TEST = 0x61AB4  # the module is on and this end is the source
@@ -594,7 +603,15 @@ def check_transmit_builders(acib, rkof, ctab, sbd1):
         if stubbed != len(cases[stub]):
             return False, f"{name} has {stubbed} extended opcodes with no builder"
         without += stubbed
-    return True, f"{covered} extended opcodes over both spaces, {without} with no builder"
+    for at, halfword, what in ENTRY_FIELDS:
+        if u16(acib, at) != halfword:
+            return False, f"the entry's {what} at 0x{at:x} is now 0x{u16(acib, at):04x}"
+    if (u16(acib, ENTRY_STACKED[0]), u16(acib, ENTRY_STACKED[0] + 2)) != ENTRY_STACKED[1:]:
+        return False, f"0x{ENTRY_STACKED[0]:x} no longer stores the sender's value at +9"
+    return True, (
+        f"{covered} extended opcodes over both spaces, {without} with no builder, "
+        "the entry's own fields as published"
+    )
 
 
 def check_event_shape(acib, rkof, ctab, sbd1):
