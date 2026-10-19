@@ -1598,9 +1598,14 @@ What writes that word is id 0x1B1, which stores the caller's 32-bit value at its
 | 0xFE53, a read | 0x1AF | returns a four-word descriptor: 1, 0, 0xF0, and a word whose top fourteen bits are set to 0x14A6 over the link's own byte [fw acib 0xdc35c to 0xdc382] |
 | 0xFE7B, a byte | 0x1AB | passes that byte into the same low-level call the start uses with 1, gated on the same module flag [fw acib 0xdc168] |
 
-The two layers underneath are one call that takes the pair {link byte, flag}
-[fw acib 0xdc070] and one that takes the link byte and a value [fw acib 0xa9298]; what they
-program is the DMA and radio side, which is as far as this document follows them.
+The two layers underneath are small enough to state exactly. The one that takes the pair
+{link byte, flag} drives a single word of the stream object, at its +0xB0: a flag of 1 sets
+that word to **1**, and a flag of 0 moves it from 1 to **2** and does nothing otherwise, so a
+stop that was never started has no effect [fw acib 0xdc070]. The other writes its value into a
+per-link record, one byte at the record's +0xC4 with the records 0xC8 apart
+[fw acib 0xa9298, the array at 0x10009a30] - which is the field the start sets to 1, so
+0xFE7B's byte goes into exactly that place. Below those two is the DMA and radio side, which
+is as far as this document follows.
 
 So an implementation that gets as far as a working link has a defined way to drive the stream:
 hand the controller a DMA address, start, stop, and read that descriptor back. What travels
