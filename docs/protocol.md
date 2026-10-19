@@ -1659,8 +1659,15 @@ and where the channel is handed over - which is the layer this document stops at
 carries is the open question below, not where it is pointed.
 
 **[open] The over-the-air packet format.** The air packet is produced by radio hardware
-configured through registers; the PHY image contains no symbols or strings, and the register
-semantics are not public. It is not recoverable from the firmware alone.
+configured through registers, and the register semantics are not public, so it is not
+recoverable from the firmware alone. The PHY payload is worth being exact about, because
+"no strings" was too strong: it carries about two dozen, and what they are about settles the
+question rather than opening it. They name the build (`{T:w3}{C:B0}` and an RTKit debug tag),
+one source path (`.../Sources/WxBtPhy/firmware/w3/mac.c`), the fault handlers, and then a run
+of digital-pre-distortion and analog-front-end logging: two interrupt names, `RSSI readings`,
+`DPD mode %d>%d set up`, `DPD actuation %d`, `GTB DPD test`. That is the transmit chain's
+calibration, not packet framing. So the PHY image does have a voice, and it talks about
+linearising a power amplifier.
 
 **[open] The codec, the sample rate, the frame size and the bit depth, with a reason.** None
 of them is a constant in the DSP image, and that was checked rather than assumed: no

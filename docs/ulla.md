@@ -381,8 +381,13 @@ what an independent implementation actually needs:
 Not recovered, and not to be filled in until it is:
 
 - The over-the-air packet format. The air packet is produced by radio hardware
-  programmed through registers; the PHY payload `phyb` has no symbols or
-  strings and the register semantics are not public.
+  programmed through registers, and the register semantics are not public. The
+  PHY payload `phyb` does carry about two dozen strings, which is worth stating
+  correctly: a build tag, one source path under `WxBtPhy/firmware/w3`, the fault
+  handlers, and digital-pre-distortion and analog-front-end logging. That is
+  transmit-chain calibration, not framing, so the conclusion stands while the
+  earlier wording ("no symbols or strings") does not. Detail in
+  [protocol.md](protocol.md) section 7.
 - The audio codec. The DSP payload `sbd1` names none on this path.
 - Whether the audio payload is encrypted. The setup establishes no key material
   of its own, but whether the radio keeps applying the ordinary link cipher
