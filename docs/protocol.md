@@ -1574,11 +1574,18 @@ Once the mode change succeeds the radio carries the audio. The parts that are es
   assembled from ten other fields of the same node [fw sbd1 0x9d0dc the getter's switch,
   0x9d0fc..0x9d14c the copy]. Every access to the version field in the image is a read, so it
   arrives from outside the DSP.
-- It handles frames and subframes per version, with a dedicated routine for version 1.1
-  [fw sbd1 0x9e070, 0xb21d4], and the per-frame path branches on the same version before
-  looking at a per-link mask and a frame counter [fw sbd1 0x9e4f8]. That routine's name is in
-  the image too, passed as a label to a log call in its own body: **`processBufferUllav11`**
-  [fw sbd1 0x9e078]. Two things about it can be read without interpretation: it indexes its
+- It has a dedicated routine for version 1.1, and that routine's name is in the image, passed
+  as a label to a log call in its own body: **`processBufferUllav11`** [fw sbd1 0x9e070, the
+  name at 0x9e078]. The per-frame path branches on the same version before looking at a
+  per-link mask and a frame counter [fw sbd1 0x9e4f8].
+
+  One correction while naming these: an earlier reading of this section cited a second address
+  for "frames and subframes per version", and that one is **not** the ULLA node. It is
+  `_fillChannelForSubframe` [fw sbd1 0xb21d4, the name at 0x10daa5], and its neighbours are
+  the serial audio interface's own validators and copiers - MCA, PDM, a loopback frame-sync
+  pack [fw sbd1 0x10d985 to 0x10db70]. So "channel" and "subframe" there are the audio bus's
+  words, for the link between the DSP and its converters, and not evidence about the air
+  frame. The ULLA-specific routine is the named one above. Two things about it can be read without interpretation: it indexes its
   buffers with a shift of two, so the elements are four bytes wide, and it dispatches four
   ways on two bits of a per-call value through a byte table [fw sbd1 0x9dff4 and 0x9e014 for
   the indexing, 0x9e01c to 0x9e034 for the table]. What the four cases are, and what the four
