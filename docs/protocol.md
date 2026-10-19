@@ -269,6 +269,26 @@ itself is reached through a global: the caller loads the producer out of the tab
 0xf2284 by an index at `[[0x1000db7c+0xc]]` and passes it `&[0x1000db7c+0x10]`, which is the
 block [fw acib 0x55450..0x55470].
 
+**What asks for a type 1 report, and the reason none arrives.** That caller is an arm of a
+class dispatcher: the controller takes a queued message, keeps its 16-bit id, subtracts 0x3000
+from the id's high byte, refuses an index above 0x5E and branches through a 95-entry table
+[fw acib 0x59ffc reads the message, 0x5a018 the subtraction, 0x5a024 the bound, 0x5a030 the
+branch, the table at 0x5a034]. **Index 0x5C, which is class 0x8C, is the arm that reports**
+[fw acib 0x5a0fa, `mov r0, r4` then the call above]. Two places in acib build that id, both
+with a modified immediate rather than the plain MOVW form, which is why a search for the
+obvious encoding finds nothing: a zero-initialiser and a poster that allocates a 16-byte
+message and fills `{id, a halfword at +4, a word at +0xC}` [fw acib 0x84bb8 and 0xe0f30]. The
+poster's one caller first copies **240 bytes** into a buffer at 0x1002aa78 and flushes it
+[fw acib 0xd4860..0xd487c].
+
+And that caller is reached by nothing: no call site in a linear disassembly and no word of the
+image pointing at it, at any alignment. So the picture is the same as type 0's, from the other
+end - **the whole reporting path is present and untriggered in this build**: type 0's counters
+are never filled, type 1's request is never posted, and type 2's producer is not in this
+payload at all. A host may subscribe, and the firmware will accept the subscription, but it
+should not wait for a report. The two things these searches cannot exclude are a computed id
+and a computed branch, and neither has been found.
+
 The report the host receives is [fw rkof 0x27e90, which zeroes a 185-byte buffer first]:
 
 | offset | size | meaning |

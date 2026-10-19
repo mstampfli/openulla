@@ -43,15 +43,17 @@ CLASS_ULLA_REPORTS = 0x00200000
 # payload} to the entry that stamps the type [fw rkof 0x27cb4 and 0x27f42 for 0, 0x27ce0 and
 # 0x27f38 for 1, 0x27d0c and 0x27e84 for 2]; and the notification dispatcher declares the same
 # lengths, logging a mismatch rather than truncating [fw rkof 0x258f2, 0x25bb2, 0x25bf4].
-# Type 0 is here because the firmware describes it completely, not because it arrives: nothing
-# in this build reaches the two paths into its producer, and the subscribe path registers only
-# the other two listeners [fw acib 0xc2830 and 0xc2b12 against rkof 0x27f60; protocol.md 2.6].
+# All three are here because the firmware describes them, not because they arrive. Nothing in
+# this build reaches the two paths into type 0's producer, the subscribe path registers only
+# the other two listeners, and type 1's request message is never posted either: its one poster's
+# only caller is reached by nothing [fw acib 0xc2830 and 0xc2b12, rkof 0x27f60, fw acib 0xd485c;
+# protocol.md 2.6]. A subscriber of this build should not wait for a report.
 REPORTS = {
     0: (0x0A08, 56),
     1: (0xE910, 185),
     2: (0xE911, 61),
 }
-REPORTS_A_HOST_SEES = (1, 2)  # which of them a subscriber of this build is actually sent
+REPORTS_A_HOST_SEES = ()  # none of them, in this build: 2.6 says so twice over
 VERSION_PAIR_WIDE_CLASS = 0x00010001  # above this, the wrapper's class field is four bytes
 
 

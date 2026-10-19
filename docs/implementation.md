@@ -210,9 +210,10 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  report listeners                 3 types: 0x0a08 56 bytes, 0xe910 185 bytes, 0xe911 61 bytes
   PASS  session command gates            5 commands through one gate, 5 ids on the link-up paths, 3 role refusals of 0x0C, 0xFE55 bounded to +/-800
   PASS  report producers                 0x121d2: id 0xe910, 185 payload bytes, blocks at +0x45 and +0x85 copied 0x80 at a time; 0x11e24 stamps 0xa08 over 9 + 4 words and one more
+  PASS  report request path              class 0x8c of 0x5e reaches 0x5544c, id 0x8c00 built at 2 sites
   PASS  procedure scheduler              89 ids from 0xfcd0, 40 arms, 0x1a -> 0x296a0
   PASS  ctab is the table again          'rkosftab' at 0x3d, 20 entries in table order, no block magic
-21 of 21 claims hold
+22 of 22 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows

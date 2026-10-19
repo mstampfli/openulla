@@ -87,8 +87,9 @@ def test_the_siblings_copy_of_a_report_carries_one_byte_more():
 
 def test_each_report_type_has_one_notification_id_and_one_length():
     assert aap.REPORTS == {0: (0x0A08, 56), 1: (0xE910, 185), 2: (0xE911, 61)}
-    # Type 0 is described by the firmware but unreachable in it, which 2.6 shows two ways.
-    assert aap.REPORTS_A_HOST_SEES == (1, 2)
+    # All three are described by the firmware and unreachable in it, each for its own reason,
+    # and 2.6 shows it from both ends: nothing fills type 0, nothing asks for type 1.
+    assert aap.REPORTS_A_HOST_SEES == ()
     assert set(aap.REPORTS_A_HOST_SEES) < set(aap.REPORTS)
 
 

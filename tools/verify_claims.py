@@ -188,6 +188,16 @@ LINK_UP_REFUSALS = (  # status site, its halfword, opcode site, the opcode it an
     (0x1D93A, 0x220C, 0x1D948, 0xFE57),
     (0x1D984, 0x210C, 0x1D986, 0xFE58),
 )
+# What asks for a type 1 report: a queued message, and the two places its id is built [2.6]
+REQUEST_CLASS_BASE = (0x5A018, 0x3000)  # sub.w r0, sl, #0x3000, so the index is the class - 0x30
+REQUEST_CLASS_BOUND = (0x5A024, 0x2D5E)  # cmp r5, #0x5e
+REQUEST_BRANCH = 0x5A030  # tbh [pc, r5, lsl #1]
+REQUEST_TABLE = 0x5A034
+REQUEST_INDEX = 0x5C  # so the class is 0x8C, and this is the arm that reports
+REQUEST_ARM = (0x5A0FA, 0x5544C)  # mov r0, r4 then the call that picks the producer
+REQUEST_ID = 0x8C00
+REQUEST_ID_SITES = (0x84BB8, 0xE0F40)  # the zero-initialiser and the poster
+REQUEST_STAGING = (0xD4864, 0x22F0, 0xD4880, 0x1002AA78)  # 240 bytes into that buffer first
 # The producer of report type 1, in the controller rather than in rkof [2.6]
 PRODUCER = 0x121D2  # held in the module descriptor at acib 0xf2288
 PRODUCER_POINTER = 0xF2288
@@ -840,6 +850,41 @@ def check_session_command_gates(acib, rkof, ctab):
     )
 
 
+def check_report_request(acib, rkof, ctab):
+    """What asks for a type 1 report: the class dispatch, its arm, and where the id is built.
+
+    Read as instructions because the class arithmetic is an immediate and the id is a modified
+    immediate, which is why a search for the plain MOVW form found nothing [2.6].
+    """
+    at, want = REQUEST_CLASS_BASE
+    if wide_imm(acib, at) != want:
+        return False, f"the class base at 0x{at:x} is {wide_imm(acib, at)}, not 0x{want:x}"
+    at, want = REQUEST_CLASS_BOUND
+    if u16(acib, at) != want:
+        return False, f"the class bound at 0x{at:x} is 0x{u16(acib, at):04x}"
+    if (u16(acib, REQUEST_BRANCH), u16(acib, REQUEST_BRANCH + 2)) != (0xE8DF, 0xF015):
+        return False, f"0x{REQUEST_BRANCH:x} is no longer tbh [pc, r5, lsl #1]"
+    arm, target = REQUEST_ARM
+    at = REQUEST_TABLE + 2 * u16(acib, REQUEST_TABLE + 2 * REQUEST_INDEX)
+    if at != arm:
+        return False, f"class 0x{REQUEST_INDEX + 0x30:x} now branches to 0x{at:x}, not 0x{arm:x}"
+    if u16(acib, arm) != MOV_R0_R8 - 0x20:  # mov r0, r4
+        return False, f"the arm at 0x{arm:x} does not open with mov r0, r4"
+    goes = wide_branch(acib, arm + 2)
+    if goes != target:
+        return False, f"the arm calls {goes and hex(goes)}, not 0x{target:x}"
+    for at in REQUEST_ID_SITES:
+        if mov_imm(acib, at) != REQUEST_ID:
+            return False, f"0x{at:x} no longer builds 0x{REQUEST_ID:04x}"
+    at, bytes_, literal_at, buffer_ = REQUEST_STAGING
+    if u16(acib, at) != bytes_ or u32(acib, literal_at) != buffer_:
+        return False, f"the staging copy at 0x{at:x} changed"
+    return True, (
+        f"class 0x{REQUEST_INDEX + 0x30:x} of {REQUEST_CLASS_BOUND[1] & 0xFF:#x} reaches "
+        f"0x{target:x}, id 0x{REQUEST_ID:04x} built at {len(REQUEST_ID_SITES)} sites"
+    )
+
+
 def check_report_producer(acib, rkof, ctab):
     """The two report producers in the controller: the message, the ids, the two copies. [2.6]
 
@@ -1006,6 +1051,7 @@ CHECKS = (
     ("report listeners", check_report_listeners),
     ("session command gates", check_session_command_gates),
     ("report producers", check_report_producer),
+    ("report request path", check_report_request),
     ("procedure scheduler", check_procedure_scheduler),
     ("ctab is the table again", check_ctab_manifest),
 )
