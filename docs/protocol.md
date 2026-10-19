@@ -68,6 +68,7 @@ firmware from us.
   - [6.5 The second band PDU: escape 0x7B, extended opcode 0x1C](#65-the-second-band-pdu-escape-0x7b-extended-opcode-0x1c)
   - [6.6 The other vendor commands that reach the ULLA session](#66-the-other-vendor-commands-that-reach-the-ulla-session)
   - [6.7 Two commands that read the procedure's own request block](#67-two-commands-that-read-the-procedures-own-request-block)
+  - [6.8 Seven commands an Apple host was seen sending, in the earbuds' own table](#68-seven-commands-an-apple-host-was-seen-sending-in-the-earbuds-own-table)
 - [7. The audio layer, and what is not known](#7-the-audio-layer-and-what-is-not-known)
   - [7.1 The stream's control path, which is not open any more](#71-the-streams-control-path-which-is-not-open-any-more)
   - [7.2 The buffer descriptor the stream module programs](#72-the-buffer-descriptor-the-stream-module-programs)
@@ -2004,6 +2005,45 @@ state 2 of the procedures builds (5.9), which is what that block is for:
 So the block's +0x48 is a kind field with two values, +0x6C is a byte a host can read, and +0x24
 onwards is a structure a host can dump. What those bytes mean is not established, and this
 document does not guess; what is established is that they leave the controller.
+
+### 6.8 Seven commands an Apple host was seen sending, in the earbuds' own table
+
+A contributor captured an established session between a Broadcom Mac and these earbuds and
+reported the Mac's whole vendor-command inventory, twelve opcodes [ulla.md section 8]. None of
+them is one of the eighteen this document had mapped, which is what section said. Put through
+the earbuds' **own** command table instead, **seven of the twelve are there**:
+
+| opcode | handler | what its handler does |
+|---|---|---|
+| 0xFD02 | acib 0x160cc | configures a maximum packet size, below |
+| 0xFD4B | acib 0x163d4 | waits on a status bit at a register block, writes 3 to it, then passes the same 2600 that 0xFD02's mode 1 sets |
+| 0xFD4D | acib 0x1ee4c | passes one byte from its request onward and returns nothing of its own |
+| 0xFDC1 | acib 0x1a9fc | stores a halfword and two bytes from its request into a global block |
+| 0xFDDD | acib 0x1adf0 | reads that same global block back and answers from it, so the two are a setter and a getter |
+| 0xFDE4 | acib 0x168d8 | divides its parameter by 100 and passes the result on |
+| 0xFE2D | acib 0x1c8ce | reads property 0x106 and answers 24 bytes |
+
+The other five, 0xFC1C, 0xFC57, 0xFCE2, 0xFCE9 and 0xFD4A, have no key in this table. The
+lookup is the published one: a key table searched under a fourteen-bit mask [the key table and
+its mask are in 6.1], so these are matches rather than aliases, and 0xFF75's known alias is not
+among them.
+
+**0xFD02 is the one that matters here**, because it joins the packet-type table of 5.13 to a
+command a host can send. Its handler reads a mode byte at its request's +0xB and gates on a
+check that answers 0x0C when it fails, the same 0x0C this document warns about elsewhere.
+Mode 1 writes **2586** and 2600; every other mode writes **339** and 352 [fw acib 0x160d6 the
+mode byte, 0x160da the gate, 0x160e6 the branch, 0x160f0 and 0x160fa for mode 1, 0x16108 and
+0x16112 otherwise, 0x16122 the reply]. Those two numbers are not arbitrary: 2586 is the payload
+maximum of the five-slot entry only Apple's third packet-type table can select, and 339 is
+DH5's. The two buffer figures are each a little larger than the payload they accompany, by 14
+and 13 bytes.
+
+So a host configures this controller's packet buffers for either the basic-rate five-slot packet
+or the 8 Mb/s one, by one byte of one vendor command, and an Apple host was seen sending that
+command during a session with these earbuds. What the Mac's own controller does with its 0xFD02
+is not established here: the opcode is in a vendor space, and two controllers sharing a number
+is not the same as sharing a meaning. What is established is that the earbuds implement it and
+what theirs does.
 
 ## 7. The audio layer, and what is not known
 

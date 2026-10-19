@@ -494,6 +494,17 @@ BCM_4378, same earbud firmware):
   the eleven session commands of protocol.md 6.6, neither feature-bit command of
   5.8, and no band command of 6.1. Their 0xFE2D is in the same numeric range and
   is not one of ours.
+- That comparison was against the eighteen opcodes this project had mapped, and
+  it was the wrong table to ask. Put through the earbuds' **own** command table,
+  **seven of their twelve are implemented there**, with handlers: 0xFD02,
+  0xFD4B, 0xFD4D, 0xFDC1, 0xFDDD, 0xFDE4 and 0xFE2D. The other five are absent.
+  One of the seven ties this capture to the radio: **0xFD02 configures the
+  controller's maximum packet size, and its mode 1 selects 2586 bytes**, the
+  payload maximum of the five-slot packet only Apple's third packet-type table
+  can reach, against 339 for the basic-rate one. [protocol.md](protocol.md)
+  section 6.8 has the handler addresses and the branch. What that Mac's own
+  controller does with its 0xFD02 is not established; what the earbuds do with
+  theirs is.
 - The same `BandSwitchManager` exists there, logging `EnableHRB 1,
   forceSupportHRB 0`, which is configuration rather than a switch.
 - The microphone path is ordinary: an eSCO link set up with the standard

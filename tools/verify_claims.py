@@ -162,6 +162,23 @@ TABLE_SENDER_ARMS = (
     (0x29E60, 0x217B, 0x29E54, 0x220D),  # movs r1, #0x7b / movs r2, #0xd
 )
 TABLE_SENDER_VALUE = 0x29E1A  # ldrb.w r1, [r4, #0x17f], the value it sends
+# The seven commands a contributor saw an Apple host send that this controller implements, and
+# the five it does not. [6.8]
+SHARED_HOST_COMMANDS = {
+    0xFD02: 0x160CC,
+    0xFD4B: 0x163D4,
+    0xFD4D: 0x1EE4C,
+    0xFDC1: 0x1A9FC,
+    0xFDDD: 0x1ADF0,
+    0xFDE4: 0x168D8,
+    0xFE2D: 0x1C8CE,
+}
+ABSENT_HOST_COMMANDS = (0xFC1C, 0xFC57, 0xFCE2, 0xFCE9, 0xFD4A)
+SIZE_COMMAND_BRANCH = 0x160E6  # cmp r6, #1, on the mode byte at the request's +0xB
+SIZE_COMMAND_HDR = 0x160F0  # movw r0, #0xa1a, the five-slot payload of Apple's table
+SIZE_COMMAND_HDR_BUFFER = 0x160FA  # movw r1, #0xa28
+SIZE_COMMAND_BASIC = 0x16108  # movw r0, #0x153, DH5's payload
+SIZE_COMMAND_BASIC_BUFFER = 0x16112  # mov.w r1, #0x160
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
@@ -1238,6 +1255,47 @@ def check_packet_type_table(acib, rkof, ctab, sbd1):
     )
 
 
+def check_shared_host_commands(acib, rkof, ctab, sbd1):
+    """The seven captured host commands this controller implements, and 0xFD02's two sizes. [6.8]
+
+    The two sizes are read against `openulla/packets.py` rather than written out again, so the
+    claim that 0xFD02's mode 1 selects the five-slot payload of Apple's own table is checked
+    rather than asserted.
+    """
+    keys = [u16(acib, HCI_KEYS + 2 * i) for i in range(HCI_KEY_COUNT)]
+    masked = [k & HCI_KEY_MASK for k in keys]
+    for opcode, handler in sorted(SHARED_HOST_COMMANDS.items()):
+        hits = [i for i, m in enumerate(masked) if m == (opcode & HCI_KEY_MASK)]
+        if len(hits) != 1:
+            return False, f"0x{opcode:04x} matches {len(hits)} keys under the mask"
+        got = u32(acib, HCI_HANDLERS + 4 * hits[0]) & ~1
+        if got != handler:
+            return False, f"0x{opcode:04x} resolves to 0x{got:x}, not 0x{handler:x}"
+    for opcode in ABSENT_HOST_COMMANDS:
+        if any(m == (opcode & HCI_KEY_MASK) for m in masked):
+            return False, f"0x{opcode:04x} is in the table after all"
+
+    if u16(acib, SIZE_COMMAND_BRANCH) != 0x2E01:  # cmp r6, #1
+        return False, f"0x{SIZE_COMMAND_BRANCH:x} no longer branches on mode 1"
+    five_slot = max(entry.payload for entry in packets.for_table(packets.TABLE_APPLE))
+    basic = next(entry.payload for entry in packets.TABLE if entry.name == "DH5")
+    for at, want, what in (
+        (SIZE_COMMAND_HDR, five_slot, "Apple's five-slot payload"),
+        (SIZE_COMMAND_BASIC, basic, "DH5's payload"),
+    ):
+        got = movw(acib, at)
+        if got != want:
+            return False, f"0x{at:x} loads {got and hex(got)}, not {what} ({want})"
+    buffers = (movw(acib, SIZE_COMMAND_HDR_BUFFER), mov_imm(acib, SIZE_COMMAND_BASIC_BUFFER))
+    if buffers != (five_slot + 14, basic + 13):
+        return False, f"the two buffer sizes are now {buffers}"
+    return True, (
+        f"{len(SHARED_HOST_COMMANDS)} of their twelve present and "
+        f"{len(ABSENT_HOST_COMMANDS)} absent, 0xFD02 mode 1 -> {five_slot} bytes, "
+        f"otherwise {basic}"
+    )
+
+
 def check_ctab_manifest(acib, rkof, ctab, sbd1):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
@@ -1315,6 +1373,7 @@ CHECKS = (
     ("ctab is the table again", check_ctab_manifest),
     ("no standard road to a new rate", check_standard_rate_roads),
     ("the packet-type table", check_packet_type_table),
+    ("shared host commands", check_shared_host_commands),
 )
 
 
