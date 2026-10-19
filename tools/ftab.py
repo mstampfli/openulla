@@ -9,6 +9,8 @@ relative to the table start. Some entries are tables themselves.
     python3 ftab.py TABLE extract TAG OUT      (first entry with that tag)
     python3 ftab.py firmware.uarp list --payload FTAB
     python3 ftab.py firmware.uarp extract acib acib.bin --payload FTAB
+    python3 ftab.py firmware.uarp payloads     (the SuperBinary's own records)
+    python3 ftab.py firmware.uarp payload CTAB ctab.bin
 """
 import struct
 import sys
@@ -32,15 +34,23 @@ def entries(table):
     return out
 
 
-def uarp_payload(blob, want):
+def uarp_payloads(blob):
+    """Every payload record of a SuperBinary, in the order its header lists them."""
     phoff, phlen = struct.unpack_from(">2I", blob, 36)
+    out = []
     off = phoff
     while off < phoff + phlen:
         plen, tag = struct.unpack_from(">I4s", blob, off)
         poff, plength = struct.unpack_from(">2I", blob, off + 32)
-        if tag.decode("ascii", "replace") == want:
-            return blob[poff:poff + plength]
+        out.append((tag.decode("ascii", "replace"), poff, plength))
         off += plen
+    return out
+
+
+def uarp_payload(blob, want):
+    for tag, poff, plength in uarp_payloads(blob):
+        if tag == want:
+            return blob[poff:poff + plength]
     raise KeyError(want)
 
 
@@ -65,8 +75,17 @@ def main(argv):
         print(__doc__)
         return 2
     blob = open(args[0], "rb").read()
-    table = uarp_payload(blob, payload) if payload else blob
     cmd = args[1]
+    if cmd == "payloads":
+        for tag, poff, plength in uarp_payloads(blob):
+            print(f"{tag:4s} off={poff:#010x} size={plength:9d}")
+        return 0
+    if cmd == "payload" and len(args) >= 4:
+        data = uarp_payload(blob, args[2])
+        open(args[3], "wb").write(data)
+        print(f"wrote {len(data)} bytes of payload {args[2]} to {args[3]}")
+        return 0
+    table = uarp_payload(blob, payload) if payload else blob
     if cmd == "list":
         show(table)
         return 0

@@ -414,7 +414,8 @@ link keys and other people's device addresses.
   address, the PDU lengths, both dispatch tables, every body builder, the
   event's shape, the code names and their tables' bounds, all three procedures'
   state tables, the property getter table, the session commands and the two
-  feature-bit commands, and the stream endpoints. It fails on a single changed
+  feature-bit commands, the stream endpoints, and the manifest of the
+  compressed copy the container carries of itself. It fails on a single changed
   byte.
 - `tools/ulla_demo.py`: runs a whole setup against the simulated earbud and
   prints every frame and PDU of it, with no hardware involved. `--reject`
@@ -448,6 +449,8 @@ python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     extract acib payloads/acib.bin --payload FTAB
 python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     extract rkof payloads/rkof.bin --payload FTAB
+python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
+    payload CTAB payloads/ctab.bin
 python3 tools/verify_claims.py --payloads payloads
 
 # talk to a paired pair of earbuds (their address, not ours, goes here)

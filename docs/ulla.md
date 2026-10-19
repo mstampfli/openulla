@@ -212,11 +212,46 @@ US 12683269 B2 and US 12706371 B2:
 
 ### 4.1 Container
 
-The UARP SuperBinary (format 3, version 9.0.348.0) holds 20 payloads. `FTAB`
-is a plain "rkosftab" table (`tools/ftab.py` lists and extracts it). Entries
-used here: `acib` (1,066,208 bytes) and `rkof` (2,088,320 bytes). Both are
-Cortex-M images at base 0 (Thumb). `acib` starts with the stack pointer
+The UARP SuperBinary (format 3, version 9.0.348.0) holds 20 payloads
+(`tools/ftab.py ... payloads` lists them). `FTAB` is a plain "rkosftab" table
+of 46 entries, 7,811,072 bytes: a 32-byte header, the magic at 0x20, then
+16-byte entries of tag, offset (u32 LE), size (u32 LE) and padding, with the
+offsets relative to the table start (`tools/ftab.py` lists and extracts it).
+Entries used here: `acib` (1,066,208 bytes) and `rkof` (2,088,320 bytes). Both
+are Cortex-M images at base 0 (Thumb). `acib` starts with the stack pointer
 0x1001bd80 and the reset vector 0x109.
+
+`CTAB`, the second-largest payload at 5,898,277 bytes, is that same table
+again: one LZ stream, 75.5% of the table's size, holding the whole of it. It is
+worth saying so because the tag invites a session of work and there is nothing
+inside it that `FTAB` does not already give:
+
+- Its stream is unframed. None of libcompression's block magics (`bvx-`,
+  `bvx1`, `bvx2`, `bvxn`, `bvx$`) occurs anywhere in it, so it is neither
+  LZFSE nor the LZVN container, and no zlib, gzip, xz, LZ4-frame or bzip2
+  header occurs either. Raw inflate, at each of the first 64 start offsets of
+  the `acib` region, yields nothing.
+- The manifest is literal enough to read without decompressing. The magic
+  `rkosftab` sits at 0x3d, and 33 of the table's 45 non-empty entries have
+  their offset in the stream as a three-byte little-endian literal, 20 of them
+  with their size immediately after it, in the table's own order. The offsets
+  and sizes are `FTAB`'s own, to the byte.
+- What is missing is what an LZ leaves out: the zero high byte of each u32, the
+  four bytes of padding per entry, and any value the table has already emitted.
+  Two tags are a character short in the stream (`\x09tpf`, `\x03cib`), which is
+  a match running on from that padding into the tag. That is why the records
+  read as `{tag, 3-byte offset, 3-byte size}` packed tight rather than as
+  16-byte rows.
+- The output is the table, not a second build. Each payload's long literals
+  appear in their own band of the stream and the bands follow the manifest's
+  order (median positions, in file order: `rkos` 0x1477d, `aopf` 0x7ea24,
+  `acib` 0x18cd30, `phyb` 0x198b42, `sbd1` 0x25ef84, `apmu` 0x28fea3, `rkof`
+  0x41cd4b), and the literals are the same strings the extracted payloads hold.
+
+`tools/verify_claims.py` checks the first two of those four. The LZ variant
+itself is unidentified: the stream is not LZVN at the start of a payload's
+region, which was tested with a compiled decoder, and nothing in this project
+depends on the answer.
 
 ### 4.2 Strings
 

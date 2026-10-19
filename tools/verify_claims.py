@@ -15,6 +15,8 @@ asset catalog and stay on your machine:
         extract acib payloads/acib.bin --payload FTAB
     python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \\
         extract rkof payloads/rkof.bin --payload FTAB
+    python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \\
+        payload CTAB payloads/ctab.bin
     python3 tools/verify_claims.py --payloads payloads
 
 The build these offsets were read from is 9A348. A different build moves them, which is the
@@ -163,6 +165,37 @@ A2DP_CAPABILITIES = {
     0x00: bytes.fromhex("3fff0235"),
 }
 
+# ctab, the whole firmware table again, in one unframed LZ stream [docs/ulla.md 4.1]
+CTAB_MAGIC = b"rkosftab"
+CTAB_MAGIC_AT = 0x3D  # where the magic, 0x20 bytes into the table itself, lands in the stream
+CTAB_MANIFEST_HEAD = 0x600  # the whole manifest's literals fall inside this much of it
+CTAB_FRAMING = (b"bvx-", b"bvx1", b"bvx2", b"bvxn", b"bvx$")  # libcompression's block magics
+# The FTAB entries whose offset and size survive in that head as three-byte little-endian
+# literals, in the table's own order. 4.1 says why the other entries do not: a value the table
+# has already used is a back-reference rather than a literal.
+CTAB_MANIFEST = (
+    ("aopf", 0x0020F30, 0x091B20),
+    ("rtpf", 0x00B2A50, 0x031260),
+    ("acib", 0x00E3CB0, 0x1044E0),
+    ("phyb", 0x01E8190, 0x012200),
+    ("rkof", 0x036078C, 0x1FDD80),
+    ("ls00", 0x055F014, 0x017AFE),
+    ("ls01", 0x0576B14, 0x017378),
+    ("ls02", 0x058DE8C, 0x01E2C0),
+    ("ls05", 0x05B8478, 0x00ACAC),
+    ("ls06", 0x05C3124, 0x01E150),
+    ("ls07", 0x05E1274, 0x02D5D0),
+    ("ls08", 0x060E844, 0x02D974),
+    ("ls09", 0x063C1B8, 0x02E740),
+    ("ls10", 0x066A8F8, 0x02EE2C),
+    ("ls16", 0x0699724, 0x0081E6),
+    ("dstn", 0x070469C, 0x00EA54),
+    ("Ldn0", 0x07130F0, 0x002000),
+    ("Ldo2", 0x073A950, 0x000020),
+    ("Lpn3", 0x074D470, 0x013760),
+    ("Lpo2", 0x0763030, 0x00E5E0),
+)
+
 
 def u8(img, off):
     return img[off]
@@ -181,7 +214,7 @@ def cstring(img, off, limit=128):
     return img[off : end if end >= 0 else off + limit].decode("ascii", "replace")
 
 
-def check_band_table(acib, rkof):
+def check_band_table(acib, rkof, ctab):
     """The eight records of the band plan, byte for byte. [docs/protocol.md 6.3]"""
     for band in bands.BAND_TABLE:
         at = BAND_TABLE + band.index * bands.RECORD_SIZE
@@ -191,7 +224,7 @@ def check_band_table(acib, rkof):
     return True, f"8 records of {bands.RECORD_SIZE} bytes at acib 0x{BAND_TABLE:x}"
 
 
-def check_transition_table(acib, rkof):
+def check_transition_table(acib, rkof, ctab):
     """Every row of the session manager's table, against openulla.session. [3.4]"""
     expected = {}
     for row in TRANSITIONS:
@@ -220,7 +253,7 @@ def check_transition_table(acib, rkof):
     return True, f"{rows} rows over 15 states, events, both next states and handlers"
 
 
-def check_hci_command_table(acib, rkof):
+def check_hci_command_table(acib, rkof, ctab):
     """The command table, its ordering, and the handler of every command we send. [6.1, 6.4]"""
     keys = [u16(acib, HCI_KEYS + 2 * i) for i in range(HCI_KEY_COUNT)]
     masked = [k & HCI_KEY_MASK for k in keys]
@@ -248,7 +281,7 @@ def check_hci_command_table(acib, rkof):
     )
 
 
-def check_pdu_lengths(acib, rkof):
+def check_pdu_lengths(acib, rkof, ctab):
     """The length each PDU declares, from the serializer's own constant. [5.1, 5.3]"""
     for at, (opcode, length) in SERIALIZER_LENGTHS.items():
         if u16(acib, at) != 0xF04F:
@@ -259,7 +292,7 @@ def check_pdu_lengths(acib, rkof):
     return True, "accepted 2, not accepted 3, 0x74 7, 0x73 9, including the header byte"
 
 
-def check_receive_dispatch(acib, rkof):
+def check_receive_dispatch(acib, rkof, ctab):
     """Where the parser sends each opcode, with the table's own alignment. [5.3]"""
     for opcode, target in RECEIVE_TARGETS.items():
         got = RECEIVE_BASE + 2 * u16(acib, RECEIVE_TABLE + 2 * (opcode - 1))
@@ -268,7 +301,7 @@ def check_receive_dispatch(acib, rkof):
     return True, f"table at acib 0x{RECEIVE_TABLE:x}, {len(RECEIVE_TARGETS)} opcodes checked"
 
 
-def check_escape_dispatch(acib, rkof):
+def check_escape_dispatch(acib, rkof, ctab):
     """Both escape spaces: the two messages we encode, and what each space refuses. [5.6]"""
     for ext, target in ESCAPE_7B_TARGETS.items():
         got = ESCAPE_7B_TABLE + 2 * u16(acib, ESCAPE_7B_TABLE + 2 * (ext - 1))
@@ -294,7 +327,7 @@ def check_escape_dispatch(acib, rkof):
     )
 
 
-def check_transmit_builders(acib, rkof):
+def check_transmit_builders(acib, rkof, ctab):
     """Which body builder each extended opcode of each space uses. [5.7]"""
     covered, without = 0, 0
     for name, table, first, count, cases, stub in (
@@ -318,7 +351,7 @@ def check_transmit_builders(acib, rkof):
     return True, f"{covered} extended opcodes over both spaces, {without} with no builder"
 
 
-def check_event_shape(acib, rkof):
+def check_event_shape(acib, rkof, ctab):
     """The constant word that gives the event its code, length and id. [6]"""
     got = u32(acib, EVENT_LITERAL)
     if got != EVENT_LITERAL_VALUE:
@@ -350,7 +383,7 @@ def reason_case(img, value):
     return table + 2 * img[table + index]
 
 
-def check_names(acib, rkof):
+def check_names(acib, rkof, ctab):
     """The mode, result and reason names, from the tables the firmware's own log indexes."""
     for mode in Mode:
         name = cstring(rkof, u32(rkof, MODE_NAMES + 4 * mode.value))
@@ -374,7 +407,7 @@ def check_names(acib, rkof):
     return True, f"{len(Mode)} modes, {len(Result)} results, {checked} reasons, 2 unnamed"
 
 
-def check_dma_descriptor(acib, rkof):
+def check_dma_descriptor(acib, rkof, ctab):
     """The three bitfield extractions of 7.2, read as instructions. [7.2]"""
     for where, expect, what in (
         (0xDABF8, (3, 3), "the buffer count at bits 3 to 5"),
@@ -401,7 +434,7 @@ def check_dma_descriptor(acib, rkof):
     )
 
 
-def check_getter_table(acib, rkof):
+def check_getter_table(acib, rkof, ctab):
     """The property getter table: one-based, and the two ids whose getters we already cite."""
     if u32(acib, GETTER_TABLE_LITERAL) != GETTER_TABLE:
         return False, f"the dispatcher no longer loads 0x{GETTER_TABLE:x} from its literal"
@@ -414,7 +447,7 @@ def check_getter_table(acib, rkof):
     return True, f"{len(GETTERS)} ids checked against the table at acib 0x{GETTER_TABLE:x}"
 
 
-def check_session_commands(acib, rkof):
+def check_session_commands(acib, rkof, ctab):
     """The eleven commands of 6.6, each resolving to the handler we publish for it."""
     keys = [u16(acib, HCI_KEYS + 2 * i) & HCI_KEY_MASK for i in range(HCI_KEY_COUNT)]
     for opcode, handler in sorted(hci.ULLA_SESSION_COMMANDS.items()):
@@ -440,7 +473,7 @@ def check_session_commands(acib, rkof):
     )
 
 
-def check_feature_bit_commands(acib, rkof):
+def check_feature_bit_commands(acib, rkof, ctab):
     """That the two commands really write the feature byte, and with which masks. [5.8]
 
     Read as instructions rather than as prose: 0xFF77's handler must clear bit 5 and add
@@ -468,7 +501,7 @@ def check_feature_bit_commands(acib, rkof):
     )
 
 
-def check_procedure_tables(acib, rkof):
+def check_procedure_tables(acib, rkof, ctab):
     """The three procedures' state handlers, and the dispatchers that index them. [5.9, 5.10]"""
     for name, table, literal, addresses in (
         ("sink", SINK_TABLE, SINK_LITERAL, list(SINK_HANDLER_ADDRESSES.values())),
@@ -500,7 +533,7 @@ def check_procedure_tables(acib, rkof):
     )
 
 
-def check_name_table_bounds(acib, rkof):
+def check_name_table_bounds(acib, rkof, ctab):
     """That the mode and result lists are as long as we say, and nothing guards them. [6]
 
     Stated as what the image must contain, not as the absence of something: a run of zeroes
@@ -520,7 +553,39 @@ def check_name_table_bounds(acib, rkof):
     return True, f"{len(Mode)} modes then {past_modes!r}, {len(Result)} results then a null"
 
 
-def check_a2dp_endpoints(acib, rkof):
+def check_ctab_manifest(acib, rkof, ctab):
+    """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
+
+    This claim is about the container rather than about an image, so it is read from the
+    container: the table's own magic as a literal, none of libcompression's block magics
+    anywhere, and each published entry's offset and size as three-byte little-endian literals
+    in the table's own order.
+    """
+    at = ctab.find(CTAB_MAGIC)
+    if at != CTAB_MAGIC_AT:
+        return False, f"{CTAB_MAGIC.decode()!r} is at 0x{at:x}, not 0x{CTAB_MAGIC_AT:x}"
+    for magic in CTAB_FRAMING:
+        if magic in ctab:
+            return False, f"{magic.decode()!r} appears, so this is a framed stream after all"
+    head = ctab[:CTAB_MANIFEST_HEAD]
+    place = -1
+    for tag, offset, size in CTAB_MANIFEST:
+        for gap in (b"", b"\x00"):
+            found = head.find(offset.to_bytes(3, "little") + gap + size.to_bytes(3, "little"))
+            if found >= 0:
+                break
+        if found < 0:
+            return False, f"{tag}'s offset and size are not a literal pair in the manifest"
+        if found <= place:
+            return False, f"{tag} lands at 0x{found:x}, which is not after the entry before it"
+        place = found
+    return True, (
+        f"{CTAB_MAGIC.decode()!r} at 0x{at:x}, {len(CTAB_MANIFEST)} entries in table order, "
+        "no block magic"
+    )
+
+
+def check_a2dp_endpoints(acib, rkof, ctab):
     """The three stream endpoints, each descriptor pointing at its capability. [ulla.md 4.6]"""
     seen = {}
     for at in A2DP_DESCRIPTORS:
@@ -556,6 +621,7 @@ CHECKS = (
     ("feature bit commands", check_feature_bit_commands),
     ("procedure state tables", check_procedure_tables),
     ("A2DP stream endpoints", check_a2dp_endpoints),
+    ("ctab is the table again", check_ctab_manifest),
 )
 
 
@@ -571,19 +637,25 @@ def load(path, what):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--payloads", help="directory holding acib.bin and rkof.bin")
+    ap.add_argument("--payloads", help="directory holding acib.bin, rkof.bin and ctab.bin")
     ap.add_argument("--acib", help="the Bluetooth controller payload")
     ap.add_argument("--rkof", help="the RTKitOS features payload")
+    ap.add_argument("--ctab", help="the compressed copy of the whole firmware table")
     args = ap.parse_args()
-    acib_path = args.acib or (os.path.join(args.payloads, "acib.bin") if args.payloads else None)
-    rkof_path = args.rkof or (os.path.join(args.payloads, "rkof.bin") if args.payloads else None)
-    acib, rkof = load(acib_path, "acib"), load(rkof_path, "rkof")
+    here = args.payloads
 
-    print(f"acib {len(acib)} bytes, rkof {len(rkof)} bytes")
+    def beside(name):
+        return os.path.join(here, f"{name}.bin") if here else None
+
+    acib = load(args.acib or beside("acib"), "acib")
+    rkof = load(args.rkof or beside("rkof"), "rkof")
+    ctab = load(args.ctab or beside("ctab"), "ctab")
+
+    print(f"acib {len(acib)} bytes, rkof {len(rkof)} bytes, ctab {len(ctab)} bytes")
     failed = 0
     for name, check in CHECKS:
         try:
-            ok, detail = check(acib, rkof)
+            ok, detail = check(acib, rkof, ctab)
         except Exception as exc:  # a claim that cannot even be read is a failed claim
             ok, detail = False, f"{type(exc).__name__}: {exc}"
         print(f"  {'PASS' if ok else 'FAIL'}  {name:<32} {detail}")

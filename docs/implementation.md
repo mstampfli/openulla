@@ -185,6 +185,8 @@ python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     extract acib payloads/acib.bin --payload FTAB
 python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     extract rkof payloads/rkof.bin --payload FTAB
+python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
+    payload CTAB payloads/ctab.bin
 python3 tools/verify_claims.py --payloads payloads
 ```
 
@@ -205,7 +207,8 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  feature bit commands             0xFF77 sets bit 5, 0xFDF3 adds 0x56 over 0xa9, both at 0x10003290
   PASS  procedure state tables           8 sink, 7 third and 9 source states, acib 0xf2628 to 0xf2664
   PASS  A2DP stream endpoints            vendor 0xFF, AAC 0x02 and SBC 0x00, lengths and bytes as published
-16 of 16 claims hold
+  PASS  ctab is the table again          'rkosftab' at 0x3d, 20 entries in table order, no block magic
+17 of 17 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows
