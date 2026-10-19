@@ -143,6 +143,10 @@ silence otherwise, an earbud whose sibling transport is down answers status 0x17
 idle, status 0 arrives once the manager reaches the state that waits for the local audio path,
 and the report subscription tells both the sibling and the local controller.
 
+It also sends no report afterwards, which is not an omission: no report is produced in this
+build of the firmware either, and protocol.md 2.6 shows that from both ends. A source that
+subscribes and waits will wait here exactly as long as it would against real earbuds.
+
 It does not invent what was not recovered. A real earbud raises its own internal events as its
 DSP, its sibling and its controller get there; here those events are fed in explicitly, so a
 test states the order it wants rather than trusting a guess. The handlers' internals are not

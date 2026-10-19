@@ -50,3 +50,23 @@ def test_the_verifier_sample_names_every_check_it_really_has():
     assert quoted, "the implementation doc no longer shows a verifier run"
     assert quoted == names
     assert f"{len(names)} of {len(names)} claims hold" in doc
+
+
+# The size of each payload of build 9A348, as its own FTAB entry gives it
+# (`tools/ftab.py ... list --payload FTAB`). A citation past the end of its payload is a typo,
+# and a dropped digit is the easy way to make one.
+PAYLOAD_SIZES = {"acib": 1066208, "rkof": 2088320, "sbd1": 1462016, "ctab": 5898277}
+RAM_WINDOW = 0x10000000  # addresses at or above this are the controller's RAM, not offsets
+
+
+def test_every_firmware_citation_is_inside_its_payload():
+    cited = 0
+    for doc in [*sorted((ROOT / "docs").glob("*.md")), ROOT / "README.md"]:
+        text = doc.read_text()
+        for match in re.finditer(r"\b(acib|rkof|sbd1|ctab)\s+(0x[0-9a-fA-F]+)", text):
+            payload, address = match.group(1), int(match.group(2), 0)
+            if address >= RAM_WINDOW:
+                continue
+            cited += 1
+            assert address < PAYLOAD_SIZES[payload], f"{doc.name}: {payload} {match.group(2)}"
+    assert cited > 300, f"only {cited} citations found; the pattern stopped matching"
