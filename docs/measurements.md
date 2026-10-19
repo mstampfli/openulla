@@ -229,3 +229,9 @@ and refused". Two things do discriminate:
 Nothing was disturbed: the adapter stayed `UP RUNNING` and no connection existed before or
 after. A single unknown vendor command is refused by the controller's own dispatcher, which is
 what the first three rows show.
+
+`tools/ulla_probe.py` is this measurement as a command. It sends the control first and then
+every prediction, and prints what each answer would mean on a controller that implements them;
+on this host it ends with "this controller implements none of them", which is the result above
+and the baseline anything else is read against. Run on 2026-10-19 against the same adapter, it
+reproduces all six rows and leaves the adapter `UP RUNNING`.

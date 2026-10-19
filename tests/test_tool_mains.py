@@ -139,3 +139,38 @@ def test_every_tool_answers_help_instead_of_a_traceback(tmp_path):
         printed = run.stdout + run.stderr
         assert "Traceback" not in printed, f"{script.name}: {printed[:300]}"
         assert printed.strip(), f"{script.name} said nothing at all"
+
+
+def test_the_probe_builds_exactly_the_documented_commands(capsys, monkeypatch):
+    """Its bytes come from the library, so a reader can check them without a controller."""
+    import ulla_probe
+
+    from openulla import hci
+
+    rows = ulla_probe.probes(0x000B)
+    names = [name for name, _, _, _ in rows]
+    assert names[0] == "baseline", "the control has to run first or nothing can be read"
+    assert ulla_probe.UNIMPLEMENTED == hci.vendor_opcode(0x3FF)
+    for name, opcode, data, expected in rows:
+        assert data[:2] == opcode.to_bytes(2, "little"), name
+        assert data[2] == len(data) - 3, f"{name} declares the wrong parameter length"
+        assert expected, name
+    # The two 0xFE55 probes straddle the bound protocol.md 6.6 publishes.
+    in_range = dict((n, d) for n, _, d, _ in rows)["0xFE55 in range"]
+    out_of_range = dict((n, d) for n, _, d, _ in rows)["0xFE55 out of range"]
+    assert int.from_bytes(in_range[3:], "little", signed=True) == 800
+    assert int.from_bytes(out_of_range[3:], "little", signed=True) == 801
+
+    monkeypatch.setattr("sys.argv", ["ulla_probe.py", "--dry-run"])
+    assert ulla_probe.main() == 0
+    printed = capsys.readouterr().out
+    assert "0xfe55" in printed and "55 fe 04 20 03 00 00" in printed
+
+
+def test_the_probe_names_every_status_it_can_print():
+    """read() must not raise on a status the standard does not name."""
+    import ulla_probe
+
+    assert "success" in ulla_probe.read(0x00)
+    assert "COMMAND_DISALLOWED" in ulla_probe.read(0x0C)
+    assert "unnamed" in ulla_probe.read(0xEE)

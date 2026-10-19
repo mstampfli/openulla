@@ -453,6 +453,13 @@ link keys and other people's device addresses.
 - `tools/ulla_interop.py`: writes or checks the four files in `interop/`.
   `--check` fails if any of them and the library disagree, which is what keeps
   the artifacts honest.
+- `tools/ulla_probe.py`: sends the firmware's own testable predictions to a real
+  controller and says what each answer means. It establishes its own control
+  first, by sending an opcode nobody implements, because 0x0C alone cannot tell
+  "implemented and refused" from "not implemented". `--dry-run` prints the bytes
+  and sends nothing; the raw socket needs root. On any controller but Apple's
+  the expected verdict is "implements none of them", and that is the baseline
+  the interesting outcomes are read against.
 - `tools/ulla_sink.py`: answers like an earbud on a real L2CAP channel, PSM
   0x1001, so a source implementation can be tested over real Bluetooth with no
   earbuds involved. It prints every internal event it supplies by name, and
