@@ -372,10 +372,23 @@ In rough order of how little hardware it needs:
    send them (section 8.1), and `tools/ulla_sink.py` answers as an earbud on a
    real L2CAP channel, so the host half of an implementation can be tested
    before any of it touches earbuds.
+
+   Two of those tests need **no link and no audio at all**, only a controller
+   that accepts the vendor commands. Command 0xFE55's word is bounded to the
+   signed range -800 to +800 and anything outside it must answer 0x11; and on a
+   link that is already up, 0xFE53 must be refused with 0x0C for one role while
+   0xFE57 and 0xFE58 are refused for the other. Both predictions are read from
+   the firmware's own instructions ([docs/protocol.md](docs/protocol.md) 6.6),
+   and either outcome is worth reporting: a refusal that does not come is as
+   informative as one that does.
 3. **If you have a wideband software radio**, the air format is the big unknown.
    The link hops 79 channels at Bluetooth timing, so capturing the whole band
    and un-hopping in software is the realistic approach rather than chasing the
    hops.
+4. **If you have no hardware at all**, implement a layer in another language
+   against [interop/](interop/): every message as bytes, both state machines as
+   tables, every named number. A mismatch is a finding either way round, and it
+   is the one kind of help that needs nothing but a compiler.
 
 Please scrub captures before sharing them: a real Bluetooth trace can contain
 link keys and other people's device addresses.
