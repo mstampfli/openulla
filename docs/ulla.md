@@ -256,9 +256,12 @@ inside it that `FTAB` does not already give:
   16-byte rows.
 - The output is the table, not a second build. Each payload's long literals
   appear in their own band of the stream and the bands follow the manifest's
-  order (median positions, in file order: `rkos` 0x1477d, `aopf` 0x7ea24,
-  `acib` 0x18cd30, `phyb` 0x198b42, `sbd1` 0x25ef84, `apmu` 0x28fea3, `rkof`
-  0x41cd4b), and the literals are the same strings the extracted payloads hold.
+  order. The median position **within the stream** of each payload's literals,
+  in file order, is 0x1477d for `rkos`, 0x7ea24 for `aopf`, 0x18cd30 for
+  `acib`, 0x198b42 for `phyb`, 0x25ef84 for `sbd1`, 0x28fea3 for `apmu` and
+  0x41cd4b for `rkof`. Those are offsets into the stream and not into the
+  payload each one names, which is why they are written this way round. The
+  literals are the same strings the extracted payloads hold.
 
 `tools/verify_claims.py` checks the first two of those four. The LZ variant
 itself is unidentified: the stream is not LZVN at the start of a payload's
