@@ -235,3 +235,29 @@ every prediction, and prints what each answer would mean on a controller that im
 on this host it ends with "this controller implements none of them", which is the result above
 and the baseline anything else is read against. Run on 2026-10-19 against the same adapter, it
 reproduces all six rows and leaves the adapter `UP RUNNING`.
+
+## 11. The mode byte is not validated, and the lite mode is accepted
+
+Measured 2026-10-19 08:30 against real earbuds on firmware 9A348, with
+`tools/aap_probe.py --device MAC --predict`. Three start-session commands, **each on its own
+channel**, because a start is taken only while the manager is idle and closing the channel
+resets it (2.4, section 3 above): mode 0 as the control, then mode 2 and mode 7.
+
+| mode byte | what it is | status reply |
+|---|---|---|
+| 0 | the control, the documented path | **0x0000** |
+| 2 | `ULLA_LITE_MODE_ON`, the third mode the firmware names | **0x0000** |
+| 7 | outside the three names altogether | **0x0000** |
+
+So the prediction of [protocol.md](protocol.md) section 6 holds: **nothing validates the mode
+byte.** A host may ask for the lite mode, and a host may ask for a mode that does not exist;
+both are answered exactly like mode 0, with the success status, and the manager advances the
+same way. Any bound on that byte lives in whatever Apple's own source sends, not in the
+earbud.
+
+One methodological note, because it changed the measurement. The first run of this test
+compared the **number of frames** that came back, and a real pair volunteers a stream of its
+own status frames on the same channel - battery and state updates, opcode 0x0009 - so "one
+frame arrived" says nothing about which one. The tool now finds the status reply by its opcode
+and compares that; the table above is from the corrected run, and the frame-counting version
+would have reported the same verdict for the wrong reason.

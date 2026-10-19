@@ -83,9 +83,14 @@ def step_frame(step, version_pair):
 
 
 def drain(transport, seconds, label):
-    """Print every frame that arrives within the window."""
+    """Print every frame that arrives within the window, and return them.
+
+    The frames are returned because counting them is not enough: a real pair volunteers its
+    own status frames, so "one frame came back" says nothing about which one. --predict reads
+    the status reply out of this list instead.
+    """
     end = time.monotonic() + seconds
-    got = 0
+    frames = []
     while True:
         left = end - time.monotonic()
         if left <= 0:
@@ -103,12 +108,12 @@ def drain(transport, seconds, label):
         if not data:
             print("  %s: channel closed by the earbud" % label)
             break
-        got += 1
+        frames.append(data)
         print("  %s <- %s" % (label, describe(data)))
         print("      raw %s" % data.hex(" "))
-    if not got:
+    if not frames:
         print("  %s: nothing within %gs" % (label, seconds))
-    return got
+    return frames
 
 
 def predictions():
@@ -142,6 +147,25 @@ def open_channel(args, wait, ver_a, ver_b):
     return transport
 
 
+def status_of(frames):
+    """The status value out of a run's frames, or None if no status reply arrived.
+
+    A real pair volunteers unrelated status frames on the same channel, so the reply has to be
+    picked out by its opcode rather than by being the only thing that came back.
+    """
+    for data in frames:
+        try:
+            frame = aap.parse_frame(data)
+            if frame.ftype != aap.FrameType.DATA:
+                continue
+            opcode, _ = aap.parse_payload(frame.body)
+            if opcode == aap.Opcode.STATUS:
+                return aap.parse_status(frame.body)
+        except ProtocolError:
+            continue
+    return None
+
+
 def run_predictions(args, wait, ver_a, ver_b):
     """Try each mode byte on its own channel and say what the answers mean together."""
     answers = {}
@@ -155,13 +179,16 @@ def run_predictions(args, wait, ver_a, ver_b):
         command = aap.start_session(mode)
         print("  -> start ULLA session, mode %d: %s" % (mode, command.hex(" ")))
         transport.send(command)
-        got = drain(transport, wait if args.simulate else max(wait, 4.0), "mode%d" % mode)
-        answers[mode] = got
+        frames = drain(transport, wait if args.simulate else max(wait, 4.0), "mode%d" % mode)
+        answers[mode] = status_of(frames)
+        print("  mode %d: status reply %s" % (
+            mode, "none" if answers[mode] is None else "0x%04x" % answers[mode]))
         transport.close()
 
-    control = answers.get(0, 0)
-    print("\nthe control answered with %d frame(s)." % control)
-    if not control:
+    control = answers.get(0)
+    print("\nthe control answered with status %s." % (
+        "none" if control is None else "0x%04x" % control))
+    if control is None:
         print("Nothing came back for mode 0 either, so this run says nothing about the other "
               "two: either no pair is connected, or the earbud's own app and sibling had not "
               "got there yet. Against --simulate that is expected, because the simulator does "
@@ -170,13 +197,15 @@ def run_predictions(args, wait, ver_a, ver_b):
         return 0
     for mode, _ in predictions()[1:]:
         if answers[mode] == control:
-            print("  mode %d was answered exactly like the control, so it is accepted." % mode)
-        elif answers[mode] == 0:
-            print("  mode %d got nothing while the control was answered: that byte IS "
+            print("  mode %d was answered with the same status as the control, so the byte is "
+                  "accepted." % mode)
+        elif answers[mode] is None:
+            print("  mode %d got no status reply while the control was answered: that byte IS "
                   "validated somewhere this project has not found." % mode)
         else:
-            print("  mode %d answered differently from the control, which is the interesting "
-                  "case: report the frames above." % mode)
+            print("  mode %d answered status 0x%04x where the control answered 0x%04x, which "
+                  "is the interesting case: report the frames above." % (
+                      mode, answers[mode], control))
     return 0
 
 

@@ -176,46 +176,6 @@ def test_the_probe_names_every_status_it_can_print():
     assert "unnamed" in ulla_probe.read(0xEE)
 
 
-def test_the_mode_predictions_read_their_own_answers_correctly(capsys, monkeypatch):
-    """The verdict logic, driven through every branch: the run itself needs earbuds."""
-    import aap_probe
-
-    class Args:
-        simulate = True
-        device = None
-
-    def answers(counts):
-        order = iter(counts)
-
-        def fake_drain(transport, seconds, label):
-            return 0 if label == "open" else next(order)
-
-        return fake_drain
-
-    # Control answered, and both exotic modes answered the same way: accepted.
-    monkeypatch.setattr(aap_probe, "drain", answers([1, 1, 1]))
-    assert aap_probe.run_predictions(Args(), 0.01, 1, 2) == 0
-    printed = capsys.readouterr().out
-    # The verdict sentence, not the prediction's own wording, which also says "accepted".
-    assert printed.count("so it is accepted.") == 2
-
-    # Control answered, one mode silent: that byte is validated after all.
-    monkeypatch.setattr(aap_probe, "drain", answers([1, 0, 1]))
-    aap_probe.run_predictions(Args(), 0.01, 1, 2)
-    printed = capsys.readouterr().out
-    assert "IS validated somewhere" in printed
-
-    # Control answered, one mode answered differently: the interesting case.
-    monkeypatch.setattr(aap_probe, "drain", answers([1, 1, 3]))
-    aap_probe.run_predictions(Args(), 0.01, 1, 2)
-    assert "the interesting case" in capsys.readouterr().out
-
-    # No control: the run says nothing about the others rather than guessing.
-    monkeypatch.setattr(aap_probe, "drain", answers([0, 0, 0]))
-    aap_probe.run_predictions(Args(), 0.01, 1, 2)
-    assert "says nothing about the other two" in capsys.readouterr().out
-
-
 def test_the_predictions_are_control_first_and_cover_the_published_modes():
     import aap_probe
 
@@ -225,3 +185,61 @@ def test_the_predictions_are_control_first_and_cover_the_published_modes():
     assert modes[0] == 0, "the control has to run first or silence cannot be read"
     assert int(Mode.ULLA_LITE_ON) in modes, "the lite mode is one of the three the firmware names"
     assert any(m not in set(int(x) for x in Mode) for m in modes), "no out-of-range byte tried"
+
+
+def test_the_mode_predictions_read_the_status_reply_not_the_frame_count(capsys, monkeypatch):
+    """Every branch of the verdict, and the reason it keys on the status reply.
+
+    A real pair volunteers its own status frames on the same channel, so counting frames
+    cannot tell which answer arrived; this is the defect the first hardware run exposed.
+    """
+    import aap_probe
+
+    from openulla import aap
+
+    class Args:
+        simulate = True
+        device = None
+
+    noise = aap.data_frame(0x0009, bytes.fromhex("2f00000000"))
+
+    def runs(statuses):
+        order = iter(statuses)
+
+        def fake_drain(transport, seconds, label):
+            if label == "open":
+                return []
+            status = next(order)
+            # The volunteered frame comes first on purpose: the reply has to be found by its
+            # opcode, not by being the only thing in the list.
+            return [noise] if status is None else [noise, aap.status_reply(status)]
+
+        return fake_drain
+
+    monkeypatch.setattr(aap_probe, "drain", runs([0, 0, 0]))
+    assert aap_probe.run_predictions(Args(), 0.01, 1, 2) == 0
+    assert capsys.readouterr().out.count("so the byte is accepted.") == 2
+
+    monkeypatch.setattr(aap_probe, "drain", runs([0, None, 0]))
+    aap_probe.run_predictions(Args(), 0.01, 1, 2)
+    assert "IS validated somewhere" in capsys.readouterr().out
+
+    monkeypatch.setattr(aap_probe, "drain", runs([0, 0, 0x1776]))
+    aap_probe.run_predictions(Args(), 0.01, 1, 2)
+    assert "answered status 0x1776 where the control answered 0x0000" in capsys.readouterr().out
+
+    monkeypatch.setattr(aap_probe, "drain", runs([None, None, None]))
+    aap_probe.run_predictions(Args(), 0.01, 1, 2)
+    assert "says nothing about the other two" in capsys.readouterr().out
+
+
+def test_the_status_reader_finds_the_reply_among_volunteered_frames():
+    import aap_probe
+
+    from openulla import aap
+
+    noise = aap.data_frame(0x0009, bytes.fromhex("3300000000"))
+    assert aap_probe.status_of([noise]) is None
+    assert aap_probe.status_of([noise, aap.status_reply(0), noise]) == 0
+    assert aap_probe.status_of([aap.status_reply(0x1776)]) == 0x1776
+    assert aap_probe.status_of([b"\x00\x01"]) is None  # a short frame is not a reply

@@ -161,8 +161,10 @@ dispatches on it [fw rkof 0x6cf48, table at 0x6cf4c]. The ULLA ones:
 
 **What the mode byte of 0x36 actually does**, since that one byte is the only choice a host
 makes. The manager stores it and never validates it [fw rkof 0x27a58, which has no range
-check, and measured: 0, 1 and 2 all answer status 0]. After that it is read in eight places,
-and they fall into three groups:
+check]. That is not only a reading of the code: **a mode byte of 7 is answered with the same
+success status as 0**, as is 2, each tried on its own channel against real earbuds
+[[measurements.md](measurements.md) section 11]. After that it is read in eight places, and
+they fall into three groups:
 
 - three read **only its low bit** [fw rkof 0x2609e, 0x264f4, 0x26900, each masking with 1], so
   mode 2 behaves there exactly like mode 0;
