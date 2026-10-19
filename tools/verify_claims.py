@@ -240,6 +240,32 @@ PAIR_IMMEDIATES = (
     ("0x18 copies fifteen bytes", 0x23266, 0x220F),
 )
 PACKET_TABLE_PROCEDURE_AT = 0x29E0E  # cmp r0, #0x20 on the link's +0x7D, in its sender
+# The prose-only citations of 5.14, 5.15, 6.8 and 7.3: addresses the documentation describes in
+# words, with the encoding each one must hold. (what, address, first halfword, second or None).
+PROSE_CITATIONS = (
+    ("0x23 reads body+4", 0x3179E, 0x7920, None),
+    ("0x23 reads body+5", 0x317A0, 0x7961, None),
+    ("its byte to the link's +0x16f", 0x317A2, 0xF885, 0x016F),
+    ("and to +0x171", 0x317AC, 0xF885, 0x1171),
+    ("0x23's word at body+7", 0x317BE, 0xF8D4, 0x1007),
+    ("0x23's halfword at body+0x10", 0x31806, 0x8A20, None),
+    ("0x23's sixteen-byte count", 0x31818, 0x2210, None),
+    ("0x18 copies fifteen", 0x23266, 0x220F, None),
+    ("0x18's destination +0x36f", 0x23260, 0xF204, 0x306F),
+    ("TLV type 0 to +0x62", 0x29854, 0xF8A4, 0x0062),
+    ("TLV type 1 to +0x64", 0x29868, 0xF8A4, 0x0064),
+    ("TLV type 2 to +0x68", 0x29876, 0xF884, 0x1068),
+    ("TLV type 0xF to +0x66", 0x2988E, 0xF8A4, 0x0066),
+    ("0x25 reads body+0x29", 0x31ED0, 0xF894, 0x1029),
+    ("0x25 reads body+0x2f", 0x31ED4, 0xF894, 0x202F),
+    ("0x22 reads body+6", 0x30A04, 0x79A0, None),
+    ("0x22 reads body+0x14", 0x30A1E, 0x7D20, None),
+    ("0x0C's value to record +0x6b", 0x154EC, 0xF880, 0x106B),
+    ("the size setter stores +0x718", 0x15426, 0xF8A1, 0x0718),
+    ("the byte setter stores +0x730", 0x153E6, 0xF881, 0x0730),
+    ("the twelve-bit length writer", 0x78CF4, 0xF361, 0x00CE),
+    ("the ten-bit length writer", 0x78CE8, 0xF361, 0x00CC),
+)
 # The TLV parser behind the counted block, and the block this firmware's own reply opens with.
 TLV_TYPE_MASK_AT = 0x2983A  # and r1, r2, #0xf, the low nibble is the type
 TLV_DEFAULT_STEP = (0x298E4, 0x2003)  # movs r0, #3, one plus a length of two
@@ -1537,6 +1563,28 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
     )
 
 
+def check_prose_citations(acib, rkof, ctab, sbd1):
+    """Every address the documentation only describes in words. [5.14, 5.15, 6.8, 7.3]
+
+    The other claims re-derive a structure. These are the field offsets and destinations that
+    appear in prose and nowhere else, and a transcription error in one of them would otherwise
+    be invisible: the citation test in `tests/test_docs.py` checks that an address is inside its
+    payload, not that it holds what the sentence says. This checks the instruction. All of them
+    were audited by disassembling them once; this is what keeps that audit true.
+    """
+    for what, address, first, second in PROSE_CITATIONS:
+        if u16(acib, address) != first:
+            return False, (
+                f"{what}: 0x{address:x} is 0x{u16(acib, address):04x}, not 0x{first:04x}"
+            )
+        if second is not None and u16(acib, address + 2) != second:
+            return False, (
+                f"{what}: 0x{address + 2:x} is 0x{u16(acib, address + 2):04x}, "
+                f"not 0x{second:04x}"
+            )
+    return True, f"{len(PROSE_CITATIONS)} prose citations hold their instruction"
+
+
 def check_ctab_manifest(acib, rkof, ctab, sbd1):
     """That ctab is the firmware table again, compressed, and carries nothing else. [4.1]
 
@@ -1617,6 +1665,7 @@ CHECKS = (
     ("shared host commands", check_shared_host_commands),
     ("payload header width", check_payload_header_width),
     ("the five paired procedures", check_paired_procedures),
+    ("prose-only citations", check_prose_citations),
 )
 
 
