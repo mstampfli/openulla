@@ -144,6 +144,20 @@ def describe_lmp(data: bytes) -> list[str]:
     elif isinstance(parsed, lmp.AllowedBands):
         lines += [f"  allowed-band mask 0x{parsed.mask:02x}"]
         lines += [f"    band {line}" for line in describe_bands(parsed.mask)]
+    elif isinstance(parsed, lmp.SelectorRequest):
+        lines += [
+            f"  the selector request (0x7B/0x0E): selector {parsed.selector}",
+            "    its receiver answers with a value and a four-bit code, protocol.md 5.11",
+        ]
+    elif isinstance(parsed, lmp.ValueAndCode):
+        where = parsed.code_class()
+        lines += [
+            f"  a value and a code (0x7B/0x0F): value 0x{parsed.value:02x}, code {parsed.code}",
+            "    the three pairs this firmware answers with are "
+            + ", ".join(f"0x{v:02x}/{c}" for v, c in lmp.ValueAndCode.PAIRS),
+            "    the receiver's masks put this code in "
+            + (f"class {where}" if where else "neither class"),
+        ]
     elif isinstance(parsed, lmp.BandRanges):
         lines += [
             f"  band ranges, {len(parsed.ranges)} triples, "

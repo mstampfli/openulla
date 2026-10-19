@@ -186,3 +186,34 @@ def test_the_bound_that_0x75s_receiver_applies():
 def test_an_opcode_that_is_not_a_configuration_is_refused():
     with pytest.raises(ProtocolError):
         lmp.Configuration(0, 0, opcode=0x77).to_bytes()
+
+
+def test_the_selector_request_and_the_pair_it_is_answered_with():
+    """protocol.md 5.11: the one extended pair that is traced end to end."""
+    assert lmp.SelectorRequest(1).to_bytes() == bytes.fromhex("f6 0e 01")
+    assert lmp.parse(bytes.fromhex("f7 0e 02")) == lmp.SelectorRequest(2, tid=1)
+    with pytest.raises(ProtocolError):
+        lmp.SelectorRequest(3).to_bytes()  # the receiver answers 0, 1 and 2 only
+    with pytest.raises(ProtocolError):
+        lmp.SelectorRequest.from_bytes(bytes.fromhex("f6 0e 01 00"))
+
+
+def test_the_value_and_code_pdu_and_the_two_classes_its_receiver_sorts_it_into():
+    assert lmp.ValueAndCode(0x2A, 0x0A).to_bytes() == bytes.fromhex("f6 0f 2a 0a")
+    assert lmp.parse(bytes.fromhex("f6 0f 3f 0f")) == lmp.ValueAndCode(0x3F, 0x0F)
+    # The three pairs the firmware itself answers with are one, two and three times the first.
+    first, second, third = lmp.ValueAndCode.PAIRS
+    assert (second[0], second[1]) == (first[0] * 2, first[1] * 2)
+    assert (third[0], third[1]) == (first[0] * 3, first[1] * 3)
+    # The masks 0x9009 and 0x504, as the receiver applies them.
+    assert lmp.ValueAndCode(0, 15).code_class() == 1
+    assert lmp.ValueAndCode(0, 10).code_class() == 2
+    assert lmp.ValueAndCode(0, 5).code_class() is None
+    for code in lmp.ValueAndCode.FIRST_CLASS:
+        assert lmp.ValueAndCode(0, code).code_class() == 1
+    for code in lmp.ValueAndCode.SECOND_CLASS:
+        assert lmp.ValueAndCode(0, code).code_class() == 2
+    with pytest.raises(ProtocolError):
+        lmp.ValueAndCode(0, 16).to_bytes()  # the receiver bounds the code at 15
+    with pytest.raises(ProtocolError):
+        lmp.ValueAndCode.from_bytes(bytes.fromhex("f6 0f 2a"))

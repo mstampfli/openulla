@@ -745,6 +745,7 @@ feature in this firmware is gated on **the AND of the two words**, a byte at a t
 |---|---|---|
 | the band command family and the band PDUs | 5 | the device's own byte and the link's 0x47 [fw acib 0x29916] |
 | 0xFE50's non-zero path, the mode procedure | 6 | the same pair, or the two bytes three further on, 0x10003293 against the link's 0x4A [fw acib 0x1db5e] |
+| which escape space one reply goes in (5.11) | 2, then 1, then 6 of the fourth bytes | the first bytes for 2 and 1, then 0x10003293 against the link's 0x4A again [fw acib 0x29204, the second test at 0x293ac] |
 
 So the device's feature word lives at 0x10003290 to 0x10003293 and the peer's at the link's
 0x47 to 0x4A, and **an implementation that never answers the exchange has every feature gated
@@ -960,6 +961,54 @@ responder procedures at once, on two different links, in two different machines.
 `openulla/procedure.py` holds the sink's table beside the source's, and `openulla.controller`
 drives it rather than keeping a second copy of the same rules: the four checks decide, and
 everything about when each PDU goes out comes from the machine.
+
+### 5.11 One extended pair, traced end to end
+
+Section 5.6 lists what exists in the two escape spaces and 5.7 how long each message is, and
+both stop short of what the messages are for, because naming them would be interpretation.
+One pair can be taken further than that without guessing, because the answer is built in
+front of us. It is also the clearest example of the 0x11 offset between the two spaces being
+used for something.
+
+**0x7B/0x0E is a request, and the handler that receives it answers.** [fw acib 0x2919c]
+
+1. The byte at the received buffer's +0x10 is a selector, and the handler switches on 0, 1
+   and 2 [fw acib 0x291b0].
+2. Each branch asks the controller the same thing with a different parameter: property 0xB9
+   about this link, with 0, 1 or 4 [fw acib 0x5b55e, 0x5b550 and 0x5b56c, all through 0x5b622
+   and the property call 0x79454].
+3. The answer picks one of exactly three two-byte pairs for the reply: **0x15 and 0x05**,
+   **0x2A and 0x0A**, or **0x3F and 0x0F**, which are the same two numbers at one, two and
+   three times [fw acib 0x291c4, 0x291d2 and 0x291de, each storing it at the block's +0x10].
+4. A second property, 0xA7, returning zero forces the middle pair [fw acib 0x291f2 to
+   0x29200].
+5. **Which space the reply goes in is a feature decision.** Bit 2 of the AND of the two first
+   feature bytes sends it as 0x7B/0x0F; failing that, bit 1 of the same AND or bit 6 of the
+   AND of the two fourth bytes does the same; otherwise the identical message goes out as
+   0x7F/0x20 [fw acib 0x29204 to 0x2922c, the second test at 0x293ac, the send at 0x3ad7c].
+
+**And the reply's own receiver reads those two bytes back.** [fw acib 0x29318]
+
+- The link's byte at +0x17E has to read 2, or the message goes to a different handler
+  entirely [fw acib 0x29324, the other one at 0x29244].
+- The second body byte is bounded at 15, so it is a four-bit code, and two masks classify it:
+  the values 0, 3, 12 and 15 set one flag on the link and 2, 8 and 10 set another
+  [fw acib 0x29332 to 0x29372, the masks 0x9009 and 0x504, the flags at the link's +0x177 and
+  +0x176]. The three codes this firmware itself would send, 5, 10 and 15, fall in the second
+  class, neither class and the first.
+- Then both bytes go to one call with a 1 [fw acib 0x29380], and the link is poked once more
+  [fw acib 0x3f618] before a property write with id 0xA6.
+
+The transmit side agrees with that layout: 5.7's builder for 0x7B/0x0F writes exactly two
+bytes, from the block's +0x10 and +0x11, which is where step 3 put them. For 0x0E this
+firmware's own builder writes one byte, so the request it would send is shorter than the one
+it reads a selector out of at +0x10; the directions of these messages are not symmetric, which
+5.7 already says in general.
+
+What the numbers mean stays open. A value of 21, 42 or 63 with a code of 5, 10 or 15, chosen
+per link by a controller property, is a 1:2:3 family and nothing in these payloads names it.
+It is the most concrete lead left for anyone with a capture: those six bytes are recognisable
+on sight.
 
 ## 6. Controller interface: HCI vendor commands
 

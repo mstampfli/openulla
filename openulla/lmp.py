@@ -40,6 +40,8 @@ ESCAPE_7B = 0x7B
 ESCAPE_7F = 0x7F
 EXT_FEATURE_REQUEST = 0x0A  # in the 0x7B space: one word, the sender's feature bits
 EXT_FEATURE_REPLY = 0x0B
+EXT_SELECTOR_REQUEST = 0x0E  # 0x7B: one selector byte, answered with the pair below (5.11)
+EXT_VALUE_AND_CODE = 0x0F  # 0x7B: a value byte and a four-bit code; 0x7F/0x20 is the same
 EXT_ALLOWED_BANDS = 0x17  # in the 0x7B space; 0x17 also exists behind 0x7F, unrelated
 EXT_BAND_RANGES = 0x1C
 MAX_BAND_RANGES = 5
@@ -347,6 +349,81 @@ class AllowedBands:
 
 
 @dataclass(frozen=True)
+class SelectorRequest:
+    """Escape 0x7B, extended opcode 0x0E: one selector byte, answered with the pair below.
+
+    The receiver switches on the selector against 0, 1 and 2, asks the controller property
+    0xB9 about the link with the parameter 0, 1 or 4, and answers [fw acib 0x291b0 onwards,
+    protocol.md 5.11]. The names here are ours: nothing in the firmware names this message.
+    """
+
+    selector: int
+    tid: int = 0
+
+    LENGTH = 3  # header, extended opcode, selector
+    SELECTORS = (0, 1, 2)
+
+    def to_bytes(self) -> bytes:
+        if self.selector not in self.SELECTORS:
+            raise ProtocolError("the receiver answers only the selectors 0, 1 and 2")
+        return bytes((header(ESCAPE_7B, self.tid), EXT_SELECTOR_REQUEST, self.selector))
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> SelectorRequest:
+        head = parse_header(data)
+        if head.opcode != ESCAPE_7B or head.ext_opcode != EXT_SELECTOR_REQUEST:
+            raise ProtocolError("not the selector request")
+        if len(data) != cls.LENGTH:
+            raise ProtocolError(f"the selector body is 1 byte, got {len(data) - 2}")
+        return cls(selector=data[2], tid=head.tid)
+
+
+@dataclass(frozen=True)
+class ValueAndCode:
+    """Escape 0x7B, extended opcode 0x0F: a value byte and a four-bit code.
+
+    The three pairs this firmware answers with are the same two numbers at one, two and three
+    times [fw acib 0x291c4, 0x291d2, 0x291de]. Its receiver bounds the code at 15 and sorts it
+    with two masks [fw acib 0x29332 onwards]. The same message goes out as 0x7F/0x20 instead
+    when the feature bits say so, which is a sender's decision and not part of the layout
+    [fw acib 0x29204, protocol.md 5.11].
+    """
+
+    value: int
+    code: int
+    tid: int = 0
+
+    LENGTH = 4  # header, extended opcode, value, code
+    PAIRS = ((0x15, 0x05), (0x2A, 0x0A), (0x3F, 0x0F))
+    FIRST_CLASS = frozenset({0, 3, 12, 15})  # the mask 0x9009
+    SECOND_CLASS = frozenset({2, 8, 10})  # the mask 0x504
+
+    def to_bytes(self) -> bytes:
+        if not 0 <= self.value <= 0xFF:
+            raise ProtocolError("the value is one byte")
+        if not 0 <= self.code <= 0x0F:
+            raise ProtocolError("the receiver bounds the code at 15")
+        return bytes((header(ESCAPE_7B, self.tid), EXT_VALUE_AND_CODE, self.value, self.code))
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> ValueAndCode:
+        head = parse_header(data)
+        if head.opcode != ESCAPE_7B or head.ext_opcode != EXT_VALUE_AND_CODE:
+            raise ProtocolError("not the value-and-code PDU")
+        if len(data) != cls.LENGTH:
+            raise ProtocolError(f"the value-and-code body is 2 bytes, got {len(data) - 2}")
+        return cls(value=data[2], code=data[3], tid=head.tid)
+
+    def code_class(self) -> int | None:
+        """1 or 2 for the two classes the receiver's masks pick out, None for neither."""
+        if self.code in self.FIRST_CLASS:
+            return 1
+        if self.code in self.SECOND_CLASS:
+            return 2
+        return None
+
+
+@dataclass(frozen=True)
 class BandRange:
     """One (band, first channel, length) triple, as both 0x1C and HCI 0xFF8E carry it."""
 
@@ -448,6 +525,10 @@ def parse(data: bytes) -> object:
         return AllowedBands.from_bytes(data)
     if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_BAND_RANGES:
         return BandRanges.from_bytes(data)
+    if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_SELECTOR_REQUEST:
+        return SelectorRequest.from_bytes(data)
+    if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_VALUE_AND_CODE:
+        return ValueAndCode.from_bytes(data)
     raise ProtocolError(
         f"opcode 0x{head.opcode:02x}"
         + (f" extended 0x{head.ext_opcode:02x}" if head.ext_opcode is not None else "")
