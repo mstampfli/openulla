@@ -374,6 +374,25 @@ def check_names(acib, rkof):
     return True, f"{len(Mode)} modes, {len(Result)} results, {checked} reasons, 2 unnamed"
 
 
+def check_dma_descriptor(acib, rkof):
+    """The three bitfield extractions of 7.2, read as instructions. [7.2]"""
+    for where, expect, what in (
+        (0xDABF8, (3, 3), "the buffer count at bits 3 to 5"),
+        (0xDAC2C, (0x10, 4), "the flag nibble at bits 16 to 19"),
+        (0xDAC50, (6, 10), "the length at bits 6 to 15"),
+    ):
+        # ubfx rD, rS, #lsb, #width, T1: the second halfword holds imm3, Rd, imm2 and width-1,
+        # and the lsb is imm3:imm2.
+        second = u16(acib, where + 2)
+        lsb = (((second >> 12) & 0x7) << 2) | ((second >> 6) & 0x3)
+        width = (second & 0x1F) + 1
+        if (lsb, width) != expect:
+            return False, f"{what} is now bits {lsb} to {lsb + width - 1}"
+    if u32(acib, 0xDAC94) != 0x3FFF8 or u32(acib, 0xDAC98) != 0x52980000:
+        return False, "the channel register's mask or aperture changed"
+    return True, "count at 3+3, length at 6+10, flags at 16+4, aperture 0x52980000"
+
+
 def check_getter_table(acib, rkof):
     """The property getter table: one-based, and the two ids whose getters we already cite."""
     if u32(acib, GETTER_TABLE_LITERAL) != GETTER_TABLE:
@@ -524,6 +543,7 @@ CHECKS = (
     ("mode, result and reason names", check_names),
     ("name table bounds", check_name_table_bounds),
     ("property getter table", check_getter_table),
+    ("audio DMA descriptor", check_dma_descriptor),
     ("ULLA session commands", check_session_commands),
     ("feature bit commands", check_feature_bit_commands),
     ("procedure state tables", check_procedure_tables),

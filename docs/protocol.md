@@ -1573,7 +1573,7 @@ Once the mode change succeeds the radio carries the audio. The parts that are es
   looking at a per-link mask and a frame counter [fw sbd1 0x9e4f8].
 - In the controller, the audio stream module programs up to four DMA transfers per buffer from
   a packed descriptor: a buffer count, a length with a 1 KB boundary rule, and per-buffer
-  flags [fw acib 0xdabcc].
+  flags [fw acib 0xdabcc]. That descriptor is read out field by field in 7.2.
 
 ### 7.1 The stream's control path, which is not open any more
 
@@ -1615,6 +1615,35 @@ else, and this document does not say where.
 So an implementation that gets as far as a working link has a defined way to drive the stream:
 hand the controller a DMA address, start, stop, and read that descriptor back. What travels
 through the DMA is the part that is still open, and the next three notes say why.
+
+### 7.2 The buffer descriptor the stream module programs
+
+One 32-bit descriptor drives the transfer, and the function that unpacks it says exactly what
+each field is [fw acib 0xdabcc, which reads the word at the stream object's +0]:
+
+| bits | meaning | where |
+|---|---|---|
+| 3 to 5 | the buffer count, used as **4 minus the count** to pick the channel slot | [fw acib 0xdabf8, 0xdac02] |
+| 6 to 15 | a ten-bit length | [fw acib 0xdac50] |
+| 16 to 19 | one flag per buffer, bit *i* for buffer *i* | [fw acib 0xdac2c, tested at 0xdac34] |
+
+The flag decides where each buffer's address comes from: with the bit **set**, the caller's own
+array entry is used; with it **clear**, a fixed hardware address is used *and written back into
+the caller's array* [fw acib 0xdac3c and 0xdac40, the address 0x521C0BD0]. Each buffer's
+channel descriptor gets a control word of 0xF000F0, and the slot the count picked gets 0x100010
+[fw acib 0xdac44, 0xdac10].
+
+**The 1 KB rule, exactly.** The length plus 0x10 is compared against the length plus 0x40F
+masked with 0xC00, which is the next 1 KB boundary of the length-plus-header expressed in those
+two bits. If the two agree, bit 28 of the channel's control word at +8 is cleared; if they do
+not, that bit is set and the difference is stored as a halfword at the channel's +0x1C and
++0x1E [fw acib 0xdac50 to 0xdac76]. So a transfer that would cross the boundary is programmed
+as a remainder rather than refused.
+
+Finally the channel descriptor's own address, masked with 0x3FFF8 and or'ed with 0x52980000, is
+written into a hardware register [fw acib 0xdac78 to 0xdac86]. Both that and the fixed buffer
+address are in the same hardware aperture, which is the layer this document stops at: what the
+DMA carries is the open question below, not where it is pointed.
 
 **[open] The over-the-air packet format.** The air packet is produced by radio hardware
 configured through registers; the PHY image contains no symbols or strings, and the register
