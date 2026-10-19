@@ -1451,7 +1451,15 @@ are one property of the session object:
 | 0xFE58 | property **0x1B3**, then reports to the host [fw acib 0x48722 into 0x11e8c] | 0x0C |
 | 0xFE7B | property **0x1AB** with the byte, and no role branch at all [fw acib 0x1d47c] | - |
 
-So four properties, 0x1B0 to 0x1B3, are driven by three of these commands, one command reads a
+"Property" is this document's word for them, and it is worth saying what they really are,
+because it marks where the trail ends. The call takes an id, an input pointer and an output
+pointer, packs the three into a record and hands it to the controller's internal messaging
+primitive [fw acib 0x79454 building it, 0xe422c sending it; the thin wrappers 0x7951a, 0x79522,
+0x79448 and 0x793a4 differ only in which pointers they pass]. So what an id does is implemented
+wherever that message is received, not in the command handler, and these payloads do not say
+where. The ids are worth recording anyway: they are what a host's command turns into.
+
+So four of them, 0x1B0 to 0x1B3, are driven by three of these commands, one command reads a
 fifth and one writes a sixth; and the refusals are not uniform, which matters for a host: 2
 (no connection), 0x0C (command disallowed) and 0x11 all appear. This is a family of commands
 for a session that already exists, gated on the session being active, which is the same
