@@ -159,6 +159,13 @@ INNER_IDS = {
     0x25: (0xDE972, 0xDB6A8),  # 0xFE52 on a live link, the source
     0x2B: (0xDE96A, 0xDB9AC),  # 0xFE53 on a live link
 }
+# What those functions do, as 7.1 publishes it, each at the instruction that shows it.
+LIVE_LINK_ADDRESS_STORE = (0xDA94C, 0xEC)  # str.w r0, [r4, #0xec] in property 0x1A4
+LIVE_LINK_ASSERT_LITERAL = (0xDA900, 0xF8FA7)  # the ADMA string the start loads when it is zero
+LIVE_LINK_STATISTICS = ((0xDA8E2, 1), (0xDA928, 0))  # arm on start, disarm on stop
+STATISTICS_PHASE = 0xC281C  # the phase setter both of them call
+LIVE_LINK_DESCRIPTOR = (0xDB9C6, 0xF0)  # movs r0, #0xf0 -> the descriptor's +8
+FE55_BOUND = (0xC9DDC, 0x321, 0x640)  # value - 0x321 against ~0x640: the signed +/- 800 range
 # The link-up half of the five gated session commands [6.6]
 GATE = 0x1DFE0  # the "is the link already up" gate each of them calls first
 ROLE_TEST = 0x61AB4  # the module is on and this end is the source
@@ -333,13 +340,17 @@ def mov_imm(img, off):
     return thumb_expand(field)
 
 
-def add_imm(img, off):
-    """The immediate of a Thumb-2 ADD, either form: T3 expands its field, T4 takes it as it is."""
+def wide_imm(img, off):
+    """The immediate of a wide ADD, SUB or MVN: all carry i:imm3:imm8, some expanded, some not.
+
+    The T3 forms put a modified immediate constant in that field; the T4 forms (ADDW, SUBW)
+    take the twelve bits as they stand.
+    """
     first, second = u16(img, off), u16(img, off + 2)
     field = (((first >> 10) & 1) << 11) | (((second >> 12) & 7) << 8) | (second & 0xFF)
-    if first & 0xFBE0 == 0xF100:
+    if first & 0xFBE0 in (0xF100, 0xF1A0) or first & 0xFBEF == 0xF06F:
         return thumb_expand(field)
-    if first & 0xFBF0 == 0xF200:
+    if first & 0xFBF0 in (0xF200, 0xF2A0):
         return field
     return None
 
@@ -801,10 +812,31 @@ def check_session_command_gates(acib, rkof, ctab):
             return False, f"the refusal at 0x{status_at:x} is 0x{u16(acib, status_at):04x}"
         if movw(acib, opcode_at) != opcode:
             return False, f"0x{opcode_at:x} no longer answers for 0x{opcode:04x}"
+    # And what those paths do, which is the stream again with other ids [7.1].
+    at, offset = LIVE_LINK_ADDRESS_STORE
+    if (u16(acib, at), u16(acib, at + 2)) != (0xF8C4, offset):
+        return False, f"0x{at:x} no longer stores the address at +0x{offset:x}"
+    at, literal = LIVE_LINK_ASSERT_LITERAL
+    if u32(acib, at) != literal:
+        return False, f"the start's assert string is now 0x{u32(acib, at):x}"
+    for at, value in LIVE_LINK_STATISTICS:
+        if u16(acib, at - 2) != 0x2000 | value:
+            return False, f"0x{at - 2:x} no longer passes {value} to the statistics"
+        if wide_branch(acib, at) != STATISTICS_PHASE:
+            return False, f"0x{at:x} no longer calls 0x{STATISTICS_PHASE:x}"
+    at, value = LIVE_LINK_DESCRIPTOR
+    if u16(acib, at) != 0x2000 | value:
+        return False, f"the descriptor's word at 0x{at:x} is 0x{u16(acib, at):04x}"
+    at, low, span = FE55_BOUND
+    if wide_imm(acib, at) != low or wide_imm(acib, at + 4) != span:
+        return False, f"0xFE55's bound at 0x{at:x} is no longer {low} against {span}"
+    if span != 2 * (low - 1):
+        return False, f"0x{span:x} is not twice 0x{low - 1:x}, so the range is not symmetric"
     return True, (
         f"{len(GATED_COMMANDS)} commands through one gate, "
         f"{len(LINK_UP_PROPERTIES)} ids on the link-up paths, "
-        f"{len(LINK_UP_REFUSALS)} role refusals of 0x0C"
+        f"{len(LINK_UP_REFUSALS)} role refusals of 0x0C, "
+        f"0xFE55 bounded to +/-{low - 1}"
     )
 
 
@@ -827,7 +859,7 @@ def check_report_producer(acib, rkof, ctab):
     if movw(acib, at) != want:
         return False, f"the id base at 0x{at:x} is not 0x{want:x}"
     for at, want in PRODUCER_COPIES:
-        got = add_imm(acib, at)
+        got = wide_imm(acib, at)
         if got != want:
             return False, f"the offset at 0x{at:x} is {got and hex(got)}, not 0x{want:x}"
     for at in PRODUCER_COPY_SIZES:
@@ -849,7 +881,7 @@ def check_report_producer(acib, rkof, ctab):
         if u16(acib, at) != want:
             return False, f"the word count at 0x{at:x} is 0x{u16(acib, at):04x}, not 0x{want:04x}"
     for at, want in SENDER_OFFSETS:
-        got = add_imm(acib, at)
+        got = wide_imm(acib, at)
         if got != want:
             return False, f"the offset at 0x{at:x} is {got and hex(got)}, not 0x{want:x}"
     at, first, second = SENDER_HALFWORD

@@ -1623,7 +1623,7 @@ are one property of the session object:
 | 0xFE4E | its own pair of handlers, by the first parameter [fw acib 0x1e688, 0x1e88c] | - |
 | 0xFE52 | property **0x1B0** or **0x1B2**, the role deciding which [fw acib 0x4883c, 0x4870e] | 0x0C |
 | 0xFE53 | **reads** property **0x1AF** and reports it to the host [fw acib 0x48856 into 0x11f04] | 0x0C |
-| 0xFE55 | passes the word to id **2** of the second dispatcher below, and answers **0x11** if that call fails [fw acib 0x79448 at 0x1de0e] | 2, or 0x0C |
+| 0xFE55 | passes the word to id **2** of the second dispatcher below, which **bounds it to the signed range -800 to +800** and answers 0xE outside it, so the command answers **0x11** [fw acib 0x79448 at 0x1de0e; the bound at 0xc9ddc, `value - 0x321` against `~0x640`] | 2, or 0x0C |
 | 0xFE57 | property **0x1B1** with the word [fw acib 0x486f8] | 0x0C |
 | 0xFE58 | property **0x1B3**, then reports to the host [fw acib 0x48722 into 0x11e8c] | 0x0C |
 | 0xFE7B | property **0x1AB** with the byte, and no role branch at all [fw acib 0x1d47c] | - |
@@ -1827,6 +1827,22 @@ else, and this document does not say where.
 So an implementation that gets as far as a working link has a defined way to drive the stream:
 hand the controller a DMA address, start, stop, and read that descriptor back. What travels
 through the DMA is the part that is still open, and the next three notes say why.
+
+**The same four commands do the same four things on a link that is already up**, through the
+other half of their gate (6.6) and a different set of ids. The shape is identical, which is why
+it is worth putting beside the table above:
+
+| command | on a live link | what it does |
+|---|---|---|
+| 0xFE57, a word | property **0x1A4** [fw acib 0xda944] | stores the word at 0x1002ad18+0xEC and seeds six 16-byte entries at 0x1002ae10 with {a value from 0x885dc, that word} |
+| 0xFE52, the other role | inner id **0x19** [fw acib 0xda8b4] | **start**: with that +0xEC field zero it logs the same ADMA assert as the session path [fw acib 0xda8ee loads the string at 0xf8fa7]; otherwise it arms the packet statistics of 2.6 [fw acib 0xda8e2, 0xc281c with 1] and queues 0xdabcc |
+| 0xFE52, the source | inner id **0x25** [fw acib 0xdb6a8] | sets a byte at 0x1002ae70+0x84 and goes on with id 0x2B |
+| 0xFE53, the source | inner id **0x2B** [fw acib 0xdb9ac] | fills the caller's buffer with two words from 0xdb9d2, then **0xF0** at +8 and a byte from 0xdb9f0 at +0xC, which are the two fields 0xFE53's handler reads back |
+| 0xFE58 | inner id **0x1A** [fw acib 0xda904] | **stop**: disarms those statistics [fw acib 0xda928, 0xc281c with 0] and queues 0xdadb4 |
+
+Two things follow. The ADMA assert has **two** sites, one per path, and the address each guards
+lives in a different place: the module's own +4 on the session path, 0x1002ad18+0xEC here. And
+the descriptor 0xFE53 returns has the same shape on both paths, 0xF0 included.
 
 ### 7.2 The buffer descriptor the stream module programs
 
