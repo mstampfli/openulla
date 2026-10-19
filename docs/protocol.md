@@ -1257,6 +1257,9 @@ Reading the two together says which combinations the controller accepts:
 | 1 | 4 | 1 | the procedure path, where 4 is its one special value |
 | 2 | 0xF | 2 | the procedure path, where 0xF is 5 or above, so **it is refused with 0x12** |
 
+Both of the non-zero rows have a precondition the table cannot show: the procedure path is
+gated on feature bit 6, which on a controller of one's own means sending 0xFDF3 first (5.8).
+
 The third row is the firmware's own code, not a transcription error: for a lite-mode request
 the manager would build a command its controller refuses. The earbud never takes this path in
 this build, because nothing stores the value that reaches it, so it is dormant source-role
@@ -1321,8 +1324,10 @@ the intersection described below.
 The two escape spaces are numbered independently: extended opcode 0x17 also exists behind
 escape 0x7F as an unrelated message [fw acib 0x262e6]. For two messages this controller emits
 in both spaces, the extended opcodes differ by 0x11 (0x7F/0x1F against 0x7B/0x0E, and 0x7F/0x20
-against 0x7B/0x0F) [fw acib 0x28fa8, 0x2906a, 0x29236], but that is two observations, not a
-rule.
+against 0x7B/0x0F) [fw acib 0x28fa8, 0x2906a, 0x29236]. For the second of those pairs the
+reason is now known and it is not a coincidence: the same message goes out in whichever space
+the feature bits allow, and 5.11 shows which bits decide. Whether the offset generalises
+beyond those two is still an observation rather than a rule.
 
 What arrives is not adopted blindly. The received mask is ANDed with the device's own
 allowed-band byte and ignored if the two do not intersect; only then is it stored as that
