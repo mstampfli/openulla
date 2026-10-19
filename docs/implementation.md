@@ -280,7 +280,7 @@ python3 tools/ftab.py $U list --payload R1FW
   PASS  prose-only citations             48 prose citations hold their instruction
   PASS  citations are instructions       775 acib citations, none of them a literal-pool word, with 1 allowed as data
   PASS  the radio PHY image              a 48-word table ending at the info block with 41 live entries, 11 reserved slots on one handler and SVCall/PendSV on another, vector 15 a tick counter, msr of MSP, PSP and BASEPRI, '[BTP]: (version:' its own name, and of 25 populated IRQs 13 bare bx lr, 9 trampolines, 3 bodies
-  PASS  the codec question               2 codec names in the DSP each reached from its own site, 6 codec commands beside A2DP and HFP, and the link's own configuration path as 5 names of one module with its DSP proxy
+  PASS  the codec question               2 codec names in the DSP each reached from its own site, 6 codec commands beside A2DP and HFP, the link's own configuration path as 5 names of one module with its DSP proxy, and 5 stream codes resolving to slots 0 to 4 with the link owning two
 34 of 34 claims hold
 ```
 

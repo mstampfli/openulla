@@ -2937,9 +2937,33 @@ Opus's place in it is with the voice and A2DP paths. **None of this establishes 
 codec**; what it establishes is that the link has its own configuration entry point and that
 the one codec this firmware implements is configured elsewhere.
 
-The addresses above are every one of them a literal load or a page-relative pair rather than
-a string offset, because two readings of this material were wrong by one byte before they were
-measured, and a one-byte error in a string offset turns a reference into an absence.
+**And the link's audio streams have the firmware's own names, which are four-character codes.**
+The configuration entry point is one function dispatching on such a code, and it knows seven:
+`dec0`, `dec1` and `dec2` through a range test, `enc0` and `enc1` through a second, then `uitE`
+and the link's two, **`ulld` and `ullt`**, by exact comparison [fw rkof 0x118e14 the first range
+test with its bound at 0x118e1e, 0x118e22 and 0x118e26 the second, and 0x118e2c, 0x118e34 and
+0x118e3a the three exact ones; each literal is the code as a big-endian word, and the range
+tests add the negative of their base]. The link's arm requires a non-null second argument and
+is the one whose failure is labelled `ullaDecConfig`.
+
+A second function turns a code into a **slot index**, and there are five slots: `dec0` to 0,
+`dec1` to 1, `dec2` to 2, **`ulld` to 3 and `ullt` to 4**, with any other code answering
+0xE00002C2 [fw rkof the comparisons at 0x11d996, 0x11d984, 0x11d98a, 0x11d990 and 0x11d97e,
+each with the immediate that sets its index at 0x11d99c, 0x11d9a2, 0x11d9aa, 0x11d9a6 and
+0x11d9ce, and the error at 0x11d9ae]. The caller multiplies that index by twenty and adds
+0x68, so the slots are **twenty-byte records** in the configuring object, and it copies one
+word out of the caller's own structure into each [fw rkof 0x118e5a the multiply, 0x118e5e the
+base, 0x118e62 and 0x118e64 the copy]. Note that `enc0`, `enc1` and `uitE` are **not** in that
+resolver: the two groups go to different arms, so this five-slot index space is the one the
+link shares with the decoders and not with the encoders.
+
+What a slot's twenty bytes hold is not established, and neither is how this function is
+entered: no branch anywhere in the payload targets it and no word holds its address.
+
+The addresses above are every one of them a literal load, an instruction or a page-relative
+pair rather than a string offset, because two readings of this material were wrong by one byte
+before they were measured, and a one-byte error in a string offset turns a reference into an
+absence.
 
 The same group of names settles what the "ADMA" of 7.1 is: the DSP side carries
 `admac_rx_src1`, `admac_rx_src4`, `admac_rx_src5` and a `DMAController.cpp` with

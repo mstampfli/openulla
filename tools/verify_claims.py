@@ -398,6 +398,19 @@ CODEC_COMMANDS = ((0x1E452C, "cfga2dp"), (0x1E4549, "cfghfp"), (0x1E456B, "cfgop
 # own literal load, and the proxy that carries them to the DSP. `ullaDecConfig` sitting beside
 # `encConfig` in the same module is the point - the link is configured alongside the standard
 # codecs and separately from them.
+# The stream codes. One function dispatches audio configuration on a four-character code, and
+# a second resolves each code to a slot index; the link owns two of the five. (compare site,
+# the literal it reads, the code), then (compare site, the movs that sets the index, the index).
+STREAM_CODE_RANGES = ((0x118E14, 0x118E1E, "dec0", 3), (0x118E22, 0x118E26, "enc0", 2))
+STREAM_CODE_EXACT = ((0x118E2C, "uitE"), (0x118E34, "ulld"), (0x118E3A, "ullt"))
+STREAM_CODE_INDEX = (
+    (0x11D996, 0x11D99C, "dec0", 0),
+    (0x11D984, 0x11D9A2, "dec1", 1),
+    (0x11D98A, 0x11D9AA, "dec2", 2),
+    (0x11D990, 0x11D9A6, "ulld", 3),
+    (0x11D97E, 0x11D9CE, "ullt", 4),
+)
+STREAM_CODE_ERROR = (0x11D9AE, 0xE00002C2)  # what an unknown code answers
 LINK_AUDIO_NAMES = (
     (0x1E4BCB, "HeadsetSequenceManager.cpp", 0x118D62),
     (0x1E4C53, "encConfig", 0x119180),
@@ -2139,6 +2152,34 @@ def check_the_codec_question(acib, rkof, ctab, sbd1, phyb):
         actual = rkof[where:where + 40].split(b"\x00")[0].decode("latin-1")
         if actual != text:
             return False, f"rkof 0x{where:x} is {actual!r}, not the command {text!r}"
+    # The stream codes the configuration entry dispatches on, and the slot each resolves to.
+    def fourcc(value):
+        return bytes((value >> 24 & 0xFF, value >> 16 & 0xFF, value >> 8 & 0xFF,
+                      value & 0xFF)).decode("latin-1")
+
+    for where, cmp_at, first, count in STREAM_CODE_RANGES:
+        # The range test adds the negative of the base, then compares r1 against the count.
+        base = (-literal_word(rkof, where)) & 0xFFFFFFFF
+        if fourcc(base) != first:
+            return False, f"rkof 0x{where:x} tests from {fourcc(base)!r}, not {first!r}"
+        if u16(rkof, cmp_at) != 0x2900 | count:
+            return False, (
+                f"rkof 0x{cmp_at:x} is {u16(rkof, cmp_at):#06x}, not cmp r1, #{count}"
+            )
+    for where, code in STREAM_CODE_EXACT:
+        got = literal_word(rkof, where)
+        if got is None or fourcc(got) != code:
+            return False, f"rkof 0x{where:x} compares against {got and fourcc(got)!r}, not {code!r}"
+    for where, mov_at, code, index in STREAM_CODE_INDEX:
+        got = literal_word(rkof, where)
+        if got is None or fourcc(got) != code:
+            return False, f"rkof 0x{where:x} resolves {got and fourcc(got)!r}, not {code!r}"
+        if mov_imm(rkof, mov_at) != index:
+            return False, (
+                f"rkof 0x{mov_at:x} sets {mov_imm(rkof, mov_at)}, not slot {index} for {code!r}"
+            )
+    if literal_word(rkof, STREAM_CODE_ERROR[0]) != STREAM_CODE_ERROR[1]:
+        return False, f"rkof 0x{STREAM_CODE_ERROR[0]:x} is no longer the unknown-code error"
     # And the link's own configuration path, each name reached from its own literal load.
     for where, text, load_at in LINK_AUDIO_NAMES:
         actual = rkof[where:where + 48].split(b"\x00")[0].decode("latin-1")
@@ -2151,8 +2192,10 @@ def check_the_codec_question(acib, rkof, ctab, sbd1, phyb):
             )
     return True, (
         f"{len(CODEC_NAMES_IN_DSP)} codec names in the DSP each reached from its own site, "
-        f"{len(CODEC_COMMANDS)} codec commands beside A2DP and HFP, and the link's own "
-        f"configuration path as {len(LINK_AUDIO_NAMES)} names of one module with its DSP proxy"
+        f"{len(CODEC_COMMANDS)} codec commands beside A2DP and HFP, the link's own "
+        f"configuration path as {len(LINK_AUDIO_NAMES)} names of one module with its DSP proxy, "
+        f"and {len(STREAM_CODE_INDEX)} stream codes resolving to slots 0 to "
+        f"{max(index for *_, index in STREAM_CODE_INDEX)} with the link owning two"
     )
 
 
