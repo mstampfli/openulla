@@ -39,43 +39,43 @@ def test_the_nominal_run_from_the_first_entry_to_the_established_state():
     step = procedure.feed(Event.MODULE_CALL)
     assert (step.after, step.action) == (State.AWAIT_MODULE_RESULT, Action.BUILD_REQUEST_BLOCK)
     step = procedure.feed(Event.MODULE_RESULT)
-    assert step.after == State.AWAIT_SECOND_BEGIN
+    assert step.after == State.AWAIT_TEARDOWN_BEGIN
     assert step.host_event is not None
     assert (step.host_event.mode, step.host_event.result) == (Mode.ULLA_ON, Result.SUCCESS)
-    step = procedure.feed(Event.BEGIN_PHASE_TWO)
-    assert (step.after, step.action) == (State.AWAIT_THREE_FLAGS, Action.REGISTER_CALLBACK)
+    step = procedure.feed(Event.TEARDOWN_BEGIN)
+    assert (step.after, step.action) == (State.AWAIT_TEARDOWN_ACCEPTED, Action.REGISTER_CALLBACK)
     assert procedure.path_reported() is None  # one path only, no event yet
     step = procedure.path_reported(second=True)
-    assert step is not None and step.event == Event.BOTH_PATHS_READY
-    assert step.after == State.AWAIT_THREE_FLAGS  # the link flag is still missing
+    assert step is not None and step.event == Event.TEARDOWN_ACCEPTED
+    assert step.after == State.AWAIT_TEARDOWN_ACCEPTED  # the link flag is still missing
     step = procedure.feed(Event.LINK_STATE_ADVANCED)
-    assert (step.after, step.action) == (State.AWAIT_CALLBACKS, Action.REGISTER_CALLBACKS)
+    assert (step.after, step.action) == (State.AWAIT_TEARDOWN_STEP, Action.REGISTER_CALLBACKS)
     assert procedure.flags & THREE_FLAGS == THREE_FLAGS
     step = procedure.feed(Event.CALLBACK_A)
-    assert step.after == State.ESTABLISHED
+    assert step.after == State.AWAIT_TEARDOWN_DONE
 
 
 def test_the_two_paths_can_also_be_reported_in_one_call():
-    procedure = Procedure(state=State.AWAIT_THREE_FLAGS, flags=int(Flag.LINK))
+    procedure = Procedure(state=State.AWAIT_TEARDOWN_ACCEPTED, flags=int(Flag.LINK))
     step = procedure.path_reported(both=True)
     assert step is not None
-    assert (step.after, step.action) == (State.AWAIT_CALLBACKS, Action.REGISTER_CALLBACKS)
+    assert (step.after, step.action) == (State.AWAIT_TEARDOWN_STEP, Action.REGISTER_CALLBACKS)
 
 
 def test_the_second_entry_starts_at_state_four():
     procedure = Procedure()
-    step = procedure.begin_phase_two()
-    assert (step.before, step.after) == (State.AWAIT_SECOND_BEGIN, State.AWAIT_THREE_FLAGS)
+    step = procedure.begin_teardown()
+    assert (step.before, step.after) == (State.AWAIT_TEARDOWN_BEGIN, State.AWAIT_TEARDOWN_ACCEPTED)
 
 
 def test_an_unexpected_event_is_kept_where_it_is():
     procedure = Procedure()
-    for event in (Event.STOP, Event.CALLBACK_A, Event.MODULE_RESULT):
+    for event in (Event.TEARDOWN_COMPLETE, Event.CALLBACK_A, Event.MODULE_RESULT):
         step = procedure.feed(event)
         assert (step.after, step.expected) == (State.SEND_SETUP, False)
-    procedure.state = State.ESTABLISHED
+    procedure.state = State.AWAIT_TEARDOWN_DONE
     step = procedure.feed(Event.BEGIN)
-    assert (step.after, step.expected) == (State.ESTABLISHED, False)
+    assert (step.after, step.expected) == (State.AWAIT_TEARDOWN_DONE, False)
 
 
 def test_the_state_that_waits_for_the_answer_needs_both_conditions():
@@ -113,9 +113,9 @@ def test_a_failed_module_result_reports_an_error_and_goes_back_to_the_start():
 
 def test_the_teardown_reports_success_with_the_stored_reason():
     procedure = Procedure(handle=3, stop_reason=0xAA)
-    procedure.state = State.ESTABLISHED
-    assert procedure.feed(Event.CALLBACK_B).after == State.ESTABLISHED
-    step = procedure.feed(Event.STOP)
+    procedure.state = State.AWAIT_TEARDOWN_DONE
+    assert procedure.feed(Event.CALLBACK_B).after == State.AWAIT_TEARDOWN_DONE
+    step = procedure.feed(Event.TEARDOWN_COMPLETE)
     assert (step.after, step.action) == (State.SEND_SETUP, Action.TEAR_DOWN)
     assert step.host_event is not None
     assert (step.host_event.mode, step.host_event.result, step.host_event.reason) == (
@@ -235,11 +235,11 @@ def test_the_sinks_whole_run_to_the_established_state():
     assert step.after == SinkState.AWAIT_SETUP_REQUEST  # a responder has nothing left to drive
     assert step.host_event is not None
     assert (step.host_event.mode, step.host_event.result) == (Mode.ULLA_ON, Result.SUCCESS)
-    step = sink.begin_phase_two()
-    assert step.after == SinkState.AWAIT_BOTH_PATHS
-    step = sink.feed(Event.BOTH_PATHS_READY)
-    assert (step.after, step.action) == (SinkState.AWAIT_CALLBACK_A, Action.REGISTER_CALLBACK)
-    assert sink.feed(Event.CALLBACK_A).after == SinkState.ESTABLISHED
+    step = sink.begin_teardown()
+    assert step.after == SinkState.AWAIT_TEARDOWN_ACCEPTED
+    step = sink.feed(Event.TEARDOWN_ACCEPTED)
+    assert (step.after, step.action) == (SinkState.AWAIT_TEARDOWN_STEP, Action.REGISTER_CALLBACK)
+    assert sink.feed(Event.CALLBACK_A).after == SinkState.AWAIT_TEARDOWN_DONE
     step = sink.feed(Event.CALLBACK_B)
     assert (step.after, step.action) == (SinkState.AWAIT_SETUP_REQUEST, Action.TEAR_DOWN)
     assert step.host_event is not None
@@ -261,9 +261,9 @@ def test_a_failed_module_result_keeps_the_sink_where_it_is():
 
 
 def test_the_sink_keeps_its_state_on_an_event_it_does_not_expect():
-    sink = SinkProcedure(state=SinkState.AWAIT_CALLBACK_A)
-    step = sink.feed(Event.STOP)
-    assert (step.after, step.expected) == (SinkState.AWAIT_CALLBACK_A, False)
+    sink = SinkProcedure(state=SinkState.AWAIT_TEARDOWN_STEP)
+    step = sink.feed(Event.TEARDOWN_COMPLETE)
+    assert (step.after, step.expected) == (SinkState.AWAIT_TEARDOWN_STEP, False)
 
 
 def test_the_sinks_dispatcher_also_refuses_to_run_inside_itself():
@@ -294,13 +294,13 @@ def test_the_third_machine_is_the_sinks_with_one_state_fewer():
 
 def test_the_third_machines_second_half_runs_one_event_lower_too():
     third = ThirdProcedure(handle=2, stop_reason=0xAA)
-    step = third.begin_phase_two()
+    step = third.begin_teardown()
     assert (step.before, step.after) == (
-        ThirdState.AWAIT_SECOND_BEGIN, ThirdState.AWAIT_BOTH_PATHS
+        ThirdState.AWAIT_TEARDOWN_BEGIN, ThirdState.AWAIT_TEARDOWN_ACCEPTED
     )
-    step = third.feed(Event.BEGIN_PHASE_TWO)
-    assert (step.after, step.action) == (ThirdState.AWAIT_CALLBACK_A, Action.REGISTER_CALLBACK)
-    assert third.feed(Event.BOTH_PATHS_READY).after == ThirdState.ESTABLISHED
+    step = third.feed(Event.TEARDOWN_BEGIN)
+    assert (step.after, step.action) == (ThirdState.AWAIT_TEARDOWN_STEP, Action.REGISTER_CALLBACK)
+    assert third.feed(Event.TEARDOWN_ACCEPTED).after == ThirdState.AWAIT_TEARDOWN_DONE
     step = third.feed(Event.CALLBACK_A)
     assert (step.after, step.action) == (ThirdState.AWAIT_SETUP_REQUEST, Action.TEAR_DOWN)
     assert step.host_event is not None
@@ -312,7 +312,7 @@ def test_the_third_machine_keeps_its_state_on_anything_else():
     step = third.feed(Event.MODULE_CALL)
     assert step.after == ThirdState.AWAIT_MODULE_RESULT
     assert step.host_event is not None and step.host_event.result == Result.ERROR
-    step = third.feed(Event.STOP)
+    step = third.feed(Event.TEARDOWN_COMPLETE)
     assert (step.after, step.expected) == (ThirdState.AWAIT_MODULE_RESULT, False)
     with pytest.raises(ProtocolError):
         ThirdProcedure(busy=True).feed(Event.BEGIN)

@@ -23,9 +23,22 @@ state, and writes the handler's return value back as the new state. A handler th
 expect an event traces it and returns its own number, which is how an unexpected event
 becomes "stay here".
 
-The numbers here are the firmware's. The names are ours: unlike the session manager, these
-machines have no name tables in the image, so there is nothing to copy. Each name says what
-the handler at that state does, nothing more.
+The numbers here are the firmware's. Most of the names are ours, because unlike the session
+manager these machines have no name table in the image. Three strings do name parts of them,
+and they are worth more than their length suggests [fw acib 0xf89ca, 0xf8a09, 0xf8a4c]:
+
+    ULLA_TRANS: ERROR- lm_ulla_trans_sec_handle_setup_lmp_accepted
+    ULLA_TRANS: ERROR- lm_ulla_trans_sec_handle_setup_lmp_not_accepted
+    ULLA_TRANS: ERROR- lm_ulla_trans_source_ulla_teardown_init_handle_lmp_not_accepted
+
+So the firmware calls each of these a **transaction**, it calls the first role **source** and
+the third **sec**, and it has a phase called **ulla_teardown_init**. The third string names
+the assert at acib 0x68504, whose sibling at 0x68514 is the handler for the accepted answer in
+that phase: it requires the link to be in mode 0x36 and it posts event 6. Since the entry that
+starts at state 4 is the one that puts the link in mode 0x36, and since what state 8 finally
+reports is mode 0 with the success result, the second half of this machine is the teardown,
+and the names below say so. The first two strings are asserts in the third role's slots for an
+accepted and a not-accepted answer, which is as much as to say that role never sends 0x73.
 
 "The module" below means the code that owns these procedures. All three roles live in one
 block at acib 0x1000df68: its byte at +1 picks the role, +2 refines it, +0x84 holds the
@@ -43,11 +56,11 @@ Where the source's events come from, each one proven at its posting site:
     2  the link's own state byte read 3 and set to 4  [fw acib 0x628f8 -> 0x68424]
     3  a call inside the module                      [fw acib 0x66db0]
     4  a {byte, word} pair from the module           [fw acib 0x619a4 -> 0x684e4]
-    5  the second entry point                        [fw acib 0x68450, called from 0x66d72]
-    6  both of the two paths of state 5 reported     [fw acib 0x68578]
+    5  the teardown entry point                     [fw acib 0x68450, called from 0x66d72]
+    6  the teardown's accepted answer, both paths    [fw acib 0x68514, posted at 0x68578]
     7  the first callback state 5 registers          [fw acib 0x66fe8]
     8  the second callback state 5 registers         [fw acib 0x67028]
-    9  the stop entry point                          [fw acib 0x684fc]
+    9  the teardown's last step, from slot +0xD8     [fw acib 0x684fc]
 
 The sink's events come from the matching slots of its own set, and the slot numbers line up
 with the source's: +0xE0 posts event 1, +0xEC event 2, +0xC8 event 3, +0xD4 event 4, +0xF0
@@ -96,11 +109,11 @@ class State(IntEnum):
     AWAIT_SETUP_ACCEPTED = 1
     AWAIT_MODULE_CALL = 2
     AWAIT_MODULE_RESULT = 3
-    AWAIT_SECOND_BEGIN = 4
-    AWAIT_THREE_FLAGS = 5
+    AWAIT_TEARDOWN_BEGIN = 4
+    AWAIT_TEARDOWN_ACCEPTED = 5
     RESET_ONLY = 6
-    AWAIT_CALLBACKS = 7
-    ESTABLISHED = 8
+    AWAIT_TEARDOWN_STEP = 7
+    AWAIT_TEARDOWN_DONE = 8
 
 
 class SinkState(IntEnum):
@@ -110,10 +123,10 @@ class SinkState(IntEnum):
     AWAIT_BOTH_LINKS = 1
     AWAIT_MODULE_CALL = 2
     AWAIT_MODULE_RESULT = 3
-    AWAIT_SECOND_BEGIN = 4
-    AWAIT_BOTH_PATHS = 5
-    AWAIT_CALLBACK_A = 6
-    ESTABLISHED = 7
+    AWAIT_TEARDOWN_BEGIN = 4
+    AWAIT_TEARDOWN_ACCEPTED = 5
+    AWAIT_TEARDOWN_STEP = 6
+    AWAIT_TEARDOWN_DONE = 7
 
 
 class ThirdState(IntEnum):
@@ -127,10 +140,10 @@ class ThirdState(IntEnum):
     AWAIT_SETUP_REQUEST = 0
     AWAIT_MODULE_CALL = 1
     AWAIT_MODULE_RESULT = 2
-    AWAIT_SECOND_BEGIN = 3
-    AWAIT_BOTH_PATHS = 4
-    AWAIT_CALLBACK_A = 5
-    ESTABLISHED = 6
+    AWAIT_TEARDOWN_BEGIN = 3
+    AWAIT_TEARDOWN_ACCEPTED = 4
+    AWAIT_TEARDOWN_STEP = 5
+    AWAIT_TEARDOWN_DONE = 6
 
 
 class Event(IntEnum):
@@ -146,11 +159,11 @@ class Event(IntEnum):
     LINK_STATE_ADVANCED = 2
     MODULE_CALL = 3
     MODULE_RESULT = 4
-    BEGIN_PHASE_TWO = 5
-    BOTH_PATHS_READY = 6
+    TEARDOWN_BEGIN = 5
+    TEARDOWN_ACCEPTED = 6
     CALLBACK_A = 7
     CALLBACK_B = 8
-    STOP = 9
+    TEARDOWN_COMPLETE = 9
 
 
 class Flag(IntEnum):
@@ -237,15 +250,21 @@ class Procedure:
     # the two entry points ------------------------------------------------------------
 
     def begin(self) -> Step[State]:
-        """Start the first phase: state 0 and event 0 [fw acib 0x6842c]."""
+        """Start the setup: state 0 and event 0, with the link in mode 0x35
+        [fw acib 0x6842c]."""
         self.state = State.SEND_SETUP
         self.flags &= ~0x1F
         return self.feed(Event.BEGIN)
 
-    def begin_phase_two(self) -> Step[State]:
-        """Start at state 4 with event 5, which is the second entry [fw acib 0x68450]."""
-        self.state = State.AWAIT_SECOND_BEGIN
-        return self.feed(Event.BEGIN_PHASE_TWO)
+    def begin_teardown(self) -> Step[State]:
+        """Start the teardown: state 4 and event 5, with the link in mode 0x36.
+
+        The firmware reaches state 4 both ways, from the setup's own last state and from
+        this entry [fw acib 0x68450, and 0x687a2 arriving there on success], which is why
+        state 4 is where a link that is up sits and waits.
+        """
+        self.state = State.AWAIT_TEARDOWN_BEGIN
+        return self.feed(Event.TEARDOWN_BEGIN)
 
     # the dispatcher -----------------------------------------------------------------
 
@@ -286,7 +305,7 @@ class Procedure:
     def link_lost(self, first_phase: bool) -> ModeChangeEvent:
         """The teardown reporter: which result the host is told depends on the phase.
 
-        The link's own mode byte decides it: 0x35, the first phase, gives "failed to be
+        The link's own mode byte decides it: 0x35, the setup, gives "failed to be
         established", anything else gives the supervision-timeout result
         [fw acib 0x68390, the two assignments at 0x683c2 and 0x683fe, the report at 0x6841c].
         """
@@ -310,7 +329,7 @@ class Procedure:
         self.flags |= both_bits if both else (Flag.PATH_B if second else Flag.PATH_A)
         if self.flags & both_bits != both_bits:
             return None
-        return self.feed(Event.BOTH_PATHS_READY)
+        return self.feed(Event.TEARDOWN_ACCEPTED)
 
 
 # the source's nine handlers -------------------------------------------------------------
@@ -381,30 +400,31 @@ def _state_await_module_result(procedure: Procedure, event: Event) -> Step[State
         result=Result.SUCCESS if ok else Result.ERROR,
         reason=RejectReason.NOT_APPLICABLE,
     )
-    after = State.AWAIT_SECOND_BEGIN if ok else State.SEND_SETUP
+    after = State.AWAIT_TEARDOWN_BEGIN if ok else State.SEND_SETUP
     return Step(event, State.AWAIT_MODULE_RESULT, after, host_event=host)
 
 
-def _state_await_second_begin(procedure: Procedure, event: Event) -> Step[State]:
+def _state_await_teardown_begin(procedure: Procedure, event: Event) -> Step[State]:
     """Event 5 registers the first callback and moves on. [fw acib 0x687fc]"""
-    if event != Event.BEGIN_PHASE_TWO:
-        return _unexpected(procedure, event, State.AWAIT_SECOND_BEGIN)
-    return Step(event, State.AWAIT_SECOND_BEGIN, State.AWAIT_THREE_FLAGS,
+    if event != Event.TEARDOWN_BEGIN:
+        return _unexpected(procedure, event, State.AWAIT_TEARDOWN_BEGIN)
+    return Step(event, State.AWAIT_TEARDOWN_BEGIN, State.AWAIT_TEARDOWN_ACCEPTED,
                 Action.REGISTER_CALLBACK)
 
 
-def _state_await_three_flags(procedure: Procedure, event: Event) -> Step[State]:
+def _state_await_teardown_accepted(procedure: Procedure, event: Event) -> Step[State]:
     """Three flags have to be set before this state moves. [fw acib 0x6886c]
 
     Event 2 sets the link flag, event 6 says both paths reported, and the handler only goes
     on once bits 2, 3 and 4 are all set [fw acib 0x688ac]; until then it stays where it is.
     """
-    expected = event in (Event.LINK_STATE_ADVANCED, Event.BOTH_PATHS_READY)
+    expected = event in (Event.LINK_STATE_ADVANCED, Event.TEARDOWN_ACCEPTED)
     if event == Event.LINK_STATE_ADVANCED:
         procedure.flags |= Flag.LINK
     if procedure.flags & THREE_FLAGS != THREE_FLAGS:
-        return Step(event, State.AWAIT_THREE_FLAGS, State.AWAIT_THREE_FLAGS, expected=expected)
-    return Step(event, State.AWAIT_THREE_FLAGS, State.AWAIT_CALLBACKS,
+        return Step(event, State.AWAIT_TEARDOWN_ACCEPTED, State.AWAIT_TEARDOWN_ACCEPTED,
+                    expected=expected)
+    return Step(event, State.AWAIT_TEARDOWN_ACCEPTED, State.AWAIT_TEARDOWN_STEP,
                 Action.REGISTER_CALLBACKS, expected=expected)
 
 
@@ -413,30 +433,31 @@ def _state_reset_only(procedure: Procedure, event: Event) -> Step[State]:
     return Step(event, State.RESET_ONLY, State.SEND_SETUP)
 
 
-def _state_await_callbacks(procedure: Procedure, event: Event) -> Step[State]:
+def _state_await_teardown_step(procedure: Procedure, event: Event) -> Step[State]:
     """Either of the two callbacks moves this on. [fw acib 0x688f8]"""
     if event not in (Event.CALLBACK_A, Event.CALLBACK_B):
-        return _unexpected(procedure, event, State.AWAIT_CALLBACKS)
-    return Step(event, State.AWAIT_CALLBACKS, State.ESTABLISHED)
+        return _unexpected(procedure, event, State.AWAIT_TEARDOWN_STEP)
+    return Step(event, State.AWAIT_TEARDOWN_STEP, State.AWAIT_TEARDOWN_DONE)
 
 
-def _state_established(procedure: Procedure, event: Event) -> Step[State]:
-    """The callbacks are tolerated, event 9 tears the whole thing down. [fw acib 0x68924]
+def _state_await_teardown_done(procedure: Procedure, event: Event) -> Step[State]:
+    """The callbacks are tolerated, and event 9 finishes the teardown. [fw acib 0x68924]
 
-    The teardown is the one place the host is told mode 0 with the success result, and the
+    This is the one place the host is told mode 0 with the success result, and the
     reason byte is the object's own +0x1C rather than 0xFF [fw acib 0x6896a].
     """
     if event in (Event.CALLBACK_A, Event.CALLBACK_B):
-        return Step(event, State.ESTABLISHED, State.ESTABLISHED)
-    if event != Event.STOP:
-        return _unexpected(procedure, event, State.ESTABLISHED)
+        return Step(event, State.AWAIT_TEARDOWN_DONE, State.AWAIT_TEARDOWN_DONE)
+    if event != Event.TEARDOWN_COMPLETE:
+        return _unexpected(procedure, event, State.AWAIT_TEARDOWN_DONE)
     host = ModeChangeEvent(
         handle=procedure.handle,
         mode=Mode.BT_ACL_ACTIVE,
         result=Result.SUCCESS,
         reason=procedure.stop_reason,
     )
-    return Step(event, State.ESTABLISHED, State.SEND_SETUP, Action.TEAR_DOWN, host_event=host)
+    return Step(event, State.AWAIT_TEARDOWN_DONE, State.SEND_SETUP, Action.TEAR_DOWN,
+                host_event=host)
 
 
 _HANDLERS: dict[State, Callable[[Procedure, Event], Step[State]]] = {
@@ -444,11 +465,11 @@ _HANDLERS: dict[State, Callable[[Procedure, Event], Step[State]]] = {
     State.AWAIT_SETUP_ACCEPTED: _state_await_accepted,
     State.AWAIT_MODULE_CALL: _state_await_module_call,
     State.AWAIT_MODULE_RESULT: _state_await_module_result,
-    State.AWAIT_SECOND_BEGIN: _state_await_second_begin,
-    State.AWAIT_THREE_FLAGS: _state_await_three_flags,
+    State.AWAIT_TEARDOWN_BEGIN: _state_await_teardown_begin,
+    State.AWAIT_TEARDOWN_ACCEPTED: _state_await_teardown_accepted,
     State.RESET_ONLY: _state_reset_only,
-    State.AWAIT_CALLBACKS: _state_await_callbacks,
-    State.ESTABLISHED: _state_established,
+    State.AWAIT_TEARDOWN_STEP: _state_await_teardown_step,
+    State.AWAIT_TEARDOWN_DONE: _state_await_teardown_done,
 }
 
 
@@ -485,10 +506,10 @@ class SinkProcedure:
         self.state = SinkState.AWAIT_SETUP_REQUEST
         return self.feed(Event.BEGIN)
 
-    def begin_phase_two(self) -> Step[SinkState]:
+    def begin_teardown(self) -> Step[SinkState]:
         """The second entry, which sets the state to 4 and posts event 5 [fw acib 0x675ac]."""
-        self.state = SinkState.AWAIT_SECOND_BEGIN
-        return self.feed(Event.BEGIN_PHASE_TWO)
+        self.state = SinkState.AWAIT_TEARDOWN_BEGIN
+        return self.feed(Event.TEARDOWN_BEGIN)
 
     def feed(self, event: Event) -> Step[SinkState]:
         """Run one event through the handler of the current state. [fw acib 0x67318]"""
@@ -581,40 +602,40 @@ def _sink_await_module_result(sink: SinkProcedure, event: Event) -> Step[SinkSta
     return Step(event, SinkState.AWAIT_MODULE_RESULT, after, host_event=host)
 
 
-def _sink_await_second_begin(sink: SinkProcedure, event: Event) -> Step[SinkState]:
+def _sink_await_teardown_begin(sink: SinkProcedure, event: Event) -> Step[SinkState]:
     """Event 5 moves on. [fw acib 0x67a6c]"""
-    if event != Event.BEGIN_PHASE_TWO:
-        return _sink_unexpected(sink, event, SinkState.AWAIT_SECOND_BEGIN)
-    return Step(event, SinkState.AWAIT_SECOND_BEGIN, SinkState.AWAIT_BOTH_PATHS)
+    if event != Event.TEARDOWN_BEGIN:
+        return _sink_unexpected(sink, event, SinkState.AWAIT_TEARDOWN_BEGIN)
+    return Step(event, SinkState.AWAIT_TEARDOWN_BEGIN, SinkState.AWAIT_TEARDOWN_ACCEPTED)
 
 
-def _sink_await_both_paths(sink: SinkProcedure, event: Event) -> Step[SinkState]:
+def _sink_await_teardown_accepted(sink: SinkProcedure, event: Event) -> Step[SinkState]:
     """Event 6 registers a callback. [fw acib 0x67aa0]"""
-    if event != Event.BOTH_PATHS_READY:
-        return _sink_unexpected(sink, event, SinkState.AWAIT_BOTH_PATHS)
-    return Step(event, SinkState.AWAIT_BOTH_PATHS, SinkState.AWAIT_CALLBACK_A,
+    if event != Event.TEARDOWN_ACCEPTED:
+        return _sink_unexpected(sink, event, SinkState.AWAIT_TEARDOWN_ACCEPTED)
+    return Step(event, SinkState.AWAIT_TEARDOWN_ACCEPTED, SinkState.AWAIT_TEARDOWN_STEP,
                 Action.REGISTER_CALLBACK)
 
 
-def _sink_await_callback_a(sink: SinkProcedure, event: Event) -> Step[SinkState]:
+def _sink_await_teardown_step(sink: SinkProcedure, event: Event) -> Step[SinkState]:
     """Event 7, one call. [fw acib 0x67af0]"""
     if event != Event.CALLBACK_A:
-        return _sink_unexpected(sink, event, SinkState.AWAIT_CALLBACK_A)
-    return Step(event, SinkState.AWAIT_CALLBACK_A, SinkState.ESTABLISHED)
+        return _sink_unexpected(sink, event, SinkState.AWAIT_TEARDOWN_STEP)
+    return Step(event, SinkState.AWAIT_TEARDOWN_STEP, SinkState.AWAIT_TEARDOWN_DONE)
 
 
-def _sink_established(sink: SinkProcedure, event: Event) -> Step[SinkState]:
+def _sink_await_teardown_done(sink: SinkProcedure, event: Event) -> Step[SinkState]:
     """Event 8 tears it down and reports mode 0 with the success result. [fw acib 0x67b18]"""
     if event != Event.CALLBACK_B:
-        return _sink_unexpected(sink, event, SinkState.ESTABLISHED)
+        return _sink_unexpected(sink, event, SinkState.AWAIT_TEARDOWN_DONE)
     host = ModeChangeEvent(
         handle=sink.handle,
         mode=Mode.BT_ACL_ACTIVE,
         result=Result.SUCCESS,
         reason=sink.stop_reason,
     )
-    return Step(event, SinkState.ESTABLISHED, SinkState.AWAIT_SETUP_REQUEST, Action.TEAR_DOWN,
-                host_event=host)
+    return Step(event, SinkState.AWAIT_TEARDOWN_DONE, SinkState.AWAIT_SETUP_REQUEST,
+                Action.TEAR_DOWN, host_event=host)
 
 
 _SINK_HANDLERS: dict[SinkState, Callable[[SinkProcedure, Event], Step[SinkState]]] = {
@@ -622,10 +643,10 @@ _SINK_HANDLERS: dict[SinkState, Callable[[SinkProcedure, Event], Step[SinkState]
     SinkState.AWAIT_BOTH_LINKS: _sink_await_both_links,
     SinkState.AWAIT_MODULE_CALL: _sink_await_module_call,
     SinkState.AWAIT_MODULE_RESULT: _sink_await_module_result,
-    SinkState.AWAIT_SECOND_BEGIN: _sink_await_second_begin,
-    SinkState.AWAIT_BOTH_PATHS: _sink_await_both_paths,
-    SinkState.AWAIT_CALLBACK_A: _sink_await_callback_a,
-    SinkState.ESTABLISHED: _sink_established,
+    SinkState.AWAIT_TEARDOWN_BEGIN: _sink_await_teardown_begin,
+    SinkState.AWAIT_TEARDOWN_ACCEPTED: _sink_await_teardown_accepted,
+    SinkState.AWAIT_TEARDOWN_STEP: _sink_await_teardown_step,
+    SinkState.AWAIT_TEARDOWN_DONE: _sink_await_teardown_done,
 }
 
 @dataclass
@@ -656,13 +677,13 @@ class ThirdProcedure:
         self.state = ThirdState.AWAIT_SETUP_REQUEST
         return self.feed(Event.BEGIN)
 
-    def begin_phase_two(self) -> Step[ThirdState]:
+    def begin_teardown(self) -> Step[ThirdState]:
         """Its second entry: state 3 and event 4, both one lower than the sink's.
 
         It puts the link into mode 0x36 with a callback and keeps its third argument as the
         reason the teardown will report [fw acib 0x67dfc].
         """
-        self.state = ThirdState.AWAIT_SECOND_BEGIN
+        self.state = ThirdState.AWAIT_TEARDOWN_BEGIN
         return self.feed(Event.MODULE_RESULT)
 
     def feed(self, event: Event) -> Step[ThirdState]:
@@ -724,50 +745,50 @@ def _third_await_module_result(third: ThirdProcedure, event: Event) -> Step[Thir
     return Step(event, ThirdState.AWAIT_MODULE_RESULT, after, host_event=host)
 
 
-def _third_await_second_begin(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+def _third_await_teardown_begin(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
     """Event 4 moves on. [fw acib 0x68184]"""
     if event != Event.MODULE_RESULT:
-        return _third_unexpected(third, event, ThirdState.AWAIT_SECOND_BEGIN)
-    return Step(event, ThirdState.AWAIT_SECOND_BEGIN, ThirdState.AWAIT_BOTH_PATHS)
+        return _third_unexpected(third, event, ThirdState.AWAIT_TEARDOWN_BEGIN)
+    return Step(event, ThirdState.AWAIT_TEARDOWN_BEGIN, ThirdState.AWAIT_TEARDOWN_ACCEPTED)
 
 
-def _third_await_both_paths(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+def _third_await_teardown_accepted(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
     """Event 5 registers a callback. [fw acib 0x681b4]"""
-    if event != Event.BEGIN_PHASE_TWO:
-        return _third_unexpected(third, event, ThirdState.AWAIT_BOTH_PATHS)
-    return Step(event, ThirdState.AWAIT_BOTH_PATHS, ThirdState.AWAIT_CALLBACK_A,
+    if event != Event.TEARDOWN_BEGIN:
+        return _third_unexpected(third, event, ThirdState.AWAIT_TEARDOWN_ACCEPTED)
+    return Step(event, ThirdState.AWAIT_TEARDOWN_ACCEPTED, ThirdState.AWAIT_TEARDOWN_STEP,
                 Action.REGISTER_CALLBACK)
 
 
-def _third_await_callback_a(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+def _third_await_teardown_step(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
     """Event 6, one call. [fw acib 0x681f8]"""
-    if event != Event.BOTH_PATHS_READY:
-        return _third_unexpected(third, event, ThirdState.AWAIT_CALLBACK_A)
-    return Step(event, ThirdState.AWAIT_CALLBACK_A, ThirdState.ESTABLISHED)
+    if event != Event.TEARDOWN_ACCEPTED:
+        return _third_unexpected(third, event, ThirdState.AWAIT_TEARDOWN_STEP)
+    return Step(event, ThirdState.AWAIT_TEARDOWN_STEP, ThirdState.AWAIT_TEARDOWN_DONE)
 
 
-def _third_established(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+def _third_await_teardown_done(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
     """Event 7 tears it down and reports mode 0 with the success result. [fw acib 0x6821c]"""
     if event != Event.CALLBACK_A:
-        return _third_unexpected(third, event, ThirdState.ESTABLISHED)
+        return _third_unexpected(third, event, ThirdState.AWAIT_TEARDOWN_DONE)
     host = ModeChangeEvent(
         handle=third.handle,
         mode=Mode.BT_ACL_ACTIVE,
         result=Result.SUCCESS,
         reason=third.stop_reason,
     )
-    return Step(event, ThirdState.ESTABLISHED, ThirdState.AWAIT_SETUP_REQUEST, Action.TEAR_DOWN,
-                host_event=host)
+    return Step(event, ThirdState.AWAIT_TEARDOWN_DONE, ThirdState.AWAIT_SETUP_REQUEST,
+                Action.TEAR_DOWN, host_event=host)
 
 
 _THIRD_HANDLERS: dict[ThirdState, Callable[[ThirdProcedure, Event], Step[ThirdState]]] = {
     ThirdState.AWAIT_SETUP_REQUEST: _third_await_request,
     ThirdState.AWAIT_MODULE_CALL: _third_await_module_call,
     ThirdState.AWAIT_MODULE_RESULT: _third_await_module_result,
-    ThirdState.AWAIT_SECOND_BEGIN: _third_await_second_begin,
-    ThirdState.AWAIT_BOTH_PATHS: _third_await_both_paths,
-    ThirdState.AWAIT_CALLBACK_A: _third_await_callback_a,
-    ThirdState.ESTABLISHED: _third_established,
+    ThirdState.AWAIT_TEARDOWN_BEGIN: _third_await_teardown_begin,
+    ThirdState.AWAIT_TEARDOWN_ACCEPTED: _third_await_teardown_accepted,
+    ThirdState.AWAIT_TEARDOWN_STEP: _third_await_teardown_step,
+    ThirdState.AWAIT_TEARDOWN_DONE: _third_await_teardown_done,
 }
 
 HANDLER_ADDRESSES: dict[State, int] = {
@@ -775,11 +796,11 @@ HANDLER_ADDRESSES: dict[State, int] = {
     State.AWAIT_SETUP_ACCEPTED: 0x685F8,
     State.AWAIT_MODULE_CALL: 0x6869C,
     State.AWAIT_MODULE_RESULT: 0x68788,
-    State.AWAIT_SECOND_BEGIN: 0x687FC,
-    State.AWAIT_THREE_FLAGS: 0x6886C,
+    State.AWAIT_TEARDOWN_BEGIN: 0x687FC,
+    State.AWAIT_TEARDOWN_ACCEPTED: 0x6886C,
     State.RESET_ONLY: 0x688F4,
-    State.AWAIT_CALLBACKS: 0x688F8,
-    State.ESTABLISHED: 0x68924,
+    State.AWAIT_TEARDOWN_STEP: 0x688F8,
+    State.AWAIT_TEARDOWN_DONE: 0x68924,
 }
 """The table at acib 0xf2664, entry by entry, so a reader can check any claim above."""
 SINK_HANDLER_ADDRESSES: dict[SinkState, int] = {
@@ -787,20 +808,20 @@ SINK_HANDLER_ADDRESSES: dict[SinkState, int] = {
     SinkState.AWAIT_BOTH_LINKS: 0x67858,
     SinkState.AWAIT_MODULE_CALL: 0x678F8,
     SinkState.AWAIT_MODULE_RESULT: 0x679F8,
-    SinkState.AWAIT_SECOND_BEGIN: 0x67A6C,
-    SinkState.AWAIT_BOTH_PATHS: 0x67AA0,
-    SinkState.AWAIT_CALLBACK_A: 0x67AF0,
-    SinkState.ESTABLISHED: 0x67B18,
+    SinkState.AWAIT_TEARDOWN_BEGIN: 0x67A6C,
+    SinkState.AWAIT_TEARDOWN_ACCEPTED: 0x67AA0,
+    SinkState.AWAIT_TEARDOWN_STEP: 0x67AF0,
+    SinkState.AWAIT_TEARDOWN_DONE: 0x67B18,
 }
 """The table at acib 0xf2628."""
 THIRD_HANDLER_ADDRESSES: dict[ThirdState, int] = {
     ThirdState.AWAIT_SETUP_REQUEST: 0x67FAC,
     ThirdState.AWAIT_MODULE_CALL: 0x67FEC,
     ThirdState.AWAIT_MODULE_RESULT: 0x68104,
-    ThirdState.AWAIT_SECOND_BEGIN: 0x68184,
-    ThirdState.AWAIT_BOTH_PATHS: 0x681B4,
-    ThirdState.AWAIT_CALLBACK_A: 0x681F8,
-    ThirdState.ESTABLISHED: 0x6821C,
+    ThirdState.AWAIT_TEARDOWN_BEGIN: 0x68184,
+    ThirdState.AWAIT_TEARDOWN_ACCEPTED: 0x681B4,
+    ThirdState.AWAIT_TEARDOWN_STEP: 0x681F8,
+    ThirdState.AWAIT_TEARDOWN_DONE: 0x6821C,
 }
 """The third role's table at acib 0xf2648. Its entry points are acib 0x67dd8, which sets the
 state to 0 and posts event 0, and 0x67dfc, which sets it to 3 and posts event 4."""

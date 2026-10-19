@@ -125,7 +125,7 @@ def test_an_accepted_setup_sends_the_configuration_and_tells_the_host_nothing_ye
     # And then the step a source has to drive itself, which is where the host hears.
     event = initiator.on_module_result()
     assert (event.mode, event.result) == (Mode.ULLA_ON, Result.SUCCESS)
-    assert initiator.procedure.state is procedure_state.AWAIT_SECOND_BEGIN
+    assert initiator.procedure.state is procedure_state.AWAIT_TEARDOWN_BEGIN
 
 
 def test_a_module_that_does_not_answer_with_one_is_an_error_to_the_host():

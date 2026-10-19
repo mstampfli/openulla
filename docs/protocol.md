@@ -791,15 +791,33 @@ byte and zeroes the rest [fw acib 0x68344].
 | 1 | acib 0x685f8 | 1, 2 | sets flag bit 1 on event 1, and once that bit and the link's own test both hold, sends 0x74 | 2 |
 | 2 | acib 0x6869c | 3 | builds the 0x74-byte request block from the context and hands it down | 3 |
 | 3 | acib 0x68788 | 4 | reports to the host: mode 1 and success, or mode 0 and result 1 | 4 or 0 |
-| 4 | acib 0x687fc | 5 | registers the first of the module's callbacks | 5 |
+| 4 | acib 0x687fc | 5 | the link is up and this is where it waits; on event 5 the teardown begins and a callback is registered | 5 |
 | 5 | acib 0x6886c | 2, 6 | sets flag bit 4 on event 2, and once bits 2, 3 and 4 are all set registers two more callbacks | 7 |
 | 6 | acib 0x688f4 | any | nothing at all: two instructions returning 0 | 0 |
 | 7 | acib 0x688f8 | 7, 8 | one call back into the module | 8 |
-| 8 | acib 0x68924 | 7, 8, 9 | on 9 tears the link down and reports mode 0 with the success result | 8 or 0 |
+| 8 | acib 0x68924 | 7, 8, 9 | on 9 finishes the teardown and reports mode 0 with the success result | 8 or 0 |
+
+**The second half is the teardown**, and that is not a reading of the numbers but of a string.
+Three strings in the image name parts of these machines [fw acib 0xf89ca, 0xf8a09, 0xf8a4c]:
+
+```
+ULLA_TRANS: ERROR- lm_ulla_trans_sec_handle_setup_lmp_accepted
+ULLA_TRANS: ERROR- lm_ulla_trans_sec_handle_setup_lmp_not_accepted
+ULLA_TRANS: ERROR- lm_ulla_trans_source_ulla_teardown_init_handle_lmp_not_accepted
+```
+
+So the firmware calls each of these a **transaction**, calls this role **source** and the
+third one of 5.10 **sec**, and has a phase named **ulla_teardown_init**. The third string is
+the assert at acib 0x68504; the function beside it, acib 0x68514, is the handler for the
+*accepted* answer in that phase, it requires the link to be in mode 0x36, and it is the one
+that posts event 6. The entry that starts at state 4 is the entry that puts the link in mode
+0x36, and what state 8 reports is mode 0 with the success result. Three independent things,
+all saying the same: states 4 to 8 take ULLA down again.
 
 The flag byte at +0x23 is the whole of the machine's memory besides the state: bit 0 is the
-re-entry guard, bit 1 is "the peer accepted", bits 2 and 3 are the two paths of state 5, and
-bit 4 is its link condition. Bits 5 to 7 survive a new run and are not traced here.
+re-entry guard, bit 1 is "the peer accepted", bits 2 and 3 are the two paths of the teardown's
+accepted answer, and bit 4 is its link condition. Bits 5 to 7 survive a new run and are not
+traced here.
 
 **The events**, each one at the site that posts it:
 
@@ -810,15 +828,17 @@ bit 4 is its link condition. Bits 5 to 7 survive a new run and are not traced he
 | 2 | acib 0x628f8 -> 0x68424 | the link's own state byte read 3 and was set to 4 |
 | 3 | acib 0x66db0 | a call inside the module that owns the procedure |
 | 4 | acib 0x619a4 -> 0x684e4 | that module passes a {byte, word} pair |
-| 5 | acib 0x68450, from 0x66d72 | the second entry point, which starts the machine at state 4 |
-| 6 | acib 0x68578 | both paths of state 5 have reported |
+| 5 | acib 0x68450, from 0x66d72 | the teardown entry, which starts the machine at state 4 |
+| 6 | acib 0x68514, posted at 0x68578 | the teardown's accepted answer, both paths of it |
 | 7 | acib 0x66fe8 | the first callback state 5 registered |
 | 8 | acib 0x67028 | the second callback state 5 registered |
-| 9 | acib 0x684fc | the stop entry point |
+| 9 | acib 0x684fc, slot +0xD8 | the teardown's last step |
 
-So the machine has two entry points. The first sets the state to 0 and posts event 0, after
-putting the link into mode 0x35 [fw acib 0x6842c]. The second sets the state to **4** and
-posts event 5, with the link in mode 0x36 and a callback registered [fw acib 0x68450]. Both
+So the machine has two entry points, one per half. The first sets the state to 0 and posts
+event 0, after putting the link into mode 0x35 [fw acib 0x6842c]. The second sets the state to
+**4** and posts event 5, with the link in mode 0x36 and a callback registered, and state 4 is
+also where the setup's own last state leaves it, so a link that is up sits there until the
+teardown starts [fw acib 0x68450, and 0x687a2 arriving at 4 on success]. Both
 are called from the same module, which keeps its own phase number at 0x1000df68 +0x84. What
 that module is for beyond driving this exchange is not traced, so it is not named here.
 
@@ -910,16 +930,20 @@ The sink's eight states:
 | 1 | acib 0x67858 | 1, 2 | event 1 claims the slot on both links; once its flag and both link tests pass, sends the accepted PDU | 2 or 1 |
 | 2 | acib 0x678f8 | 2, 3 | event 2 sends the accepted PDU, event 3 builds the request block and hands it down | 2 or 3 |
 | 3 | acib 0x679f8 | 4 | reports to the host, mode 1 and success or mode 0 and result 1 | 0 or 3 |
-| 4 | acib 0x67a6c | 5 | three calls into its module | 5 |
+| 4 | acib 0x67a6c | 5 | the teardown begins: three calls into its module | 5 |
 | 5 | acib 0x67aa0 | 6 | registers a callback | 6 |
 | 6 | acib 0x67af0 | 7 | one call back into the module | 7 |
-| 7 | acib 0x67b18 | 8 | tears the link down and reports mode 0 with the success result | 0 |
+| 7 | acib 0x67b18 | 8 | finishes the teardown and reports mode 0 with the success result | 0 |
+
+Its second half is the teardown too, for the same reasons as the source's: its second entry
+puts the link in mode 0x36 and its last state reports mode 0 with the success result
+[fw acib 0x675ac, 0x67b5a].
 
 Two differences from the source are worth the ink. The sink's state 3 goes back to **0** when
-the mode is on, not forward: a responder has nothing left to drive, and the rest of its run is
-started by its second entry point, which sets the state to 4 and posts event 5 [fw acib
-0x67a20 returning 0, 0x675ac entering at 4]. And the sink keeps its one flag as a whole byte
-at +0x1D rather than as a bit [fw acib 0x67880].
+the mode is on, where the source waits at 4: a responder has nothing left to drive, so its
+teardown is started entirely by that second entry [fw acib 0x67a20 returning 0, 0x675ac
+entering at 4]. And the sink keeps its one flag as a whole byte at +0x1D rather than as a bit
+[fw acib 0x67880].
 
 Its first entry point is the receive path: the handler for an incoming 0x73 runs the
 feature-enabled test and then the four checks of 5.4, and on acceptance calls the entry that
@@ -966,6 +990,14 @@ Two details of its own. Its host events carry the handle the ULLA state block ho
 receive path picks it for a request arriving on a link other than that stored one, ignoring a
 second request on the stored link itself [fw acib 0x634e4] - so this earbud can hold two
 responder procedures at once, on two different links, in two different machines.
+
+**The firmware's name for this role is "sec".** Two of the three strings quoted in 5.9 are the
+asserts in this set's slots for an accepted and a not-accepted answer to a setup request
+[fw acib 0x67f60 and 0x67f70, installed at the slots +0xE0 and +0xE4 by 0x622de and 0x622e4].
+An assert in both means this role never sends 0x73, so it can never be answered, which fits a
+first state that answers nobody. The same two slots in the source's set are its event-1 poster
+and its refusal reporter, so the slot map has firmware names for two of its entries:
+`handle_setup_lmp_accepted` at +0xE0 and `handle_setup_lmp_not_accepted` at +0xE4.
 
 `openulla/procedure.py` holds the sink's table beside the source's, and `openulla.controller`
 drives it rather than keeping a second copy of the same rules: the four checks decide, and
