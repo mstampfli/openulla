@@ -222,9 +222,22 @@ overwritten by the second and the second's second half lands past the declared 1
 overrun of the message buffer whose only visible effect is that the layout above is what the
 host actually receives.
 
+Both producers write the same four header bytes, which is worth stating because it is the
+envelope every one of these reports travels in: **0xFF at +8, the length at +2 less two at +9,
+the id as a halfword at +0xa, and the payload from +0xc** [fw acib 0x121f0 writes 0xBBFF as one
+halfword beside its length 0xBD, and 0x11e3c writes 0xFF then derives +9 from +2]. Type 0's
+producer is a generic sender: it stamps 0xA08 and copies its payload word by word from a buffer
+its caller fills, so that type's layout belongs to the caller and not to the sender [fw acib
+0x11e24, with one call site at 0x105c4]. A payload of 56 bytes puts 0x3C in that length field,
+which is consistent with everything here but is the one number in this paragraph that was not
+read directly.
+
 What the fields *mean* is still not established, for any of the three types: they are counters
 in a controller block, nothing in rkof reads one, and **no site in acib loads 0xE911 as an
-immediate**, so where type 2's 61 bytes are produced is open as well.
+immediate**, so where type 2's 61 bytes are produced is open as well. The statistics block
+itself is reached through a global: the caller loads the producer out of the table at acib
+0xf2284 by an index at `[[0x1000db7c+0xc]]` and passes it `&[0x1000db7c+0x10]`, which is the
+block [fw acib 0x55450..0x55470].
 
 The report the host receives is [fw rkof 0x27e90, which zeroes a 185-byte buffer first]:
 

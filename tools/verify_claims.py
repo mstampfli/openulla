@@ -158,6 +158,10 @@ PRODUCER_COPIES = (  # add.w rd, rn, #imm for each block copy, then its size
 )
 PRODUCER_COPY_SIZES = (0x12254, 0x122AC)  # movs r2, #0x80 at both, which is the overrun
 PRODUCER_COPY_SIZE = 0x80
+# The other producer: a generic sender that stamps type 0's id and copies the caller's words.
+SENDER = 0x11E24
+SENDER_MARKER = (0x11E3C, 0xFF)  # movs r1, #0xff -> the message's +8, as 2.6 describes
+SENDER_ID = (0x11E44, 0x0A08)  # movw r1, #0xa08 -> its +0xa
 SCHEDULER_BASE_LOAD = 0x3DBA6  # movw r0, #0xfcd0: the id the index counts from, 5.11
 SCHEDULER_BASE_ID = 0xFCD0
 SCHEDULER_BOUND_AT = 0x3DBAC  # cmp r0, #0x58
@@ -689,10 +693,11 @@ def check_report_listeners(acib, rkof, ctab):
 
 
 def check_report_producer(acib, rkof, ctab):
-    """Report type 1's producer in the controller: its message, its id and its two copies. [2.6]
+    """The two report producers in the controller: the message, the ids, the two copies. [2.6]
 
-    The whole layout 2.6 publishes comes out of this one function, so every number it writes is
+    The whole layout 2.6 publishes comes out of the first of them, so every number it writes is
     checked here, including the copy size that does not match the spacing of its destinations.
+    The second is the generic sender, checked for the marker byte and the id it stamps.
     """
     if u32(acib, PRODUCER_POINTER) != PRODUCER | 1:
         return False, f"acib 0x{PRODUCER_POINTER:x} no longer points at 0x{PRODUCER:x}"
@@ -712,9 +717,16 @@ def check_report_producer(acib, rkof, ctab):
     for at in PRODUCER_COPY_SIZES:
         if u16(acib, at) != 0x2200 | PRODUCER_COPY_SIZE:
             return False, f"the copy size at 0x{at:x} is 0x{u16(acib, at):04x}"
+    at, want = SENDER_MARKER
+    if u16(acib, at) != 0x2100 | want:
+        return False, f"the sender's marker at 0x{at:x} is 0x{u16(acib, at):04x}"
+    at, want = SENDER_ID
+    if movw(acib, at) != want:
+        return False, f"the sender at 0x{SENDER:x} no longer stamps 0x{want:x}"
     return True, (
         f"0x{PRODUCER:x}: id 0x{PRODUCER_ID_BASE[1] + 3:x}, {PRODUCER_LENGTH[1] - 4} payload "
-        f"bytes, blocks at +0x45 and +0x85 copied 0x{PRODUCER_COPY_SIZE:x} at a time"
+        f"bytes, blocks at +0x45 and +0x85 copied 0x{PRODUCER_COPY_SIZE:x} at a time; "
+        f"0x{SENDER:x} stamps 0x{SENDER_ID[1]:x}"
     )
 
 
@@ -820,7 +832,7 @@ CHECKS = (
     ("procedure state tables", check_procedure_tables),
     ("A2DP stream endpoints", check_a2dp_endpoints),
     ("report listeners", check_report_listeners),
-    ("report type 1 producer", check_report_producer),
+    ("report producers", check_report_producer),
     ("procedure scheduler", check_procedure_scheduler),
     ("ctab is the table again", check_ctab_manifest),
 )
