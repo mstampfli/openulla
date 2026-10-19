@@ -191,3 +191,41 @@ Part E, the Create Connection command); the bit values above are quoted from Blu
 the stack that produced the measurement. This is consistent with the earbud firmware reaching
 those modes through a vendor command and link-manager PDUs instead (`protocol.md` sections 6
 and 5), and it is why a host-side packet-type request is not a route to this link.
+
+## 10. What a controller that does not implement these commands answers
+
+Measured 2026-10-19 on the same host (Intel AX211, BlueZ 5.82), with no connection open. Four
+vendor commands sent with `hcitool cmd`, three of them in the range the earbud firmware uses
+and one of the controller's own:
+
+| sent | answer | status |
+|---|---|---|
+| OGF 0x3F, OCF 0x253 (0xFE53), no parameters | Command **Status**, event 0x0F | **0x0C** |
+| OGF 0x3F, OCF 0x255 (0xFE55), four parameter bytes in range | Command **Status** | **0x0C** |
+| OGF 0x3F, OCF 0x3FF (0xFFFF), an opcode nobody implements | Command **Status** | **0x0C** |
+| OGF 0x3F, OCF 0x005, the controller's own read-version command | Command **Complete**, event 0x0E | 0x00, with its 13-byte answer |
+
+Three things follow, and the third is the useful one.
+
+**The parameters are never looked at.** 0xFE55 with a value inside the bound of
+[protocol.md](protocol.md) 6.6 is refused exactly like the opcode with no parameters at all,
+so this controller rejects by opcode before parsing anything.
+
+**0x0C is this controller's blanket answer** for any unimplemented opcode in the vendor group,
+and it answers its own vendor commands normally in the same breath, so nothing is wrong with
+the path.
+
+**So 0x0C alone proves nothing about ULLA.** It is the same code 6.6 documents for a session
+command whose gate fails, which means a tester cannot read "command disallowed" as "implemented
+and refused". Two things do discriminate:
+
+- **the event**. This controller answers Command Status (0x0F); the earbud firmware answers
+  these commands with Command Complete carrying its own status byte and, for two of them, a
+  payload (6.6, 6.7).
+- **0xFE55's bound**, which has three distinguishable outcomes rather than two: 0x0C for a
+  controller that does not implement it, **0x11** for one that does and was handed a value
+  outside the signed range -800 to +800, and success inside it.
+
+Nothing was disturbed: the adapter stayed `UP RUNNING` and no connection existed before or
+after. A single unknown vendor command is refused by the controller's own dispatcher, which is
+what the first three rows show.

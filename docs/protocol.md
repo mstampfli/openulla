@@ -1715,7 +1715,11 @@ the note: its handler reads none, although the manager sends four zero bytes wit
    the session object at all.
 2. otherwise the session has to be **active**: the state byte 2 with a flag set, which is
    exactly the check 0x75's receiver makes [fw acib 0x2f550]. If it is not, the command
-   completes with **0x0C**, command disallowed.
+   completes with **0x0C**, command disallowed. Read that code carefully if you are testing a
+   controller: an Intel AX211 answers **0x0C to every unimplemented opcode in this group**, so
+   the code alone cannot tell "implemented and refused" from "not implemented"
+   [[measurements.md](measurements.md) section 10]. The event does: the firmware answers these
+   with Command Complete and its own status byte, that controller with Command Status.
 3. then the link's **role byte** decides which of two branches runs [fw acib 0x2f566], the
    same test again from 5.2.
 
