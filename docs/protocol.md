@@ -1396,19 +1396,23 @@ one 0x75's and 0x76's receivers use (5.2); taking every call to it in the image 
 which command handler it falls inside gives **eleven commands**, nine of them not mentioned
 anywhere else in this document:
 
-| command | handler | the earbud's own manager sends it |
-|---|---|---|
-| 0xFE16 | acib 0x1ebf4 | yes, five bytes: 1, then a word of its own state [fw rkof 0x27c08] |
-| 0xFE4C | acib 0x1d6cc | no |
-| 0xFE4E | acib 0x1e7b8 | no |
-| 0xFE50 | acib 0x1da40 | yes, the mode change of section 6 |
-| 0xFE52 | acib 0x1dd88 | yes, with no parameters at all [fw rkof 0x26940] |
-| 0xFE53 | acib 0x1de62 | no |
-| 0xFE55 | acib 0x1dde4 | no |
-| 0xFE57 | acib 0x1d900 | no |
-| 0xFE58 | acib 0x1d952 | yes, four zero bytes [fw rkof 0x26866] |
-| 0xFE7B | acib 0x1d44e | no |
-| 0xFF79 | acib 0x193f4 | yes, the allowed-band mask of 6.1 |
+| command | handler | parameters its handler reads | the earbud's own manager sends it |
+|---|---|---|---|
+| 0xFE16 | acib 0x1ebf4 | a byte and a word, bounded below | yes, five bytes: 1, then a word of its own state [fw rkof 0x27c08] |
+| 0xFE4C | acib 0x1d6cc | a halfword [fw acib 0x1d6d6] | no |
+| 0xFE4E | acib 0x1e7b8 | a byte [fw acib 0x1e7ce] | no |
+| 0xFE50 | acib 0x1da40 | the seven bytes of section 6 | yes, the mode change of section 6 |
+| 0xFE52 | acib 0x1dd88 | none at all | yes, with none [fw rkof 0x26940] |
+| 0xFE53 | acib 0x1de62 | none at all | no |
+| 0xFE55 | acib 0x1dde4 | a word [fw acib 0x1de08] | no |
+| 0xFE57 | acib 0x1d900 | a word [fw acib 0x1d904] | no |
+| 0xFE58 | acib 0x1d952 | none that its handler reads | yes, four zero bytes [fw rkof 0x26866] |
+| 0xFE7B | acib 0x1d44e | a byte [fw acib 0x1d45e] | no |
+| 0xFF79 | acib 0x193f4 | the mask byte of 6.1 | yes, the allowed-band mask of 6.1 |
+
+Each parameter column is what the handler loads from the command buffer's +0xB onwards, which
+is where this interface's parameters start (6 and 6.1 use the same offset). 0xFE58 is worth
+the note: its handler reads none, although the manager sends four zero bytes with it.
 
 **Five of them share one shape**, which is the useful part. 0xFE52, 0xFE53, 0xFE55, 0xFE57 and
 0xFE58 all begin with the same gate chain [fw acib 0x1dd88, 0x1de62, 0x1dde4, 0x1d900,
