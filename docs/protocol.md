@@ -814,6 +814,18 @@ that posts event 6. The entry that starts at state 4 is the entry that puts the 
 0x36, and what state 8 reports is mode 0 with the success result. Three independent things,
 all saying the same: states 4 to 8 take ULLA down again.
 
+Those three are the only names to be had, and it is worth saying why. Everything else these
+handlers log is a number: the trace call takes a 32-bit id, passes its top byte as a level and
+the id itself into a queue, and never touches a string [fw acib 0x74240, 0x74256, 0x74270, all
+into 0x7443c]. The dictionary that would turn those ids into text is not used here. There *is*
+a 132-entry table of format strings in this payload [fw acib 0xf5064 to 0xf5274], and it holds
+ULLA entries, among them "ULLA: tried transmitting packet of size %d, maximal size is %d" and
+"Obsolete ULLA version 0x%04X, local version 0x%04X" - but nothing in the image references
+that table or those two strings, so neither can be attached to a call site. The three names
+above come from the other logging path, the one that takes a string pointer and does not
+return [fw acib 0x6bf30]. So: asserts are named, traces are numbered, and this document does
+not guess at the numbers.
+
 The flag byte at +0x23 is the whole of the machine's memory besides the state: bit 0 is the
 re-entry guard, bit 1 is "the peer accepted", bits 2 and 3 are the two paths of the teardown's
 accepted answer, and bit 4 is its link condition. Bits 5 to 7 survive a new run and are not
