@@ -902,6 +902,11 @@ refusal paths pass zero [fw acib 0x62058 called at 0x687cc for the source, 0x67a
 sink, 0x68154 for the third role, and 0x67820 and 0x68496 for the refusals]. So the phase and
 the host's mode never disagree, and 6.6's "is the link up" test is this phase reading 3.
 
+That makes one fact visible at three layers at once: the controller's phase, the mode byte the
+host is told, and the manager's own link-up event, which is posted from that same event's
+arrival and distinguished by that same mode byte (3.3 and 3.4). An implementation that keeps
+those three in step is doing what the firmware does; one that lets them drift is not.
+
 So the machine has two entry points, one per half. The first sets the state to 0 and posts
 event 0, after putting the link into mode 0x35 [fw acib 0x6842c]. The second sets the state to
 **4** and posts event 5, with the link in mode 0x36 and a callback registered, and state 4 is
@@ -1015,8 +1020,8 @@ teardown is started entirely by that second entry [fw acib 0x67a20 returning 0, 
 entering at 4]. And the sink keeps its one flag as a whole byte at +0x1D rather than as a bit
 [fw acib 0x67880].
 
-Its first entry point is the receive path: the handler for an incoming 0x73 runs the
-feature-enabled test and then the four checks of 5.4, and on acceptance calls the entry that
+Its first entry point is the receive path: the handler for an incoming 0x73 reads the module's
+enable byte and then runs the four checks of 5.4, and on acceptance calls the entry that
 puts the link in mode 0x35, sets the state to 0 and posts event 0
 [fw acib 0x63448, the checks at 0x675f4, the entry at 0x67588]. The caller tests only the low
 nibble of the byte the checks return and sends the whole byte, which is the other half of the
@@ -1502,7 +1507,7 @@ command is one byte long or four.
 its bound is a measurement rather than a guess. It takes a byte and a 32-bit value, which is
 exactly the five bytes the earbud's manager sends. The value has to be **at least 0x7D (125)
 and at most 0x2710 (10000)**, and outside that the command completes with **0x11**; then the
-same device predicate decides between two handlers, with the session-active check and 0x0C on
+same is-the-link-up test decides between two handlers, with the session-active check and 0x0C on
 the other path [fw acib 0x1ebfc to 0x1ec4a, the two handlers 0x1ebb4 and 0x1eb0a, which pass
 both parameters into the link layer at 0x5ed34 and 0x5ed54]. A single value bounded to
 125 to 10000 looks like a time or an interval, but nothing in these payloads says in what
