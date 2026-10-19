@@ -764,7 +764,27 @@ feature in this firmware is gated on **the AND of the two words**, a byte at a t
 So the device's feature word lives at 0x10003290 to 0x10003293 and the peer's at the link's
 0x47 to 0x4A, and **an implementation that never answers the exchange has every feature gated
 off**, because the AND reads its word as zero. Answering it is the first thing a source has to
-do.
+do. (That address is the base of a larger structure, not a word of its own: the ULLA state
+block sections 5.10 and 5.2 use is the same structure at +0xC.)
+
+**Where its own bits come from**, which decides what a controller advertises:
+
+| bits | written by | how |
+|---|---|---|
+| byte 0, bit 5 | vendor command 0xFF77 | one parameter byte: non-zero sets it, zero clears it [fw acib 0x192f4 to 0x19306] |
+| byte 0, bits 1, 2, 4 and 6 | vendor command **0xFDF3** | the same shape: the byte is masked to 0xA9 and this group, 0x56, is added when the parameter is non-zero [fw acib 0x16b20, table index 162 of 6] |
+| byte 0, bit 0 | another command of that family | [fw acib 0x18054] |
+| byte 0, bits 1, 3 and 4 | another | [fw acib 0x16a90] |
+| byte 0, bit 7 | another | [fw acib 0x174b8] |
+| byte 1, bits 2 and 4; byte 3, bits 6 and 7 | the controller itself | one function sets them, after another has zeroed all four bytes [fw acib 0x2965c, the clear at 0x2964c] |
+
+Two of those rows matter for anyone driving this from a host. The band family needs 0xFF77,
+and **the mode procedure needs 0xFDF3**: bit 6 is in the 0x56 group, so without that command
+the controller's own half of 0xFE50's gate is zero and the non-zero path is refused (6, and
+the gate at acib 0x1db5e). 0xFF78 says the same thing from the other side by refusing outright
+while bit 5 is clear [fw acib 0x19348]. The 0xA9 and 0x56 masks are complementary, so that
+byte really is two groups of four bits, and the identity check below reduces an advertised copy
+to the first group.
 
 One quirk, for anyone comparing against a capture: when a per-link identity check matches (a
 halfword of 0xF, a byte of at most 10, and a ten-byte comparison at the link's 0x4E), the low
@@ -1314,6 +1334,7 @@ ends allow.
 | 0xFF92 | count 1-8, then that many bytes | one country code per band: **each entry is either below 8 or exactly 0xFF**; 0x11 otherwise [fw acib 0x1e074] |
 | 0xFD31 | 1 byte | one country code for the device, **0 to 7**; 0x12 otherwise [fw acib 0x1e0de] |
 | 0xFFB3 | 3 bytes | test band and range; index 3 refused, the range checked against the band's channel count [fw acib 0x18d04] |
+| 0xFDF3 | 1 byte | not a band command, but its sibling: the same shape sets the other four bits of that same feature byte, bit 6 among them, which is the gate on 0xFE50's mode procedure (5.8) [fw acib 0x16b20] |
 
 0xFF92 is what the earbud's own side sends when it recomputes the table [fw rkof 0x248f8,
 command id 0x392, eight bytes], and it closes the loop on the mask: a country code is 0 to 7,
@@ -1436,8 +1457,10 @@ rule that was read from the firmware or measured.
    their three-byte header (2.6).
 6. On the controller side, if your controller lets you: **answer the feature exchange** first,
    because every band message and the mode procedure are gated on the AND of the two words
-   (5.8). Then announce your allowed bands with the pair of commands and, if you use them, the
-   per-band channel ranges (6.1 to 6.5).
+   (5.8), and **set your own half of that AND** with 0xFF77 for the band family and 0xFDF3 for
+   the mode procedure, which is what those two commands do (5.8). Then announce your allowed
+   bands with the pair of commands and, if you use them, the per-band channel ranges
+   (6.1 to 6.5).
 7. **Emit the setup request** and be ready for the four checks and their reasons (5.1, 5.4),
    or to receive one and answer it; the accept decision reads none of the PDU's own fields.
 8. **Report the outcome to your host** as the nine-byte vendor event, and expect the manager

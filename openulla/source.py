@@ -102,8 +102,20 @@ class ControllerCommands:
         return hci.allowed_bands(mask)
 
     def enable_band_commands(self) -> bytes:
-        """0xFF77, without which every other band command completes with 0x0C."""
+        """0xFF77, without which every other band command completes with 0x0C.
+
+        It sets bit 5 of the controller's own feature byte, which is the half of the band
+        gate that belongs to this side [protocol.md 5.8].
+        """
         return hci.band_gate(True)
+
+    def enable_mode_procedure(self) -> bytes:
+        """0xFDF3, which sets bit 6 of that same byte: the mode procedure's own gate.
+
+        Without it 0xFE50's non-zero path is refused however the peer answers the feature
+        exchange, because the gate is the AND of the two words [protocol.md 5.8, 6].
+        """
+        return hci.feature_group(True)
 
     def choose_band(self, index: int) -> bytes:
         """0xFF7C, which only takes a band the device's own mask allows."""

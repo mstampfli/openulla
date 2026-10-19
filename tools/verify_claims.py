@@ -62,7 +62,11 @@ COMMAND_HANDLERS = {
     0xFFB3: 0x18D04,
     0xFFBD: 0x1926C,
     0xFD31: 0x1E0DE,
+    0xFDF3: 0x16B20,
 }
+FEATURE_WORD = 0x10003290  # the controller's own feature bits, 5.8
+FEATURE_KEEP_MASK = 0xA9  # what 0xFDF3 leaves alone
+FEATURE_ADD_GROUP = 0x56  # what it adds, bit 6 among them
 ABSENT_OPCODE = 0xFF75  # no key of its own; a masked search lands on the one below
 ABSENT_OPCODE_ALIAS = 0x7F75
 GATE_KEY = 0xBF77  # 0xFF77's own key carries different high bits, and still matches it
@@ -356,6 +360,34 @@ def check_names(acib, rkof):
     return True, f"{len(Mode)} modes, {len(Result)} results, {checked} reasons, 2 unnamed"
 
 
+def check_feature_bit_commands(acib, rkof):
+    """That the two commands really write the feature byte, and with which masks. [5.8]
+
+    Read as instructions rather than as prose: 0xFF77's handler must clear bit 5 and add
+    0x20, and 0xFDF3's must mask to 0xA9 and add 0x56, both on the byte at the feature word.
+    """
+    for name, where, expect in (
+        ("0xFF77", 0x192FC, (0xDF, 0x20)),  # and r1,#0xdf then addne r1,#0x20
+        ("0xFDF3", 0x16B28, (FEATURE_KEEP_MASK, FEATURE_ADD_GROUP)),
+    ):
+        # "and rX, rX, #imm" as T1: 0xf00X 0xZZYY with the immediate in the low halfword
+        kept = u16(acib, where + 2) & 0xFF
+        added = u16(acib, where + 6) & 0xFF
+        if (kept, added) != expect:
+            return False, (
+                f"{name} now masks with 0x{kept:02x} and adds 0x{added:02x}, "
+                f"not 0x{expect[0]:02x} and 0x{expect[1]:02x}"
+            )
+    if u32(acib, 0x19320) != FEATURE_WORD or u32(acib, 0x16B34) != FEATURE_WORD:
+        return False, "one of the two handlers no longer loads the feature word's address"
+    if FEATURE_KEEP_MASK | FEATURE_ADD_GROUP != 0xFF or FEATURE_KEEP_MASK & FEATURE_ADD_GROUP:
+        return False, "the two groups are no longer complementary"
+    return True, (
+        f"0xFF77 sets bit 5, 0xFDF3 adds 0x{FEATURE_ADD_GROUP:02x} over 0x"
+        f"{FEATURE_KEEP_MASK:02x}, both at 0x{FEATURE_WORD:08x}"
+    )
+
+
 def check_procedure_tables(acib, rkof):
     """The three procedures' state handlers, and the dispatchers that index them. [5.9, 5.10]"""
     for name, table, literal, addresses in (
@@ -438,6 +470,7 @@ CHECKS = (
     ("mode-change event shape", check_event_shape),
     ("mode, result and reason names", check_names),
     ("name table bounds", check_name_table_bounds),
+    ("feature bit commands", check_feature_bit_commands),
     ("procedure state tables", check_procedure_tables),
     ("A2DP stream endpoints", check_a2dp_endpoints),
 )

@@ -46,6 +46,7 @@ MANAGER_EXTRA_FLAGS = 1
 MANAGER_CONFIG_WORD = 0x0096
 MANAGER_FLAGS_MODE_ONE = 0x04
 MANAGER_FLAGS_OTHERWISE = 0x0F
+OPCODE_FEATURE_GROUP = 0xFDF3  # four bits of the feature byte, bit 6 among them
 OPCODE_BAND_GATE = 0xFF77
 OPCODE_READ_LINK_BAND = 0xFF78
 OPCODE_ALLOWED_BANDS = 0xFF79
@@ -176,8 +177,26 @@ def ulla_second_command(handle: int, mode_field: int) -> bytes:
 
 
 def band_gate(enable: bool) -> bytes:
-    """0xFF77: the switch that gates every other band command. [fw acib 0x192dc]"""
+    """0xFF77: the switch that gates every other band command. [fw acib 0x192dc]
+
+    Its one byte sets or clears **bit 5** of the controller's own feature word, which is the
+    bit every band message is gated on [fw acib 0x192f4 to 0x19306, and the gate at 0x29916].
+    So this command is not a convenience: without it the controller's own half of that AND
+    is zero. 0xFF78 refuses outright while the bit is clear [fw acib 0x19348].
+    """
     return command(OPCODE_BAND_GATE, bytes((1 if enable else 0,)))
+
+
+def feature_group(enable: bool) -> bytes:
+    """0xFDF3: sets or clears the other four bits of that feature byte. [fw acib 0x16b20]
+
+    The byte splits into two groups: bits 0, 3, 5 and 7 survive this command either way (the
+    mask 0xA9) and bits 1, 2, 4 and 6 are the ones it adds (0x56). Bit 6 is the gate on
+    0xFE50's mode procedure and bits 1 and 2 steer the reply of protocol.md 5.11, so a source
+    that wants the mode procedure has to send this one as well as 0xFF77
+    [fw acib 0x16b28 and 0x16b2e, the gates at 0x1db5e and 0x29204].
+    """
+    return command(OPCODE_FEATURE_GROUP, bytes((1 if enable else 0,)))
 
 
 def read_link_band(handle: int) -> bytes:

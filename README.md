@@ -120,6 +120,7 @@ $ python3 tools/ulla_demo.py
   wrapper 0x17, class 0x00200000     04 00 04 00 17 00 00 00 20 00 04 00 00 00 00 00
 4. the local audio path quiesces, and the controller is told to change mode
   HCI 0xFF77, band commands on       77 ff 01 01
+  HCI 0xFDF3, the mode procedure on  f3 fd 01 01
   HCI 0xFF79, mask 0xe6              79 ff 01 e6
   HCI 0xFF7A, the same mask          7a ff 01 e6
      that mask names bands (1, 2, 5, 6, 7)

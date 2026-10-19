@@ -88,6 +88,7 @@ else is offline.
   wrapper 0x17, class 0x00200000     04 00 04 00 17 00 00 00 20 00 04 00 00 00 00 00
 4. the local audio path quiesces, and the controller is told to change mode
   HCI 0xFF77, band commands on       77 ff 01 01
+  HCI 0xFDF3, the mode procedure on  f3 fd 01 01
   HCI 0xFF79, mask 0xe6              79 ff 01 e6
   HCI 0xFF7A, the same mask          7a ff 01 e6
      that mask names bands (1, 2, 5, 6, 7)
@@ -173,7 +174,7 @@ python3 tools/verify_claims.py --payloads payloads
 ```
   PASS  session transition table         48 rows over 15 states, events, both next states and handlers
   PASS  band plan                        8 records of 7 bytes at acib 0xf52e8
-  PASS  HCI command table                11 handlers as published, keys ordered under the mask, 0xff75 absent behind 0x7f75
+  PASS  HCI command table                12 handlers as published, keys ordered under the mask, 0xff75 absent behind 0x7f75
   PASS  PDU lengths                      accepted 2, not accepted 3, 0x74 7, 0x73 9, including the header byte
   PASS  LMP receive dispatch             table at acib 0x3b254, 5 opcodes checked
   PASS  escape space dispatch            0x7B: 39 entries, 12 refused; 0x7F: 34 entries, 8 refused
@@ -181,9 +182,10 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  mode-change event shape          event 0xff, 7 parameters, id 0x0a00
   PASS  mode, result and reason names    3 modes, 5 results, 12 reasons, 2 unnamed
   PASS  name table bounds                3 modes then 'ULLA_MGR_EVENT_UNKNOWN', 5 results then a null
+  PASS  feature bit commands             0xFF77 sets bit 5, 0xFDF3 adds 0x56 over 0xa9, both at 0x10003290
   PASS  procedure state tables           8 sink, 7 third and 9 source states, acib 0xf2628 to 0xf2664
   PASS  A2DP stream endpoints            vendor 0xFF, AAC 0x02 and SBC 0x00, lengths and bytes as published
-12 of 12 claims hold
+13 of 13 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows

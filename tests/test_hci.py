@@ -1,7 +1,7 @@
 """The vendor commands, the refusals the firmware makes, and the mode-change event."""
 import pytest
 
-from openulla import hci
+from openulla import hci, lmp
 from openulla.codes import Mode, RejectReason, Result
 from openulla.errors import ProtocolError
 
@@ -135,3 +135,16 @@ def test_the_refusal_the_procedure_path_would_answer():
     assert hci.UllaSetup(1, 0, 0, 4, mode=2).refusal() is None
     assert hci.UllaSetup(1, 0, 0, 5, mode=2).refusal() == 0x12
     assert hci.UllaSetup(1, 0, 0, 0xFF, mode=0).refusal() is None  # a bitmask on that path
+
+
+def test_the_two_commands_that_set_the_controllers_own_feature_bits():
+    """One bit each way: 0xFF77 for bit 5, 0xFDF3 for the group with bit 6. [protocol.md 5.8]"""
+    assert hci.band_gate(True) == bytes.fromhex("77 ff 01 01")
+    assert hci.band_gate(False) == bytes.fromhex("77 ff 01 00")
+    assert hci.feature_group(True) == bytes.fromhex("f3 fd 01 01")
+    assert hci.feature_group(False) == bytes.fromhex("f3 fd 01 00")
+    assert hci.OPCODE_FEATURE_GROUP >> 10 == hci.OGF_VENDOR
+    # The two groups of that byte are complementary, which is how the firmware splits it.
+    assert 0xA9 | 0x56 == 0xFF and 0xA9 & 0x56 == 0
+    assert (1 << lmp.FEATURE_BIT_BANDS) & 0xA9  # bit 5 is in the group 0xFDF3 leaves alone
+    assert (1 << lmp.FEATURE_BIT_MODE_PROCEDURE) & 0x56  # bit 6 is in the group it adds

@@ -6,7 +6,7 @@ these are the paths it showed untested.
 """
 import pytest
 
-from openulla import aap, bands, describe, hci, lmp, sibling, transport
+from openulla import aap, bands, describe, hci, lmp, sibling, source, transport
 from openulla.codes import HciError, Mode, RejectReason, Result
 from openulla.errors import ProtocolError
 from openulla.sim import DEFAULT_PEER
@@ -192,3 +192,10 @@ def test_the_sibling_messages_with_bodies_round_trip():
     assert parsed.client == sibling.CLIENT_SESSION_MANAGER
     assert parsed.message == sibling.Message.STATISTICS
     assert aap.parse_report(parsed.body).report_type == 7
+
+
+def test_the_source_can_set_both_halves_of_the_gate():
+    """0xFF77 for the band family, 0xFDF3 for the mode procedure. [protocol.md 5.8]"""
+    commands = source.ControllerCommands(handle=0x000B)
+    assert commands.enable_band_commands() == bytes.fromhex("77 ff 01 01")
+    assert commands.enable_mode_procedure() == bytes.fromhex("f3 fd 01 01")

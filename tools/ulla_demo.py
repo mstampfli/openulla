@@ -86,6 +86,7 @@ def main():
     print("4. the local audio path quiesces, and the controller is told to change mode")
     link.quiesce()
     show("HCI 0xFF77, band commands on", commands.enable_band_commands())
+    show("HCI 0xFDF3, the mode procedure on", commands.enable_mode_procedure())
     first, second = commands.announce_bands(mask)
     show(f"HCI 0xFF79, mask 0x{mask:02x}", first)
     show("HCI 0xFF7A, the same mask", second)
