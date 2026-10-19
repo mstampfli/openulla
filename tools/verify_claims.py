@@ -179,6 +179,18 @@ SIZE_COMMAND_HDR = 0x160F0  # movw r0, #0xa1a, the five-slot payload of Apple's 
 SIZE_COMMAND_HDR_BUFFER = 0x160FA  # movw r1, #0xa28
 SIZE_COMMAND_BASIC = 0x16108  # movw r0, #0x153, DH5's payload
 SIZE_COMMAND_BASIC_BUFFER = 0x16112  # mov.w r1, #0x160
+# Where the size lands, and what the controller boots with. [6.8]
+CONFIG_BLOCK = 0x1000B494
+SIZE_SETTER_STORE = 0x15426  # strh.w r0, [r1, #0x718]
+SIZE_FIELD = 0x718
+BYTE_SETTER_STORE = 0x153E6  # strb.w r0, [r1, #0x730]
+BYTE_FIELD = 0x730
+CONFIG_INIT_SIZE = 0x133C6  # movw r0, #0xa1a, written to both halfwords below
+CONFIG_INIT_STORES = ((0x133CA, 0x718), (0x133CE, 0x71E))
+CONFIG_INIT_OFFSET = 0x13494  # the literal the record walk starts from, as a signed offset
+CONFIG_RECORD_STRIDE_AT = 0x133F2  # adds r0, #0xc4
+CONFIG_RECORD_STRIDE = 0xC4
+CONFIG_RECORDS = 9
 # The payload header accessors, and the one function that picks the wide one. [7.3]
 HEADER_READ_10 = (0x78CD0, 0xF3C0, 0x00C9)  # ubfx r0, r0, #3, #10
 HEADER_READ_12 = (0x78CD6, 0xF3C0, 0x00CB)  # ubfx r0, r0, #3, #12
@@ -1327,10 +1339,30 @@ def check_shared_host_commands(acib, rkof, ctab, sbd1):
     buffers = (movw(acib, SIZE_COMMAND_HDR_BUFFER), mov_imm(acib, SIZE_COMMAND_BASIC_BUFFER))
     if buffers != (five_slot + 14, basic + 13):
         return False, f"the two buffer sizes are now {buffers}"
+
+    # Where it lands: the two setters' own store offsets, read out of the instructions.
+    for at, field, kind in ((SIZE_SETTER_STORE, SIZE_FIELD, "strh"),
+                            (BYTE_SETTER_STORE, BYTE_FIELD, "strb")):
+        if u16(acib, at + 2) & 0xFFF != field:
+            return False, f"0x{at:x} no longer {kind}s to +0x{field:x}"
+    # What it boots with: the same five-slot payload, in both halfwords, before any host speaks.
+    if movw(acib, CONFIG_INIT_SIZE) != five_slot:
+        return False, f"0x{CONFIG_INIT_SIZE:x} no longer initialises the size to {five_slot}"
+    for at, field in CONFIG_INIT_STORES:
+        if u16(acib, at + 2) & 0xFFF != field:
+            return False, f"0x{at:x} no longer stores to +0x{field:x}"
+    # And how many link records the block holds, from the walk that clears them.
+    start = u32(acib, CONFIG_INIT_OFFSET) - (1 << 32)
+    if u16(acib, CONFIG_RECORD_STRIDE_AT) != 0x3000 | CONFIG_RECORD_STRIDE:
+        return False, f"0x{CONFIG_RECORD_STRIDE_AT:x} no longer steps by the record stride"
+    if -start != CONFIG_RECORD_STRIDE * CONFIG_RECORDS:
+        covered = -start / CONFIG_RECORD_STRIDE
+        return False, f"the walk covers {covered} records, not {CONFIG_RECORDS}"
     return True, (
         f"{len(SHARED_HOST_COMMANDS)} of their twelve present and "
         f"{len(ABSENT_HOST_COMMANDS)} absent, 0xFD02 mode 1 -> {five_slot} bytes, "
-        f"otherwise {basic}"
+        f"otherwise {basic}, landing at 0x{CONFIG_BLOCK:x}+0x{SIZE_FIELD:x} whose default is "
+        f"{five_slot}, over {CONFIG_RECORDS} records of 0x{CONFIG_RECORD_STRIDE:x}"
     )
 
 

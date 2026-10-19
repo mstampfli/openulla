@@ -1527,6 +1527,15 @@ own filing calls 4-DH5 and 8-DH5.
 The firmware never writes "HDR", so the identification is ours and stated as such; the table,
 the lengths, the TYPE codes and the arithmetic are not.
 
+**Two of those payload figures appear as immediates elsewhere, and those sites were checked and
+are not this.** 1288 is a length argument in a structure initialisation [fw acib 0x8a9ca] and
+a size chosen by a nine-entry mask against an index [fw acib 0xbc592]; 1416 is the base of a
+size formula beside a magic-word check [fw acib 0x8c38] and a threshold on a halfword copied
+from another field [fw acib 0xad2c8]. None of the four reads the packet table or the link's
+active-table byte. In a payload full of buffer sizes a round number recurs by itself, which is
+why the table above rests on all three parallel arrays agreeing and not on where a number turns
+up. The last two of those four are unidentified rather than explained.
+
 Two further places show the table being used rather than merely stored. The packet-type mask
 filter branches on it: when the active table is 2 it clears bits among 16 to 21 according to two
 capability bits at the link's +0x69, in the same shape the standard branch clears the 3 Mb/s
@@ -2162,6 +2171,21 @@ command during a session with these earbuds. What the Mac's own controller does 
 is not established here: the opcode is in a vendor space, and two controllers sharing a number
 is not the same as sharing a meaning. What is established is that the earbuds implement it and
 what theirs does.
+
+**Where the size lands, and what it starts as.** Both of the handler's calls are one-line
+setters on the configuration block of 5.14: the size goes to the **halfword at 0x1000B494 +
+0x718** and a companion byte to **+0x730**, so mode 1 writes (2586, 8) and every other mode
+writes (339, 0x17) [fw acib 0x15424 the size setter with its reader at 0x15430, 0x153e4 the byte
+setter]. That block's own initialiser then says what the controller boots with: it writes
+**2586 into both +0x718 and +0x71E** before any host has spoken, along with 0x00500320 at
++0x71A and 2 at +0x735 [fw acib 0x133c6 to 0x133e8]. **The default is the larger packet**, and
+0xFD02 is how a host narrows it, which is the opposite of what a feature that had to be switched
+on would look like.
+
+The same initialiser walks the block's per-link records and so counts them: it steps a negative
+offset up to zero in strides of **0xC4**, nine times, clearing one field of each
+[fw acib 0x133ec to 0x133fc]. That stride and base are the ones the 0x7B/0x0C setter of 5.14
+indexes with, so the two findings are reading one array of nine link records.
 
 ## 7. The audio layer, and what is not known
 

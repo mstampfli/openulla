@@ -252,7 +252,7 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  ctab is the table again          'rkosftab' at 0x3d, 20 entries in table order, no block magic
   PASS  no standard road to a new rate   packet-type table bounded to 0 or 1 with error 0x1e, feature pages bounded below 3 and filled with eight zeros above, pages at 0x10003288 and 0x100033a4
   PASS  the packet-type table            18 entries, all twelve specified payloads present, 6 more at mask bits 16 to 21, Apple's request bounded to 2
-  PASS  shared host commands             7 of their twelve present and 5 absent, 0xFD02 mode 1 -> 2586 bytes, otherwise 339
+  PASS  shared host commands             7 of their twelve present and 5 absent, 0xFD02 mode 1 -> 2586 bytes, otherwise 339, landing at 0x1000b494+0x718 whose default is 2586, over 9 records of 0xc4
   PASS  payload header width             ten-bit length at bit 3 under mask 0xe007, twelve-bit under 0x8007, the wide builder tests table 2 and mask 0x3f0000
   PASS  the five paired procedures       5 senders choose between the two forms, the three power answers are one two-bit code five times
 28 of 28 claims hold
