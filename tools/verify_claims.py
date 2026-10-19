@@ -136,6 +136,8 @@ GETTER_TABLE = 0xF7D60  # 534 property getters, one-based, 6.6
 GETTER_TABLE_LITERAL = 0xE42C4
 GETTERS = {
     0x63: 0xDC9C0,  # 0x73's 32-bit field: the hardware read with retries, 5.1
+    0xA6: 0xDF9E8,  # the escape module's per-type byte, written, 6.6
+    0xA7: 0xE089C,  # and the mapped byte it reads back through the link record, 6.6
     0xB9: 0xE0AC4,  # the three queries of 5.11
     0x1AF: 0xDC35C,  # the six ULLA session properties of 6.6
     0x1B0: 0xDC388,
@@ -146,6 +148,10 @@ GETTERS = {
 }
 # The numbers that are not property ids: they ride in property 0x20D's input block and reach a
 # second dispatcher of 54 entries [5.2, 6.6]. Each row: the id, its arm, what the arm calls.
+# The per-link record array those two properties and 0x74's own value share [5.2, 6.6]
+LINK_RECORDS = 0x10005B58
+LINK_RECORD_STRIDE = 0x13C
+LINK_RECORD_READS = ((0xC1F2E, 0xE08A0),)  # the two mov.w of the stride, 0x74's and 0xA7's
 INNER_PROPERTY = 0x20D
 INNER_PROPERTY_FN = 0xE42D8  # what the table holds for it, and it just calls the dispatcher
 INNER_DISPATCH = 0xDE8D0
@@ -689,6 +695,10 @@ def check_getter_table(acib, rkof, ctab, sbd1):
             return False, (
                 f"id 0x{ident:x} now resolves to 0x{entry & 0x7FFFFFFE:x}, not 0x{getter:x}"
             )
+    for pair in LINK_RECORD_READS:
+        for at in pair:
+            if mov_imm(acib, at) != LINK_RECORD_STRIDE:
+                return False, f"0x{at:x} no longer strides the link records by 0x13c"
     entry = u32(acib, GETTER_TABLE + 4 * (INNER_PROPERTY - 1))
     if entry & 0x7FFFFFFE != INNER_PROPERTY_FN:
         return False, f"property 0x{INNER_PROPERTY:x} resolves to 0x{entry & 0x7FFFFFFE:x}"

@@ -1703,6 +1703,20 @@ really resolve to. The rest:
 | 0x25 | acib 0xde972 | 0xdb6a8 |
 | 0x2B | acib 0xde96a | 0xdb9ac with the argument |
 
+Two more table ids belong to the module that owns the 0x7B space, and both are keyed by the
+link's type byte at its +6 [fw acib 0x291e6, 0x29294, 0x29394]:
+
+| id | what it does |
+|---|---|
+| 0xA6 | writes one byte: `*(0x10009b24 + index + 0x7C) = value`, with no bound on the index [fw acib 0xdf9e8] |
+| 0xA7 | reads one byte back through two levels: the per-link record's byte at +0x87 indexes a second table, `*(0x10009b24 + that + 0xA6)` [fw acib 0xe089c] |
+
+So that module keeps two byte tables 0x2A apart in one block, one written directly and one
+read through a code the link record carries. The record array those two and 0x74's own 32-bit
+value share is at **0x10005b58 with a stride of 0x13C** [fw acib 0xe08a0 and 0xc1f2e, the same
+`mov.w #0x13c`], and two of its fields are known: +0x86 feeds 0x74's word and +0x87 is that
+code.
+
 The two numbering spaces overlap, which is the trap: **0x02 is a table id at one call site and
 an inner id at another** [fw acib 0x554e2 against 0x1de0e], and so is 0x23 [fw acib 0x16714
 against 0x66b22]. Every other number this document calls a property id was checked against its
