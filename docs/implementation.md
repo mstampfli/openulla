@@ -228,16 +228,22 @@ python3 tools/ftab.py firmware/*/AssetData/Firmware.acsw/firmware.uarp \
     payload CTAB payloads/ctab.bin
 python3 tools/verify_claims.py --payloads payloads
 
-# Optional, and only for the question of whether anything was looked for in the wrong place:
-# the whole build rather than the five payloads above. No claim here rests on these, and
-# tools/payload_survey.py scans whatever is in the directory [ulla.md 4.7]. Note that NERF is a
-# SuperBinary payload in its own right and not an FTAB entry, so it needs the other subcommand.
+# Optional, and only for the question of whether anything was looked for in the wrong place.
+# No claim here rests on these, and tools/payload_survey.py scans whatever is in the directory
+# [ulla.md 4.7]. CTAB and NERF are SuperBinary payloads rather than FTAB entries, so they need
+# the other subcommand. `ftab.py list` prints "size=%8d", so the size is field 4 and not field
+# 3: filtering on $3 silently matches every line, which is how a zero-byte sbd2.bin got into an
+# earlier run of this.
 U=firmware/*/AssetData/Firmware.acsw/firmware.uarp
-python3 tools/ftab.py $U list --payload FTAB | awk '$3 != "size=0" {print $1}' | while read tag; do
+python3 tools/ftab.py $U list --payload FTAB | awk '$4 != 0 {print $1}' | while read tag; do
     python3 tools/ftab.py $U extract "$tag" "payloads/$tag.bin" --payload FTAB
 done
 python3 tools/ftab.py $U payload NERF payloads/NERF.bin
+python3 tools/ftab.py $U payload CTAB payloads/ctab.bin
 python3 tools/payload_survey.py --payloads payloads
+
+# R1FW is a third container, and it holds a second rkos and sbd1 that no claim here has read:
+python3 tools/ftab.py $U list --payload R1FW
 ```
 
 ```

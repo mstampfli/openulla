@@ -402,37 +402,60 @@ refuse, which is what would turn the layout from a hypothesis into a reading.
 ### 4.7 Which payloads hold the link's material, and which hold none of it
 
 Every firmware claim in these documents comes from three payloads: `acib`, `rkof` and `sbd1`.
-That could be where the looking happened rather than where the material is, so it was checked
-against the whole build - **all 47 payloads**, which is the 46 entries of the `FTAB` table less
-the empty `sbd2`, plus `NERF`, which is a SuperBinary payload in its own right rather than an
-`FTAB` entry. `tools/payload_survey.py` is the check and it scans whatever is in the directory.
+That could be where the looking happened rather than where the material is, so it was checked.
+`tools/payload_survey.py` is the check and it scans whatever is in the directory you give it.
 
-- **The link is named in those three and in none of the other 44.** `ULLA` in any case occurs
-  in `acib`, `rkof` and `sbd1` only. For three of the silent payloads the absence is a result
-  rather than a gap, because they have string tables of their own to be silent in: `NERF` with
-  734 NUL-delimited strings of twelve characters or more, `aopf` with 266 and `rtpf` with 151.
-  For the rest it says less and the survey does not pretend otherwise: `rkos` has 41, `phyb`
-  32, `apmu` one, and most of the remainder are not code at all - sixteen of them are RIFF
-  files. `phyb` is separately accounted for in [protocol.md](protocol.md) 7.4, and `aopf`
-  identifies itself in its own strings as the always-on voice-trigger controller.
-- **The packet-type table exists once.** Searching every payload for three of Apple's payload
-  maxima within 256 bytes of one another finds them only in `acib`, in the two array regions
-  [protocol.md](protocol.md) 5.13 already documents, and nowhere else at all.
-- **Every occurrence of `hdr` in any payload is the word "header"**, in strings like `rx hdr`,
-  `raw length %u < hdr` and `Clog hdr len`. None of them is Apple's HDR.
+**What was measured, exactly.** The 46 entries of the `FTAB` table less `sbd2`, which is a
+zero-byte record and so carries nothing, plus `CTAB` and `NERF`, which are SuperBinary payloads
+in their own right: 45 + 2 = **47 files**. That is not the build. The
+SuperBinary holds **twenty** payload records, and the ones not examined are `TMAP` three times,
+`R1FW`, `STFC`, `STFW`, nine `AU*` records and `CMAP` twice. **`R1FW` is itself an `rkosftab`
+container** and holds a second `rkos` of 335,008 bytes and a second `sbd1` of 284,096, so two
+of the very tags every claim here rests on exist in a second, differently sized copy that this
+project has not read. An earlier version of this section called the 47 "the whole build", which
+was wrong twice over: it is about half the payload bytes, and 46 less one plus one is 46.
 
-**One method note, because this check nearly produced the opposite answer.** Counting
-occurrences of a vendor opcode as a two-byte pattern says nothing in this firmware. A given
-halfword occurs by chance about once per 64 KB, so the larger payloads contain any value you
-care to name a dozen times or more, and a first pass at this question duly "found" five of the
-documented opcodes in payloads that know nothing about them. Measured against a control - ten
-halfwords in the same 0xFD to 0xFF range that this project does **not** document - the six it
-does document occur no more often than the controls in **any** of the 47, and in most of them
-less often. **A byte count would have reported hits in 20 of the 47**, among them sixteen RIFF
-audio files, which certainly do not implement a vendor command. What is evidence is a handler
-in a dispatch table, which is how section 6 of [protocol.md](protocol.md) reaches every opcode
-it names, and `tools/payload_survey.py` prints the control beside every count for exactly that
-reason.
+- **Within those 47 the link is named in four**: `acib`, `rkof`, `sbd1` and `ctab` - the last
+  being the compressed copy of the whole table, so it holds the others' strings by
+  construction. All sixteen case permutations of the name were tried. For three of the silent
+  payloads the absence is a result rather than a gap, because they have string tables of their
+  own to be silent in: `NERF` with 1,360 NUL-delimited strings of twelve characters or more,
+  `aopf` with 471 and `rtpf` with 270. For the rest it says less and the survey does not
+  pretend otherwise. `phyb` is separately accounted for in [protocol.md](protocol.md) 7.4, and
+  `aopf` says what it is in its own strings: `AppleAOPVoiceTriggerController v600.14` at
+  `aopf` 0x6f50c, though the same payload is also the power-management firmware.
+- **But the name does occur outside those payloads**, in one of the records this survey did not
+  read: the third `TMAP` record is an `NSKeyedArchiver` property list and names the link eight
+  times, as `ulla_time_mode_both_off`, `_anc`, `_trcy`, `_auto_anc`, `_hearing_test`, `_pse`,
+  `_ssl` and `_pse_plus`. Those are user-facing mode names rather than protocol material, but
+  "named in three payloads and nowhere else" was not true of the build and is withdrawn.
+- **The packet-type table's signature appears in two of the 47**, `acib` and `ctab`, and the
+  `ctab` copies are the same table byte-packed rather than a byte-for-byte duplicate of
+  `acib`'s. In `acib` the three maxima are adjacent halfwords in the two array regions 5.13
+  documents. A null model of random triples drawn from the same numeric range satisfies the
+  256-byte rule about one time in a hundred, so the signature is specific; it is not unique.
+- **Every occurrence of `hdr` read in context is the word "header"**, in strings like `rx hdr`,
+  `raw length %u < hdr` and `Clog hdr len`. The mixed-case occurrences in `acib`, `aopf`,
+  `rkof` and `rtpf` are not strings at all but Thumb instruction bytes.
+
+**One method note, because this check twice produced the opposite answer.** Counting
+occurrences of a vendor opcode as a two-byte pattern says nothing in this firmware, and the
+reason is worse than "once per 64 KB": these images are nothing like random, so in some of them
+halfwords in the 0xFD00 range are several times commoner than a flat model predicts. So each
+opcode is now judged against **its own payload's distribution of every halfword in that range**.
+Measured that way **no documented opcode exceeds its own payload's 99th percentile anywhere**,
+which is the conclusion - and a bare count would still have reported hits in twenty of the 47,
+thirteen of which are RIFF audio files that implement no vendor command.
+
+The ten hand-picked controls an earlier version of this section leaned on are kept in the
+tool's output only because seeing them makes the point. They are **not** the instrument, and
+the claim that the documented opcodes "occur no more often than the controls in any of the 47"
+was false: `0xFF7C` occurs 44 times in `ls01` against a control maximum of 28, and a documented
+opcode outscores all ten controls in ten of the 47 - audio files among them. The controls' own
+level sits near each payload's 62nd percentile rather than its median, so they were never the
+neutral yardstick they were presented as. What is evidence that a payload knows an opcode is a
+handler in a dispatch table, which is how section 6 of [protocol.md](protocol.md) reaches every
+opcode it names.
 
 ## 5. Measured on a non-Apple host
 

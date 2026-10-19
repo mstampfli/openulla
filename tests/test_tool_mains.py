@@ -301,58 +301,76 @@ def test_the_status_reader_finds_the_reply_among_volunteered_frames():
     assert aap_probe.status_of([b"\x00\x01"]) is None  # a short frame is not a reply
 
 
-def test_the_payload_survey_reports_the_control_beside_every_count(tmp_path, capsys, monkeypatch):
-    """The control is the tool's whole reason to exist, so it is what gets tested.
 
-    A two-byte pattern occurs by chance about once per 64 KB, so counting a vendor opcode in a
-    megabyte payload finds it a dozen times whether or not that payload has ever heard of it.
-    The first pass at this question was fooled exactly that way. These two synthetic payloads
-    are the two outcomes: one that genuinely carries the material, and one of random bytes that
-    carries nothing but will still score hits.
+def test_the_survey_counts_adjacent_strings_and_judges_each_opcode_on_its_own_payload():
+    """Both bugs a refuter found in the first version of this tool, pinned.
+
+    The string counter consumed the terminating NUL, which makes the next string's leading NUL
+    unavailable and silently drops every second entry of a packed table - six published figures
+    were understated by nearly half. And the standout test asked what fraction of halfwords
+    occur no more often than this one, which in a small payload is about a hundred per cent for
+    a count of **zero**, so it flagged nineteen files for all six opcodes on the strength of
+    not containing them.
     """
-    import random
+    import payload_survey as ps
+
+    packed = b"\x00" + b"\x00".join(bytes([0x41 + i]) * 12 for i in range(4)) + b"\x00"
+    assert ps.readable_strings(packed) == ["A" * 12, "B" * 12, "C" * 12, "D" * 12]
+    # Two Thumb `bx lr` read as printable text but are not a string table.
+    assert ps.readable_strings(b"\x70\x47" * 40) == []
+    assert ps.readable_strings(b"\x00short\x00") == []
+
+    # A zero count can never be a standout, whatever the rest of the distribution looks like.
+    assert ps.notable(0, 0) is False
+    assert ps.notable(1, 0) is False, "a single stray pair of bytes is not a signal"
+    assert ps.notable(5, 9) is False
+    assert ps.notable(5, 2) is True
+    assert ps.MINIMUM_COUNT >= 2
+
+    # All sixteen case permutations, because the prose says "in any case".
+    assert len(ps.NAME_PATTERNS) == 16
+    assert {b"ulla", b"ULLA", b"Ulla"} <= set(ps.NAME_PATTERNS)
+
+
+def test_the_survey_separates_what_it_scanned_from_what_it_found(tmp_path, capsys, monkeypatch):
+    """Its headline numbers are a denominator, and an empty record is not a payload.
+
+    The first version called its directory "the whole build", counted a zero-byte record in the
+    denominator and gave it a confident verdict. It also printed only the mean over six opcodes
+    and the mean over ten controls, so no individual count was ever visible - while the prose
+    claimed every count was printed beside a control.
+    """
     import struct
 
-    import payload_survey
+    import payload_survey as ps
 
     from openulla import hci
 
-    rng = random.Random(20261019)
-    noise = bytearray(rng.randrange(256) for _ in range(300_000))
-    (tmp_path / "noise.bin").write_bytes(bytes(noise))
-
-    # A payload that really does hold the material: the name, and the table signature.
-    real = bytearray(rng.randrange(256) for _ in range(60_000))
-    real[1000:1016] = b"\x00ULLA 1.1 here\x00\x00"
+    (tmp_path / "empty.bin").write_bytes(b"")
+    # A payload that holds the material: the name, and the table signature.
+    real = bytearray(b"\x11" * 40_000)
+    real[1000:1020] = b"\x00ULLA 1.1 is here\x00\x00\x00"
     for offset, value in ((2000, 2586), (2050, 1416), (2100, 1288)):
         struct.pack_into("<H", real, offset, value)
+    # And one opcode repeated far above anything else in the range, so the standout branch runs.
+    for index in range(30):
+        struct.pack_into("<H", real, 5000 + index * 2, hci.OPCODE_PACKET_TABLE_DIRECT)
     (tmp_path / "real.bin").write_bytes(bytes(real))
 
     monkeypatch.setattr("sys.argv", ["payload_survey.py", "--payloads", str(tmp_path)])
-    assert payload_survey.main() == 0
+    assert ps.main() == 0
     printed = capsys.readouterr().out
 
-    # The name and the table signature are found where they are, and not where they are not.
-    assert "The link is named in 1 of 2 payloads: real." in printed
-    assert "signature appears in 1: real." in printed
-    # Every payload gets a verdict, and random bytes must not read as carrying opcodes.
-    assert printed.count("indistinguishable from chance") == 2, printed
-    assert "ABOVE the control" not in printed
+    # The denominator is stated, the empty record is named and excluded from it.
+    assert "2 files scanned, 1 with any content" in printed
+    assert "empty and so carrying nothing: empty" in printed
+    assert "not necessarily a whole build" in printed
+    assert "named in 1 of the 1 non-empty files: real" in printed
+    assert "signature appears in 1: real" in printed
 
-    # And the control really is the discriminator: the noise payload does score opcode hits,
-    # so a tool that printed counts alone would have reported them as findings.
-    hits = sum(bytes(noise).count(struct.pack("<H", op)) for op in payload_survey.DOCUMENTED)
-    assert hits > 0, "the noise payload scored no hits, so this proves nothing"
-    assert hci.OPCODE_PACKET_SIZE in payload_survey.DOCUMENTED
-    assert not set(payload_survey.DOCUMENTED) & set(payload_survey.CONTROL)
-
-
-def test_the_survey_needs_a_nul_on_both_sides_to_call_something_a_string():
-    """Two `bx lr` instructions read as "pGpG"; a run inside code is not a string table."""
-    import payload_survey
-
-    code = b"\x70\x47" * 40  # forty bx lr, which is printable and is not text
-    assert payload_survey.readable_strings(code) == []
-    assert payload_survey.readable_strings(b"\x00AppleAOPVoice\x00") == ["AppleAOPVoice"]
-    # Too short to count, so a stray fragment cannot inflate the figure an absence rests on.
-    assert payload_survey.readable_strings(b"\x00short\x00") == []
+    # Every opcode gets its own column, not a mean.
+    for opcode in ps.DOCUMENTED:
+        assert f"{opcode:#06x}" in printed
+    # And the standout branch really fires, which nothing exercised before.
+    assert f"Above its own p{ps.PERCENTILE} in 1" in printed
+    assert "a reason to look, not a finding" in printed
