@@ -162,6 +162,12 @@ PRODUCER_COPY_SIZE = 0x80
 SENDER = 0x11E24
 SENDER_MARKER = (0x11E3C, 0xFF)  # movs r1, #0xff -> the message's +8, as 2.6 describes
 SENDER_ID = (0x11E44, 0x0A08)  # movw r1, #0xa08 -> its +0xa
+SENDER_LENGTH = (0x11E30, 0x3C)  # movs r1, #0x3c -> four header bytes and 56 of payload
+# What the top of type 0's path passes: the object, two word counts and three offsets.
+SENDER_OBJECT = (0xC2AFC, 0x10029964)
+SENDER_COUNTS = ((0xC2AB2, 0x2109), (0xC2AB4, 0x2304))  # movs r1, #9 and movs r3, #4
+SENDER_OFFSETS = ((0xC2AAE, 0x44), (0xC2AB8, 0x20))  # add.w r2, r5, #0x44 and r0, r5, #0x20
+SENDER_HALFWORD = (0xC2AAA, 0xF8B5, 0x0056)  # ldrh.w r0, [r5, #0x56], the last word of the 56
 SCHEDULER_BASE_LOAD = 0x3DBA6  # movw r0, #0xfcd0: the id the index counts from, 5.11
 SCHEDULER_BASE_ID = 0xFCD0
 SCHEDULER_BOUND_AT = 0x3DBAC  # cmp r0, #0x58
@@ -723,10 +729,26 @@ def check_report_producer(acib, rkof, ctab):
     at, want = SENDER_ID
     if movw(acib, at) != want:
         return False, f"the sender at 0x{SENDER:x} no longer stamps 0x{want:x}"
+    at, want = SENDER_LENGTH
+    if u16(acib, at) != 0x2100 | want:
+        return False, f"the sender's length at 0x{at:x} is 0x{u16(acib, at):04x}"
+    at, want = SENDER_OBJECT
+    if u32(acib, at) != want:
+        return False, f"type 0's object literal at 0x{at:x} is 0x{u32(acib, at):08x}"
+    for at, want in SENDER_COUNTS:
+        if u16(acib, at) != want:
+            return False, f"the word count at 0x{at:x} is 0x{u16(acib, at):04x}, not 0x{want:04x}"
+    for at, want in SENDER_OFFSETS:
+        got = add_imm(acib, at)
+        if got != want:
+            return False, f"the offset at 0x{at:x} is {got and hex(got)}, not 0x{want:x}"
+    at, first, second = SENDER_HALFWORD
+    if (u16(acib, at), u16(acib, at + 2)) != (first, second):
+        return False, f"0x{at:x} no longer reads the halfword at the object's +0x56"
     return True, (
         f"0x{PRODUCER:x}: id 0x{PRODUCER_ID_BASE[1] + 3:x}, {PRODUCER_LENGTH[1] - 4} payload "
         f"bytes, blocks at +0x45 and +0x85 copied 0x{PRODUCER_COPY_SIZE:x} at a time; "
-        f"0x{SENDER:x} stamps 0x{SENDER_ID[1]:x}"
+        f"0x{SENDER:x} stamps 0x{SENDER_ID[1]:x} over 9 + 4 words and one more"
     )
 
 

@@ -228,9 +228,22 @@ the id as a halfword at +0xa, and the payload from +0xc** [fw acib 0x121f0 write
 halfword beside its length 0xBD, and 0x11e3c writes 0xFF then derives +9 from +2]. Type 0's
 producer is a generic sender: it stamps 0xA08 and copies its payload word by word from a buffer
 its caller fills, so that type's layout belongs to the caller and not to the sender [fw acib
-0x11e24, with one call site at 0x105c4]. A payload of 56 bytes puts 0x3C in that length field,
-which is consistent with everything here but is the one number in this paragraph that was not
-read directly.
+0x11e24, with one call site at 0x105c4]. It copies one run of words, then a second run, then
+one more word from its stack [fw acib 0x11e56..0x11e76], and that is **three pieces of one
+object** by the time the top of the path has filled them in [fw acib 0xc2a80, the object at
+0x10029964]:
+
+| offset | size | from |
+|---|---|---|
+| 0 | 36 | nine words from the object's +0x20 |
+| 0x24 | 16 | four words from its +0x44 |
+| 0x34 | 4 | the halfword at its +0x56, as a word |
+
+That is 56 bytes, the length type 0's listener asks for, and it fixes the message length as
+well: the sender passes 0x3C to the allocator and 4 + 56 is 0x3C [fw acib 0x11e30, and
+0xc2aaa..0xc2ab8 for the two counts and the three offsets]. Sending is gated twice over: a byte
+at the object's +0x62 must be set, and a counter at its +0x5C is compared against a limit at
+its +0x58, so most calls return without sending anything [fw acib 0xc2a88..0xc2a98].
 
 What the fields *mean* is still not established, for any of the three types: they are counters
 in a controller block, nothing in rkof reads one, and **no site in acib loads 0xE911 as an

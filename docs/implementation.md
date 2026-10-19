@@ -208,7 +208,7 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  procedure state tables           8 sink, 7 third and 9 source states, acib 0xf2628 to 0xf2664
   PASS  A2DP stream endpoints            vendor 0xFF, AAC 0x02 and SBC 0x00, lengths and bytes as published
   PASS  report listeners                 3 types: 0x0a08 56 bytes, 0xe910 185 bytes, 0xe911 61 bytes
-  PASS  report producers                 0x121d2: id 0xe910, 185 payload bytes, blocks at +0x45 and +0x85 copied 0x80 at a time; 0x11e24 stamps 0xa08
+  PASS  report producers                 0x121d2: id 0xe910, 185 payload bytes, blocks at +0x45 and +0x85 copied 0x80 at a time; 0x11e24 stamps 0xa08 over 9 + 4 words and one more
   PASS  procedure scheduler              89 ids from 0xfcd0, 40 arms, 0x1a -> 0x296a0
   PASS  ctab is the table again          'rkosftab' at 0x3d, 20 entries in table order, no block magic
 20 of 20 claims hold
