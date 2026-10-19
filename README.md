@@ -343,72 +343,36 @@ a deliberate band switch.
 
 ## How you can help
 
-In rough order of how little hardware it needs:
+Everything the firmware itself can answer has been answered. What is left needs
+hardware this project does not have, and
+[docs/testing.md](docs/testing.md) says exactly what each kind of hardware can
+settle, what to run, and what each outcome would mean. The short version:
 
-1. **If you have a Mac**, macOS can capture its own Bluetooth traffic with
-   Apple's PacketLogger, which makes it the best platform for the cheapest open
-   question we cannot answer ourselves: does anything other than a Vision Pro
-   use this link? The controller's vendor command and its progress event are
-   documented in [docs/protocol.md](docs/protocol.md) section 6, including the
-   mode, result and reason bytes, so a host-side capture would show them
-   directly if that host drives the link.
+| if you have | the one thing to do |
+|---|---|
+| an Apple host that drives the link (Vision Pro, possibly a Mac) | capture HCI **across a connection setup**, not a steady stream, and look for a seven-byte 0xFE50 |
+| a controller whose firmware you can patch | `sudo python3 tools/ulla_probe.py` first, then drive the setup exchange of section 5 and report what the earbuds answer |
+| a wideband software radio | capture the whole band and un-hop in software; the modulation and packet family are known |
+| no hardware at all | implement a layer against [interop/](interop/) and report a mismatch |
 
-   One MacBook Air model's test report shows that machine has the radio modes
-   (see "What is open"). Which other Macs carry them is not established, and a
-   capture answers that for your machine at the same time.
+Three things worth knowing before you spend time on it, all of them learned the
+hard way here:
 
-   `tools/capture_decode.py` reads such a capture and prints the frames of this
-   protocol in it, so there is nothing to decode by hand. It reads btsnoop,
-   which `btmon -w` writes on Linux and which Wireshark can save a PacketLogger
-   `.pklg` file as. What to look at first, in order: the **feature exchange**
-   (section 5.8), because if a host drives this link at all that is its first
-   message and the capture then holds the feature words both ends advertise;
-   then the vendor command's parameters against the ones the earbud's own code
-   uses (6.0); then the band mask and channel ranges (6.2 and 6.5).
+- **Capture across a change, not a stream.** The command that starts a mode
+  change is sent once, at the change. A capture of an established session can
+  hold tens of thousands of records and none of them, which is exactly what
+  happened to one contributor (docs/ulla.md section 8).
+- **0x0C proves nothing on its own.** An Intel AX211 answers it to every
+  unimplemented vendor opcode, and it is also the code the firmware uses for a
+  session command whose gate fails. The discriminators are the event and
+  command 0xFE55's bound (docs/measurements.md section 10).
+- **A refusal that does not come is a result.** So is a negotiation the earbuds
+  accept but no audio follows, which is the expected shape on non-Apple silicon,
+  because the HDR radio modes are not in commodity chips.
 
-   **Capture across a connection setup or a band switch, not a steady stream.**
-   That is the lesson of the Broadcom result in ulla.md section 8: a capture of
-   an already-established session held 18,623 records and not one of the opcodes
-   this project documents, because the command that starts the mode change is
-   sent once, at the change. Connect the earbuds while capturing, or provoke the
-   switch, and the window you need is in the trace.
-
-   Do **not** try to answer this by asking the earbuds from a second host while
-   an Apple device holds them. We measured that: the earbuds evict the second
-   host and say so, with the Bluetooth reason "Remote Device Terminated due to
-   Low Resources", even with every audio profile released on our side. By the
-   time the asking host is connected, the other one is gone and the session has
-   reset, so the test cannot tell its two outcomes apart. See
-   [docs/measurements.md](docs/measurements.md) section 8.
-2. **If you have a controller whose firmware you can patch**
-   (InternalBlue-class tooling on a supported chip), the link-manager exchange
-   is documented field by field in [docs/protocol.md](docs/protocol.md) section
-   5 and needs no key or challenge of any kind. Emitting the setup PDU and
-   reporting what the earbuds answer would tell us whether the mode change can
-   be driven from non-Apple hardware at all. Whether current chips are supported
-   by such tooling is unverified.
-
-   `openulla/` builds every PDU of that exchange, in the order a source has to
-   send them (section 8.1), and `tools/ulla_sink.py` answers as an earbud on a
-   real L2CAP channel, so the host half of an implementation can be tested
-   before any of it touches earbuds.
-
-   Two of those tests need **no link and no audio at all**, only a controller
-   that accepts the vendor commands. Command 0xFE55's word is bounded to the
-   signed range -800 to +800 and anything outside it must answer 0x11; and on a
-   link that is already up, 0xFE53 must be refused with 0x0C for one role while
-   0xFE57 and 0xFE58 are refused for the other. Both predictions are read from
-   the firmware's own instructions ([docs/protocol.md](docs/protocol.md) 6.6),
-   and either outcome is worth reporting: a refusal that does not come is as
-   informative as one that does.
-3. **If you have a wideband software radio**, the air format is the big unknown.
-   The link hops 79 channels at Bluetooth timing, so capturing the whole band
-   and un-hopping in software is the realistic approach rather than chasing the
-   hops.
-4. **If you have no hardware at all**, implement a layer in another language
-   against [interop/](interop/): every message as bytes, both state machines as
-   tables, every named number. A mismatch is a finding either way round, and it
-   is the one kind of help that needs nothing but a compiler.
+Do **not** ask the earbuds from a second host while an Apple device holds them:
+they evict the second host, and the test cannot tell its two outcomes apart
+(docs/measurements.md section 8).
 
 Please scrub captures before sharing them: a real Bluetooth trace can contain
 link keys and other people's device addresses.
@@ -435,6 +399,9 @@ link keys and other people's device addresses.
   and the reason codes.
 - `docs/measurements.md`: what was observed against real earbuds from Linux,
   with the exact bytes sent and received.
+- `docs/testing.md`: what is left to test and who can test it - what an Apple
+  host can settle, what a patchable controller can, what each outcome would
+  mean, and what is parked waiting on hardware rather than on analysis.
 - `docs/fcc/README.md`: index of the FCC exhibits used for the AirPods Pro 2
   USB-C left earbud (BCG-A3047) and the Apple Vision Pro (BCGA2117). The
   exhibits are not redistributed here; `tools/fetch_fcc.sh` downloads them
