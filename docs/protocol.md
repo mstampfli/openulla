@@ -1562,7 +1562,13 @@ Once the mode change succeeds the radio carries the audio. The parts that are es
 
 - The earbud's DSP firmware contains the ULLA receive clients, a normal one and a lite one,
   and an encode node that selects behaviour by a version byte, 0x10 for 1.0 and 0x11 for 1.1
-  [fw sbd1 0x9d334; the DSP image is AArch64].
+  [fw sbd1 0x9d334; the DSP image is AArch64]. All three carry their own names, which places
+  them exactly: the two clients are `UllaRxClientMgr.cpp` and `UllaLiteRxClientMgr.cpp`, and
+  their code is where those names are loaded for an assert [fw sbd1 0x94308 and 0x94510 for
+  the first, 0x825d8, 0x8275c and 0x82a64 for the second]. At the version site the two
+  outcomes are the strings `ULLA 1.0` and `ULLA 1.1`, chosen with one conditional select on
+  the byte being 0x11 and handed to a formatter, so the firmware prints its own ULLA version
+  as text [fw sbd1 0x9d338 to 0x9d350].
 - That version is a field of the node, at its offset 0x2bc, and it is exposed on the node's
   property interface: property id 0x259 reads it, and id 0x25a copies out a 56-byte block
   assembled from ten other fields of the same node [fw sbd1 0x9d0dc the getter's switch,
@@ -1570,7 +1576,13 @@ Once the mode change succeeds the radio carries the audio. The parts that are es
   arrives from outside the DSP.
 - It handles frames and subframes per version, with a dedicated routine for version 1.1
   [fw sbd1 0x9e070, 0xb21d4], and the per-frame path branches on the same version before
-  looking at a per-link mask and a frame counter [fw sbd1 0x9e4f8].
+  looking at a per-link mask and a frame counter [fw sbd1 0x9e4f8]. That routine's name is in
+  the image too, passed as a label to a log call in its own body: **`processBufferUllav11`**
+  [fw sbd1 0x9e078]. Two things about it can be read without interpretation: it indexes its
+  buffers with a shift of two, so the elements are four bytes wide, and it dispatches four
+  ways on two bits of a per-call value through a byte table [fw sbd1 0x9dff4 and 0x9e014 for
+  the indexing, 0x9e01c to 0x9e034 for the table]. What the four cases are, and what the four
+  bytes hold, is not readable from this.
 - In the controller, the audio stream module programs up to four DMA transfers per buffer from
   a packed descriptor: a buffer count, a length with a 1 KB boundary rule, and per-buffer
   flags [fw acib 0xdabcc]. That descriptor is read out field by field in 7.2.
