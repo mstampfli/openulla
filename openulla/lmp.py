@@ -47,7 +47,13 @@ EXT_LINK_HALFWORD_REQUEST = 0x10  # 0x7B: one halfword each way, kept at the lin
 EXT_LINK_HALFWORD_REPLY = 0x11
 EXT_BAND_BLOCK_REQUEST = 0x15  # 0x7B: a counted byte block, in the band module (5.15)
 EXT_BAND_BLOCK_REPLY = 0x16
-PROCEDURE_STATE = 0x2F  # what both replies above require at the link's +0x7D [acib 0x297da]
+# The procedure number a link must be running for a message to be accepted, at its +0x7D.
+# The band module's four messages all want 0x2F, which includes the two of section 6, and the
+# packet-type-table request wants 0x20 [fw acib 0x297de, 0x29a7c, 0x29ad2, 0x29b48, 0x29e0e;
+# docs/protocol.md 5.15]. An implementation that sends a band PDU outside 0x2F is refused
+# whatever the feature bits say.
+PROCEDURE_BAND_MODULE = 0x2F
+PROCEDURE_PACKET_TABLE = 0x20
 EXT_ALLOWED_BANDS = 0x17  # in the 0x7B space; 0x17 also exists behind 0x7F, unrelated
 EXT_BAND_RANGES = 0x1C
 MAX_BAND_RANGES = 5

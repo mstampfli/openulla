@@ -1685,6 +1685,24 @@ when it is set [fw acib 0x29a78 to 0x29a96]. Bit 5 is the band family bit this d
 names in 5.8, which is what puts these two in section 6's family rather than anywhere else.
 Their body is a counted byte block, N bytes behind a count (5.7); what the block holds is open.
 
+**And the procedure a link is running decides which of these are legal at all.** The link's
++0x7D holds a procedure number, and an anchored sweep of every function in this payload finds
+**33 distinct numbers** compared against it. Two of them are identifiable from messages this
+document already names:
+
+| number | what requires it | where |
+|---|---|---|
+| **0x2F** | all four messages of the band module: the halfword answer, the counted-block answer, the allowed-band mask of 6.2 and the band ranges of 6.5 | [fw acib 0x297de, 0x29a7c, 0x29ad2, 0x29b48] |
+| **0x20** | the packet-type-table request, checked by its sender before it chooses a form | [fw acib 0x29e0e] |
+
+That is a real constraint on an implementation and not a detail: **the band messages are refused
+unless the link is in procedure 0x2F**, whatever the feature bits say, and 6.1's command family
+is a separate gate again. The other 31 numbers belong to procedures this document does not name;
+the collision checks are where they surface, and each message's check lists the procedures it
+conflicts with. 0x7B/0x1F's does so for 0x3A, 0x09 and 0x1C, answering 0x23 and 0x2A, the two
+transaction-collision codes [fw acib 0x2113c, 0x21140, 0x2115a, 0x2115e, 0x21162]; the
+packet-type table's does the same for a set of its own (5.13).
+
 ## 6. Controller interface: HCI vendor commands
 
 The source's host starts the whole thing with vendor command **0xFE50** [fw acib table at

@@ -239,6 +239,7 @@ PAIR_IMMEDIATES = (
     ("0x0C only applies in packet-type table 2", 0x25C2C, 0x2802),
     ("0x18 copies fifteen bytes", 0x23266, 0x220F),
 )
+PACKET_TABLE_PROCEDURE_AT = 0x29E0E  # cmp r0, #0x20 on the link's +0x7D, in its sender
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
 PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
@@ -1458,8 +1459,11 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
     for what, at, want in PAIR_IMMEDIATES:
         if u16(acib, at) != want:
             return False, f"{what}: 0x{at:x} is 0x{u16(acib, at):04x}, not 0x{want:04x}"
-    if lmp.LinkHalfword.SEEN_IN_REPLY != 0x5B or lmp.PROCEDURE_STATE != 0x2F:
+    if lmp.LinkHalfword.SEEN_IN_REPLY != 0x5B or lmp.PROCEDURE_BAND_MODULE != 0x2F:
         return False, "the library's own copies of those two values have changed"
+    # The packet-table sender's own procedure gate, which 5.15 names beside the band module's.
+    if u16(acib, PACKET_TABLE_PROCEDURE_AT) != 0x2800 | lmp.PROCEDURE_PACKET_TABLE:
+        return False, f"0x{PACKET_TABLE_PROCEDURE_AT:x} no longer gates on that procedure"
     both, maxed = POWER_RESPONSE_MASKS
     if sorted(v for v in range(16) if both & (1 << v)) != [0, 3, 12, 15]:
         return False, "the first mask no longer selects the codes whose two fields are 0 or 3"

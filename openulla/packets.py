@@ -56,6 +56,15 @@ class PacketType:
 # TYPE codes 3 and 4 are one-slot, 8 is one-slot in the higher tables, 0xA and 0xB are three
 # slots, 0xE and 0xF are five. That mapping is the specification's, and the six extra entries
 # reuse it, which is how their slot counts are known rather than guessed.
+#
+# The `tables` column has three sources and they are worth separating. For the twelve specified
+# entries it is the specification's own: a table is a reinterpretation of the four header bits,
+# so DH1 and 2-DH1 cannot both be selectable at once. For the six extra entries it is this
+# firmware: their mask bits are 16 to 21, and the only branch of the packet-type mask filter
+# that leaves those bits alone is the one taken when the active table is 2 [fw acib 0x1376a the
+# test, 0x13772 to 0x13786 that branch]. DM1 stays in all three for the same reason read the
+# other way: that branch clears only bits 16 to 21, so bit 3 survives it and the chooser can
+# still pick DM1 whatever table is active.
 TABLE: tuple[PacketType, ...] = (
     PacketType(0, 3, 17, 0x3, 1, "DM1", (0, 1, 2)),
     PacketType(1, 4, 27, 0x4, 1, "DH1", (0,)),
