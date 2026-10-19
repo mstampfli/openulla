@@ -1618,8 +1618,13 @@ through the DMA is the part that is still open, and the next three notes say why
 
 ### 7.2 The buffer descriptor the stream module programs
 
-One 32-bit descriptor drives the transfer, and the function that unpacks it says exactly what
-each field is [fw acib 0xdabcc, which reads the word at the stream object's +0]:
+One 32-bit descriptor drives the transfer, and it does not come from software: the module keeps
+the address **0x521C01F0** in a table slot and the programmer reads the word from there
+[fw acib 0x883f0 storing that address, 0x88658 handing it back, 0xdabcc reading through it].
+That address is in the same hardware aperture as the DMA register and the fixed buffer address
+below, so the descriptor is produced by the other side of that aperture rather than written by
+this firmware, which is why no writer for it exists to find. The function that unpacks it says
+exactly what each field is:
 
 | bits | meaning | where |
 |---|---|---|
@@ -1645,9 +1650,10 @@ not, that bit is set and the difference is stored as a halfword at the channel's
 as a remainder rather than refused.
 
 Finally the channel descriptor's own address, masked with 0x3FFF8 and or'ed with 0x52980000, is
-written into a hardware register [fw acib 0xdac78 to 0xdac86]. Both that and the fixed buffer
-address are in the same hardware aperture, which is the layer this document stops at: what the
-DMA carries is the open question below, not where it is pointed.
+written into a hardware register [fw acib 0xdac78 to 0xdac86]. So three addresses in this one
+function are in that aperture - where the descriptor is read from, where a buffer may point,
+and where the channel is handed over - which is the layer this document stops at: what the DMA
+carries is the open question below, not where it is pointed.
 
 **[open] The over-the-air packet format.** The air packet is produced by radio hardware
 configured through registers; the PHY image contains no symbols or strings, and the register
