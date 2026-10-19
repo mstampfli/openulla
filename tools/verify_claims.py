@@ -144,6 +144,20 @@ GETTERS = {
     0x1B3: 0xDC200,
     0x1AB: 0xDC168,
 }
+# The producer of report type 1, in the controller rather than in rkof [2.6]
+PRODUCER = 0x121D2  # held in the module descriptor at acib 0xf2288
+PRODUCER_POINTER = 0xF2288
+PRODUCER_CONSTANT = (0x121F0, 0xBBFF)  # movw r0, #0xbbff -> the message's +8
+PRODUCER_LENGTH = (0x121FA, 0xBD)  # movs r0, #0xbd -> its +2, four header bytes and 185 more
+PRODUCER_ID_BASE = (0x121FE, 0xE90D)  # movw r0, #0xe90d, and +3 is this report's own id
+PRODUCER_COPIES = (  # add.w rd, rn, #imm for each block copy, then its size
+    (0x1229C, 0x45),  # the first destination
+    (0x1224E, 0x39),  # and its source
+    (0x122A4, 0x85),  # the second destination
+    (0x122A8, 0xB9),  # and its source
+)
+PRODUCER_COPY_SIZES = (0x12254, 0x122AC)  # movs r2, #0x80 at both, which is the overrun
+PRODUCER_COPY_SIZE = 0x80
 SCHEDULER_BASE_LOAD = 0x3DBA6  # movw r0, #0xfcd0: the id the index counts from, 5.11
 SCHEDULER_BASE_ID = 0xFCD0
 SCHEDULER_BOUND_AT = 0x3DBAC  # cmp r0, #0x58
@@ -238,6 +252,33 @@ def movw(img, off):
         | (((second >> 12) & 7) << 8)
         | (second & 0xFF)
     )
+
+
+def thumb_expand(value):
+    """ThumbExpandImm of a 12-bit i:imm3:imm8 field, which is how the T3 forms carry a constant.
+
+    Below 0x100 the field is the byte itself; the next three cases repeat that byte through the
+    word; above that it is a byte with bit 7 set, rotated right by the top five bits.
+    """
+    byte = value & 0xFF
+    if value < 0x400:
+        return (byte, byte << 16 | byte, byte << 24 | byte << 8, byte * 0x01010101)[
+            (value >> 8) & 3
+        ]
+    rotation = value >> 7
+    unrotated = 0x80 | (value & 0x7F)
+    return ((unrotated >> rotation) | (unrotated << (32 - rotation))) & 0xFFFFFFFF
+
+
+def add_imm(img, off):
+    """The immediate of a Thumb-2 ADD, either form: T3 expands its field, T4 takes it as it is."""
+    first, second = u16(img, off), u16(img, off + 2)
+    field = (((first >> 10) & 1) << 11) | (((second >> 12) & 7) << 8) | (second & 0xFF)
+    if first & 0xFBE0 == 0xF100:
+        return thumb_expand(field)
+    if first & 0xFBF0 == 0xF200:
+        return field
+    return None
 
 
 def wide_branch(img, off, link=True):
@@ -647,6 +688,36 @@ def check_report_listeners(acib, rkof, ctab):
     )
 
 
+def check_report_producer(acib, rkof, ctab):
+    """Report type 1's producer in the controller: its message, its id and its two copies. [2.6]
+
+    The whole layout 2.6 publishes comes out of this one function, so every number it writes is
+    checked here, including the copy size that does not match the spacing of its destinations.
+    """
+    if u32(acib, PRODUCER_POINTER) != PRODUCER | 1:
+        return False, f"acib 0x{PRODUCER_POINTER:x} no longer points at 0x{PRODUCER:x}"
+    at, want = PRODUCER_CONSTANT
+    if movw(acib, at) != want:
+        return False, f"the message constant at 0x{at:x} is not 0x{want:x}"
+    at, want = PRODUCER_LENGTH
+    if u16(acib, at) != 0x2000 | want:
+        return False, f"the length at 0x{at:x} is 0x{u16(acib, at):04x}, not {want}"
+    at, want = PRODUCER_ID_BASE
+    if movw(acib, at) != want:
+        return False, f"the id base at 0x{at:x} is not 0x{want:x}"
+    for at, want in PRODUCER_COPIES:
+        got = add_imm(acib, at)
+        if got != want:
+            return False, f"the offset at 0x{at:x} is {got and hex(got)}, not 0x{want:x}"
+    for at in PRODUCER_COPY_SIZES:
+        if u16(acib, at) != 0x2200 | PRODUCER_COPY_SIZE:
+            return False, f"the copy size at 0x{at:x} is 0x{u16(acib, at):04x}"
+    return True, (
+        f"0x{PRODUCER:x}: id 0x{PRODUCER_ID_BASE[1] + 3:x}, {PRODUCER_LENGTH[1] - 4} payload "
+        f"bytes, blocks at +0x45 and +0x85 copied 0x{PRODUCER_COPY_SIZE:x} at a time"
+    )
+
+
 def check_procedure_scheduler(acib, rkof, ctab):
     """The per-link procedure scheduler: its id space, its table and two of its arms. [5.11]
 
@@ -749,6 +820,7 @@ CHECKS = (
     ("procedure state tables", check_procedure_tables),
     ("A2DP stream endpoints", check_a2dp_endpoints),
     ("report listeners", check_report_listeners),
+    ("report type 1 producer", check_report_producer),
     ("procedure scheduler", check_procedure_scheduler),
     ("ctab is the table again", check_ctab_manifest),
 )

@@ -186,8 +186,45 @@ the entry that stamps its type and tail-calls the builder [fw rkof 0x27cb0 with 
 `ldrh r2,[r0]; ldr r1,[r0,#4]; movs r0,#type; b 0x27e90`]. The notification dispatcher declares
 the same three lengths and **logs a mismatch rather than truncating** [fw rkof 0x258f2,
 0x25bb2, 0x25bf4 against 0x38, 0xB9 and 0x3D], so a report of another length did not come from
-this firmware. What the bytes inside each payload mean is still not established: nothing in
-this payload reads a field of them, because the report path copies them through.
+this firmware.
+
+The reports arrive as inter-processor messages before that: rkof 0x2584c takes a message whose
+id is a halfword at its +8, payload pointer a word at +0xc and size a halfword at +0x10, and
+fans it out to the listeners above; the table at rkof 0x1be0e0, of 8-byte records
+`{handler, flags, id}`, gives that one handler for 0xE910, 0xE911, 0x0A0B, 0x0A0C, 0x0A0D,
+0xE90D and 0xE90E, and 0x0A08 to a different one [fw rkof 0x25dca].
+
+**Type 1's producer, and so its layout, is in the controller** [fw acib 0x121d2, held in the
+module descriptor at acib 0xf2288]. It allocates a message, writes 0xBBFF at +8, 0xBD (189,
+counted from +8, so four header bytes and 185 of payload) at +2, the id 0xE90D at +0xa or
+**0xE910 when the first byte of its source block is zero**, and a role byte at +0xc, 1 or 0 by
+the same test that means "the module is on and this end is the source" [fw acib 0x61ab4]. The
+rest is copied out of a statistics block, and in the report's own data coordinates it is:
+
+| offset | size | from |
+|---|---|---|
+| 0 | 1 | the role byte |
+| 1, 5, 9 | 4 each | the block's +1, +5, +9 |
+| 0x0D, 0x11 | 4 each | its +0x11, +0x19 |
+| 0x15 | 4 | the **sum** of its +0x1D, +0x21, +0x25 and +0x29 [fw acib 0x1224c..0x12258] |
+| 0x19, 0x1D, 0x21, 0x25 | 4 each | its +0x1D, +0x21, +0x25, +0x29 |
+| 0x29 | 4 | its +0x255 |
+| 0x2D, 0x31 | 4 each | its +0x35, +0x31 |
+| 0x35 | 4 | its +0x25D |
+| 0x39 | 64 | its +0x39 onwards |
+| 0x79 | 64 | its +0xB9 onwards |
+
+That accounts for all 185 bytes: 0x39 + 0x40 + 0x40 = 0xB9. Two of the block's words, +0xD and
++0x15, are skipped, so the report is a compacted copy, and one of its words is a sum of four
+others. The two block copies are issued with a size of 0x80 rather than the 0x40 their
+destinations are spaced by [fw acib 0x12254 and 0x122ac], so the first copy's second half is
+overwritten by the second and the second's second half lands past the declared 189 bytes: an
+overrun of the message buffer whose only visible effect is that the layout above is what the
+host actually receives.
+
+What the fields *mean* is still not established, for any of the three types: they are counters
+in a controller block, nothing in rkof reads one, and **no site in acib loads 0xE911 as an
+immediate**, so where type 2's 61 bytes are produced is open as well.
 
 The report the host receives is [fw rkof 0x27e90, which zeroes a 185-byte buffer first]:
 

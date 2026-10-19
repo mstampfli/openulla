@@ -415,7 +415,8 @@ link keys and other people's device addresses.
   event's shape, the code names and their tables' bounds, all three procedures'
   state tables, the property getter table, the session commands and the two
   feature-bit commands, the stream endpoints, the three report listeners with
-  their lengths, the per-link procedure scheduler's id space and arms, and the
+  their lengths and the controller-side producer that fills one of them, the
+  per-link procedure scheduler's id space and arms, and the
   manifest of the compressed copy the container carries of itself. It fails on
   a single changed byte.
 - `tools/ulla_demo.py`: runs a whole setup against the simulated earbud and
