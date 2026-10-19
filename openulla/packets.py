@@ -197,6 +197,11 @@ def payload_header(entry: PacketType, length: int, llid: int = 2, flow: int = 1)
     if not 0 <= length <= entry.payload:
         raise ValueError(f"{entry.name} carries at most {entry.payload} bytes")
     if length >= 1 << bits:
+        # Unreachable for the table as it stands, and deliberately kept. Every entry's payload
+        # maximum is below its own length field's capacity - 3-DH5's 1021 against 1023 is the
+        # tightest - so the check above always fires first. This one exists for a table that
+        # breaks that invariant, and `test_every_payload_fits_its_own_length_field` is what
+        # says the invariant currently holds. Do not delete it to make coverage even.
         raise ValueError(f"{entry.name}'s length field is {bits} bits, so {length} will not fit")
     return llid | (flow << 2) | (length << LENGTH_SHIFT)
 

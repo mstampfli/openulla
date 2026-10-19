@@ -4,6 +4,7 @@ tools/ulla_sink.py needs real Bluetooth to accept a connection, so the loop that
 and writes answers is tested here against a stand-in channel. What it must do is answer with
 the sink's frames, log what it decodes, and reset the session when the channel closes.
 """
+import pytest
 import ulla_sink  # the tools directory is on the path through conftest.py
 
 from openulla import aap
@@ -68,3 +69,58 @@ def test_the_address_is_turned_into_the_order_the_stack_uses(capsys):
     ulla_sink.serve_one(channel, "aa:bb:cc:dd:ee:ff", advance=False)
     printed = capsys.readouterr().out
     assert "connected: aa:bb:cc:dd:ee:ff" in printed
+
+
+def test_the_sink_forwards_a_statistics_command_to_its_sibling():
+    """A declared behaviour nothing exercised: coverage showed this branch never ran.
+
+    The sink answers CONFIGURE_STATISTICS by forwarding it to the sibling rather than replying
+    to the host, which is the shape protocol.md gives it, and the action it records names the
+    firmware address the forwarding was read from. Without this test the branch was documented
+    and unproven, which reads as done and is not.
+    """
+    from openulla import aap, sibling
+    from openulla.sink import Sink
+
+    peer = bytes.fromhex("aabbccddeeff")
+    sink = Sink()
+    sink.receive(aap.open_request(), peer)
+    body = bytes([0x07, 0x01])
+    assert sink.receive(aap.data_frame(aap.Opcode.CONFIGURE_STATISTICS, body), peer) == []
+    forwarded = [a for a in sink.actions if a.kind == "sibling"]
+    assert len(forwarded) == 1, sink.actions
+    assert forwarded[0].data == sibling.frame(sibling.Message.CONFIGURE_STATISTICS, body)
+    # Parsed back rather than only compared, so the body really survives the forwarding.
+    parsed = sibling.parse_frame(forwarded[0].data)
+    assert parsed.message == sibling.Message.CONFIGURE_STATISTICS
+    assert parsed.body == body
+    assert "rkof" in forwarded[0].fw
+
+
+def test_the_sink_refuses_what_it_has_no_answer_for_instead_of_inventing_one():
+    """Three refusal paths that were all unexercised. Each one is a deliberate non-answer."""
+    from openulla import aap
+    from openulla.errors import ProtocolError
+    from openulla.sink import Sink
+
+    peer = bytes.fromhex("aabbccddeeff")
+
+    # A command before the service is opened: not established in the firmware, so refused.
+    with pytest.raises(ProtocolError, match="open service 4 first"):
+        Sink().receive(aap.data_frame(aap.Opcode.START_SESSION, b"\x01"), peer)
+
+    # An opcode this sink does not implement.
+    sink = Sink()
+    sink.receive(aap.open_request(), peer)
+    with pytest.raises(ProtocolError, match="not one this sink answers"):
+        sink.receive(aap.data_frame(0x7E, b""), peer)
+
+    # A wrapped report of a class it does not implement. The wrapper is built by the library so
+    # that the frame is well formed and only the class is unknown; an unparseable one would
+    # refuse for the wrong reason, which is the first version of this assertion's own mistake.
+    wrapped = Sink()
+    wrapped.receive(aap.open_request(), peer)
+    width = aap.class_width(wrapped.sessions[peer].version_pair)
+    unknown = aap.CLASS_ULLA_REPORTS + 1
+    with pytest.raises(ProtocolError, match="report class"):
+        wrapped.receive(aap.wrapper(unknown, b"\x00", width), peer)
