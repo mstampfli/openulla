@@ -505,6 +505,14 @@ link keys and other people's device addresses.
   with libsbc to whatever configuration the stack negotiated. Useful for
   measuring what a device really accepts. It does not grant stereo and
   microphone at once; see docs/ulla.md section 5.
+- `tools/a2dp_probe.py`: asks which of the Apple vendor codec's eight bytes the
+  earbuds actually validate, by offering a configuration back with one byte
+  altered at a time and reading which ones AVDTP refuses. Reading those bytes
+  again cannot settle their layout, because a read returns what the device
+  offers rather than what it checks. Read-only by default, and the probe is a
+  dry run unless `--live` is passed: a SetConfiguration changes the sink's
+  state and needs BlueZ's own media plugin out of the way. **Not yet run
+  against hardware.**
 
 ## Reproducing
 

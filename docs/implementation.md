@@ -34,6 +34,7 @@ fill it in; it says so, and the tests say so too.
 | `a2dp.py` | the three stream endpoints the earbuds register, in one copy, so the verifier and the link tool compare the same bytes |
 | `features.py` | the specification's LMP feature bit assignments, so a set bit nobody defines can be spotted rather than argued about |
 | `packets.py` | the controller's eighteen-entry ACL packet-type table, including the six entries only Apple's third table can select, and the chooser that picks among them |
+| `avdtp.py` | enough AVDTP signalling to ask an endpoint what it will accept: the header, the capability list, Discover, GetCapabilities and SetConfiguration, and the reject that names which category failed |
 
 That is every module. Three of them hold data rather than protocol, and each exists so that two
 consumers read one copy: `a2dp.py` is checked against the firmware by `tools/verify_claims.py`

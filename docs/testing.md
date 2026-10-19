@@ -186,9 +186,16 @@ compiler.
 These are open and **waiting on the hardware above**, not on analysis:
 
 - **The vendor A2DP codec's eight bytes.** Confirmed as what the device advertises
-  (measurements.md section 12), layout still unknown. A read cannot settle it; what would is
-  offering a configuration with altered fields and seeing which the earbuds refuse. That needs
-  an A2DP configuration attempt rather than a probe, so it needs new code as well as earbuds.
+  (measurements.md section 12), layout still unknown. A read cannot settle it, because a read
+  returns what the device offers rather than which parts of it the device checks. What would
+  settle it is offering a configuration back with one byte altered and seeing which AVDTP
+  refuses, since a reject names the failing service category and carries an error code.
+  **`tools/a2dp_probe.py` now does that**, and its dry run shows exactly what it would send.
+  It has not been run live: a SetConfiguration changes the sink's state and needs BlueZ's own
+  media plugin out of the way first, so this wants a deliberate session rather than a stray
+  command. Both outcomes are results, and the likely one is worth saying in advance: if every
+  altered byte is accepted, these bytes are not validated at all, which is the same shape of
+  answer as the mode byte in section 11.
 - **The stream's control path end to end.** Documented twice over (protocol.md 7.1 and the
   link-up half in 6.6) and untestable without a controller that exposes its vendor interface.
 - **HDT3, HDT4 and HDT6.** Three mode names from an Apple FCC grant note for a 2026 digital
