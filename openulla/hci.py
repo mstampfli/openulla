@@ -47,6 +47,15 @@ MANAGER_CONFIG_WORD = 0x0096
 MANAGER_FLAGS_MODE_ONE = 0x04
 MANAGER_FLAGS_OTHERWISE = 0x0F
 OPCODE_FEATURE_GROUP = 0xFDF3  # four bits of the feature byte, bit 6 among them
+# The two commands that decide, between them, how large a packet may be and which packets
+# exist at all [docs/protocol.md 6.8 and 6.9]. The size setter has three further callers,
+# listed here because who owns that field is not settled: two more host commands, and one
+# internal path with a hard-coded length that no host can reach.
+OPCODE_PACKET_SIZE = 0xFD02  # handler fw acib 0x160cc: mode 1 -> 2586/2600, else 339/352
+OPCODE_PACKET_TABLE_DIRECT = 0xFDEE  # handler fw acib 0x169bc: one flag byte -> table 2
+OPCODE_PACKET_SIZE_HALFWORD = 0xFD7C  # an arbitrary size from the request
+OPCODE_PACKET_SIZE_HALFWORD_ALT = 0xFD7D
+OPCODE_PACKET_SIZE_INTERNAL = 0xFD5F  # reaches the hard-coded 1024 at fw acib 0x57ac2
 # The stream's control path of protocol.md 7.1, named here so that the senders below and
 # openulla/describe.py agree on which opcode is which.
 OPCODE_STREAM_DMA_ADDRESS = 0xFE57

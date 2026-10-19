@@ -149,8 +149,24 @@ def test_the_probe_builds_exactly_the_documented_commands(capsys, monkeypatch):
 
     rows = ulla_probe.probes(0x000B)
     names = [name for name, _, _, _ in rows]
-    assert names[0] == "baseline", "the control has to run first or nothing can be read"
+    assert names[0] == "positive control", "the path has to be shown to work first"
+    assert names[1] == "baseline", "the control has to run first or nothing can be read"
     assert ulla_probe.UNIMPLEMENTED == hci.vendor_opcode(0x3FF)
+    # The five writers of 6.8 and 6.9 go out empty on purpose: a controller that has the opcode
+    # but wants arguments refuses it with 0x12 before acting on anything.
+    packet = {
+        "0xFD02 packet size": hci.OPCODE_PACKET_SIZE,
+        "0xFDEE packet table": hci.OPCODE_PACKET_TABLE_DIRECT,
+        "0xFD7C size halfword": hci.OPCODE_PACKET_SIZE_HALFWORD,
+        "0xFD7D size halfword": hci.OPCODE_PACKET_SIZE_HALFWORD_ALT,
+        "0xFD5F internal size": hci.OPCODE_PACKET_SIZE_INTERNAL,
+    }
+    by_name = {name: (opcode, data) for name, opcode, data, _ in rows}
+    for name, opcode in packet.items():
+        assert name in by_name, f"{name} is documented but not probed"
+        assert by_name[name][0] == opcode
+        assert by_name[name][1] == hci.command(opcode), f"{name} must carry no parameters"
+        assert len(by_name[name][1]) == 3
     for name, opcode, data, expected in rows:
         assert data[:2] == opcode.to_bytes(2, "little"), name
         assert data[2] == len(data) - 3, f"{name} declares the wrong parameter length"
@@ -165,6 +181,45 @@ def test_the_probe_builds_exactly_the_documented_commands(capsys, monkeypatch):
     assert ulla_probe.main() == 0
     printed = capsys.readouterr().out
     assert "0xfe55" in printed and "55 fe 04 20 03 00 00" in printed
+
+
+def test_the_probe_refuses_to_report_when_its_positive_control_is_refused(capsys, monkeypatch):
+    """A blanket refusal on every row is also what a path reaching no controller looks like.
+
+    The negative baseline cannot tell those apart, which made the tool a check that could not
+    fail: a socket that swallowed every command would have printed "this controller implements
+    none of them" just the same. So the positive control decides whether the run is readable at
+    all, and this covers both verdicts plus the one that must not be reported.
+    """
+    import ulla_probe
+
+    monkeypatch.setattr(ulla_probe, "open_socket", lambda adapter: object())
+
+    def answer(control):
+        def ask(_sock, data):
+            opcode = int.from_bytes(data[:2], "little")
+            if opcode == ulla_probe.INTEL_READ_VERSION:
+                return control
+            return (ulla_probe.EVT_CMD_STATUS, 0x0C, opcode, b"")
+        return ask
+
+    good = (ulla_probe.EVT_CMD_COMPLETE, 0x00, ulla_probe.INTEL_READ_VERSION, b"\x37\x19")
+    monkeypatch.setattr(ulla_probe, "ask", answer(good))
+    monkeypatch.setattr("sys.argv", ["ulla_probe.py"])
+    assert ulla_probe.main() == 0
+    printed = capsys.readouterr().out
+    assert "the refusals below are its own" in printed
+    assert "implements none of them" in printed
+    assert "interesting case" not in printed, "the control must not be reported as a finding"
+
+    refused = (ulla_probe.EVT_CMD_STATUS, 0x0C, ulla_probe.INTEL_READ_VERSION, b"")
+    monkeypatch.setattr(ulla_probe, "ask", answer(refused))
+    assert ulla_probe.main() == 1, "a run whose control failed must not report a result"
+    printed = capsys.readouterr().out
+    assert "proves nothing" in printed
+    # Keyed on the verdict line, not on "implements none of them": the refusal message explains
+    # itself with that same phrase, so matching it would pass for the wrong reason.
+    assert "Every ULLA opcode answered exactly like that" not in printed
 
 
 def test_the_probe_names_every_status_it_can_print():

@@ -236,6 +236,50 @@ on this host it ends with "this controller implements none of them", which is th
 and the baseline anything else is read against. Run on 2026-10-19 against the same adapter, it
 reproduces all six rows and leaves the adapter `UP RUNNING`.
 
+### 10a. The same answer for the two commands that reach Apple's packet types
+
+Measured 2026-10-19, same host and adapter, no connection open, through `tools/ulla_probe.py`.
+[protocol.md](protocol.md) 6.8 and 6.9 read two commands out of the earbud firmware that
+between them decide how large a packet may be and which packets exist, plus three further
+writers of the size. [testing.md](testing.md) tells anyone with a patchable controller to try
+them, so what commodity silicon answers is the control for that advice:
+
+| sent, with no parameters | answer | status |
+|---|---|---|
+| 0xFD02, the packet size | Command **Status** | **0x0C** |
+| 0xFDEE, the direct route into table 2 | Command **Status** | **0x0C** |
+| 0xFD7C, an arbitrary size halfword | Command **Status** | **0x0C** |
+| 0xFD7D, the same | Command **Status** | **0x0C** |
+| 0xFD5F, the one that reaches the internal 1024 | Command **Status** | **0x0C** |
+
+All five are refused exactly like the opcode nobody implements, so **this controller implements
+none of them**. They were sent empty on purpose: a controller that has an opcode but wants
+arguments answers 0x12 and refuses before acting, so an empty request separates "no such
+command" from "this command exists" without handing a controller a value that would change its
+state. On this host that discriminator never came into play, because the refusal happens by
+opcode; it stays in the tool for a controller where it does.
+
+**And the tool now carries a positive control, because without one it could not fail.** Its
+only control was the unimplemented opcode, and a blanket refusal on every row is also what a
+path that never reaches a controller would print. So it now sends `0xFC05`, a command in the
+same vendor group that Intel controllers do implement, and will not report a result unless that
+one comes back:
+
+| | answer | status |
+|---|---|---|
+| 0xFC05, the controller's own read-version | Command **Complete** | 0x00, with nine return bytes |
+
+Confirmed on the monitor channel rather than inferred: `btmon` shows `< HCI Command: Vendor`
+leaving the host and `> HCI Event: Command Status ... Vendor (0x3f|0x0102) ... Command
+Disallowed (0x0c)` coming back, so the command did go to the controller and the refusal is the
+controller's own, not a kernel that dropped it. Pointed at an opcode nobody implements
+(`--positive 0xfffe`) the tool prints that the run proves nothing and exits 1, which is the
+check that this control can fail.
+
+The event type is the discriminator this establishes: **every opcode this controller does not
+implement answers Command Status, and every one it does answers Command Complete.** A tester
+reading 0x0C out of a Command Complete is looking at something else.
+
 ## 11. The mode byte is not validated, and the lite mode is accepted
 
 Measured 2026-10-19 08:30 against real earbuds on firmware 9A348, with
