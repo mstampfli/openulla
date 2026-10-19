@@ -27,9 +27,14 @@ The numbers here are the firmware's. The names are ours: unlike the session mana
 machines have no name tables in the image, so there is nothing to copy. Each name says what
 the handler at that state does, nothing more.
 
-"The module" below means the code that owns a procedure: the source's block is at acib
-0x1000df68 and the sink's at 0x1000329c. What those modules are for beyond driving this
-exchange is not traced, so they are not named here.
+"The module" below means the code that owns these procedures. All three roles live in one
+block at acib 0x1000df68: its byte at +1 picks the role, +2 refines it, +0x84 holds the
+module's own phase number, +0xA4 points at the single procedure object, and the callback slots
+from +0xB8 to +0x11C are what the installer fills. A second structure at 0x1000329c holds the
+device's ULLA state, including the two link handles at +0x1A and +0x1C and the two bytes that
+gate the answer, and the responder handlers read both [fw acib 0x618f4 returning the first,
+0x67b94 resolving a link through the second]. What the module is for beyond driving this
+exchange is not traced, so it is not named here.
 
 Where the source's events come from, each one proven at its posting site:
 
@@ -628,11 +633,11 @@ class ThirdProcedure:
     """The third role: a second responder, on a second link.
 
     The receive path picks it for a setup request that arrives on a link other than the one
-    whose handle the sink's module has stored, and ignores a second request on that stored
-    link [fw acib 0x634e4]. So an earbud can hold two responder procedures at once. What the
-    role is *for* is not traced; what it does is.
+    the ULLA state block names at its +0x1C, and ignores a second request on that one
+    [fw acib 0x634e4]. So an earbud can hold two responder procedures at once. What the role
+    is *for* is not traced; what it does is.
 
-    Its host events carry the handle of the stored link rather than its own, which is the one
+    Its host events carry that stored handle rather than its own link's, which is the one
     place it differs from the sink beyond the missing state [fw acib 0x68162].
     """
 

@@ -496,8 +496,29 @@ the first two of those conditions [fw acib 0x3b9de].
 All three of those accessors read one object, the controller's ULLA session
 [fw acib 0x100027cc, with the link at its +0xC], which is why these three are messages for a
 session that already exists while 0x73 is the one that creates it: 0x73's own checks look at
-different state entirely (5.4). What the values mean, and what either of 0x75 and 0x76 is for,
-is open.
+different state entirely (5.4). What the values mean is open.
+
+**Which of them this firmware sends.** Two sweeps agree on an asymmetry worth knowing before
+implementing either end. Every call to the two serializer entries, 86 of them, has its opcode
+read off: 0x73 goes out at acib 0x685de (the source's first state) and 0x30410 (the sink
+forwarding to its sibling), 0x74 at 0x6866c, 0x76 at 0x2f5c4, and nothing sends **0x75**. Ten
+of the 86 sites take their opcode from a register rather than a nearby constant; four of those
+are generic senders whose only callers pass 0x1F, 0x20, 0x23 and 0x24, and none of the ten has
+0x75 anywhere in the 48 bytes before its call. The second sweep comes at it from the other
+side: the image has ten instructions that put the constant 0x75 into a register, and not one of
+them is followed by a serializer call within 80 bytes. So this build receives 0x75 and never
+sends it, which is exactly what its receiver's role test implies: the other end sends it, and
+an implementation of a source has to.
+
+**How 0x76 is sent** is the same two-conditions pattern as the rest of this firmware. The
+sender itself is one small function that takes a link [fw acib 0x2f5c4]. The session object's
+byte at +0xE1 is a two-bit accumulator, and two functions set bits in it: one sends 0x76 to
+the peer once both bits are in and clears the byte, the other does the equivalent work locally
+instead [fw acib 0x4873c and 0x48878, both reaching 3 before they act]. Which of the two runs
+is decided by two role bytes of the ULLA state block, and on one path the sender is called
+directly on the link that block names [fw acib 0x486d0, the link from its +0x1A]. The two
+bits come from two sites each [fw acib 0x2f5b8 and 0x2f5be with bit 2, 0x486c4 and 0x486dc
+with bit 1].
 
 **How much of the ordinary opcode space this protocol uses**, as far as a sweep can say:
 walking every one of the 126 entries of the receive dispatch table and following each handler
@@ -910,7 +931,7 @@ Both answers go out through two senders worth naming, since they are the whole o
 side: **accepted** is acib 0x3d1c6 and **not accepted** acib 0x3c934, which writes the
 rejected opcode and the reason into the body and sends it with opcode 4; the hold until both
 links are ready goes through acib 0x302f8, which picks one of the two by its verdict argument
-and is gated on two bytes of the sink's module block [fw acib 0x30300, 0x30306].
+and is gated on two bytes of the ULLA state block at 0x1000329c [fw acib 0x30300, 0x30306].
 
 **The third role is the sink's machine with the waiting state taken out.** Its seven handlers
 do the same work in the same order, with every event number after the first one lower:
@@ -930,8 +951,8 @@ mode 0x35, sets the state to 0 and posts event 0 [fw acib 0x67dd8], and the seco
 mode 0x36 with a callback, sets the state to 3, posts event 4 and keeps its third argument as
 the reason byte the teardown will report [fw acib 0x67dfc, reported at 0x6825c].
 
-Two details of its own. Its host events carry the handle of the link whose handle the sink's
-module stored, not of its own link [fw acib 0x68162 against the sink's 0x67a4c]. And the
+Two details of its own. Its host events carry the handle the ULLA state block holds at its
++0x1C, not its own link's [fw acib 0x68162 against the sink's 0x67a4c]. And the
 receive path picks it for a request arriving on a link other than that stored one, ignoring a
 second request on the stored link itself [fw acib 0x634e4] - so this earbud can hold two
 responder procedures at once, on two different links, in two different machines.
