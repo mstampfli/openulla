@@ -1555,13 +1555,21 @@ for sites where **both** escape opcodes are set on the way in finds six, and the
 distinct link-management procedures. In each one a single function picks the specification's
 form or Apple's, and the two forms are the same length or **exactly one byte longer**:
 
-| the specification's | its length | Apple's | its length | the deciding site |
-|---|---|---|---|---|
-| 0x7F/0x0B, packet-type-table request | 3 | 0x7B/0x0D | 3 | acib 0x29e66 |
-| 0x7F/0x1F, power control request | 3 | 0x7B/0x0E | 3 | acib 0x28fa8 and 0x2906a |
-| 0x7F/0x20, power control response | 3 | 0x7B/0x0F | 4 | acib 0x29236 |
-| 0x7F/0x10, channel classification request | 7 | 0x7B/0x19 | 8 | acib 0x22d9e |
-| 0x7F/0x11, channel classification | 12 | 0x7B/0x1A | 13 | acib 0x46014 |
+| the specification's | its length | Apple's | its length | the deciding site | the bit that chooses |
+|---|---|---|---|---|---|
+| 0x7F/0x0B, packet-type-table request | 3 | 0x7B/0x0D | 3 | acib 0x29e66 | **2** [fw acib 0x29e2a] |
+| 0x7F/0x1F, power control request | 3 | 0x7B/0x0E | 3 | acib 0x28fa8 and 0x2906a | **2** [fw acib 0x28f76, 0x29030] |
+| 0x7F/0x20, power control response | 3 | 0x7B/0x0F | 4 | acib 0x29236 | **2** [fw acib 0x2920e] |
+| 0x7F/0x10, channel classification request | 7 | 0x7B/0x19 | 8 | acib 0x22d9e | **5** [fw acib 0x22d46] |
+| 0x7F/0x11, channel classification | 12 | 0x7B/0x1A | 13 | acib 0x46014 | **5** [fw acib 0x45f92] |
+
+**The family splits in two along a sensible line.** Every one of the six deciding functions
+reads the peer's feature byte at the link's +0x47, ANDs it with the first byte of the global at
+0x10003290, and tests one bit of the result: set takes Apple's form, clear takes the
+specification's. Four of them test **bit 2**, the bit 5.8 already records as steering 5.11's
+reply, and the two channel classification messages test **bit 5**, which is the band family bit
+5.8 names. Classification is about channels, so it travels with the bands rather than with the
+rest; that is one more use for a bit this document had already named, not a new bit.
 
 The last row's sender also confirms 5.7's body layout from the other side: before choosing a
 form it copies **ten bytes** into the message block at **+0x16**, which is exactly where 5.7

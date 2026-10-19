@@ -213,6 +213,16 @@ PAIRED_PROCEDURES = (
     ("power control response", (0x29220, 0x29222, 0x20), (0x29228, 0x2922A, 0x0F)),
     ("channel classification", (0x4600A, 0x46004, 0x11), (0x45FD6, 0x45FD2, 0x1A)),
 )
+# Which feature bit each of those six functions tests, as (the lsls site, the bit). A shift of
+# 31 - N puts bit N in the sign flag, which is what the branch after it reads. [5.14]
+PROCEDURE_BITS = (
+    (0x22D46, 5),
+    (0x28F76, 2),
+    (0x29030, 2),
+    (0x2920E, 2),
+    (0x29E2A, 2),
+    (0x45F92, 5),
+)
 # The three answers the responder gives, which are one two-bit code five times. [5.11, 5.14]
 POWER_RESPONSE_PAIRS = ((0x15, 5), (0x2A, 10), (0x3F, 15))
 POWER_RESPONSE_MASKS = (0x9009, 0x504)  # the receiver's two classes over the four-bit code
@@ -1421,14 +1431,25 @@ def check_paired_procedures(acib, rkof, ctab, sbd1):
         fields += [(code >> (2 * i)) & 3 for i in range(2)]
         if len(set(fields)) != 1:
             return False, f"0x{value:02x}/{code} is not one two-bit code repeated: {fields}"
+    for at, bit in PROCEDURE_BITS:
+        # lsls rD, rS, #imm5 is 0000 0 imm5 rS rD, so the shift is bits 6 to 10.
+        encoding = u16(acib, at)
+        if encoding >> 11 != 0:
+            return False, f"0x{at:x} is no longer an lsls"
+        shift = (encoding >> 6) & 0x1F
+        if shift != 31 - bit:
+            return False, f"0x{at:x} now tests bit {31 - shift}, not bit {bit}"
+    tested = {bit for _, bit in PROCEDURE_BITS}
+    if tested != {2, lmp.FEATURE_BIT_BANDS}:
+        return False, f"the deciding bits are now {sorted(tested)}"
     both, maxed = POWER_RESPONSE_MASKS
     if sorted(v for v in range(16) if both & (1 << v)) != [0, 3, 12, 15]:
         return False, "the first mask no longer selects the codes whose two fields are 0 or 3"
     if sorted(v for v in range(16) if maxed & (1 << v)) != [2, 8, 10]:
         return False, "the second mask no longer selects the codes with a 2 in a field"
     return True, (
-        f"{len(PAIRED_PROCEDURES)} senders choose between the two forms, the three power "
-        "answers are one two-bit code five times"
+        f"{len(PAIRED_PROCEDURES)} senders choose between the two forms on bits "
+        f"{sorted(tested)}, the three power answers are one two-bit code five times"
     )
 
 
