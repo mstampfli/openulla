@@ -1639,8 +1639,13 @@ rule that was read from the firmware or measured.
    away in each of the two phases (5.9).
 9. **Keep the procedure's own state** if you want to behave like the firmware rather than
    merely interoperate: it answers an unexpected event by staying where it is, waits for two
-   independent conditions before sending 0x74, and three before it goes on (5.9).
-10. **Do not expect to send back everything you receive**: a third of service 4's opcodes have
+   independent conditions before sending 0x74, and three before it goes on (5.9). Keep its
+   phase beside it, because other parts of the firmware test that and not the state (5.9).
+10. **Expect 0x75 from the other end and send it yourself if you are the source**: this
+    firmware receives that message and never sends it (5.2). Expect the session commands of
+    6.6 too, answer them with 0x0C while no session is active, and remember that the second
+    half of the procedure is a teardown with its own entry point (5.9).
+11. **Do not expect to send back everything you receive**: a third of service 4's opcodes have
     no inbound handler at all, the status reply among them (2.4).
 
 Steps 1 to 5 are what a Linux host can do today, and `openulla/` does them. Steps 6 to 8 need
