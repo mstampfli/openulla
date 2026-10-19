@@ -1633,6 +1633,10 @@ the caller's array* [fw acib 0xdac3c and 0xdac40, the address 0x521C0BD0]. Each 
 channel descriptor gets a control word of 0xF000F0, and the slot the count picked gets 0x100010
 [fw acib 0xdac44, 0xdac10].
 
+Two bounds follow from the field widths alone, and they are worth having for anyone thinking
+about the format: a length of ten bits means **no single buffer above 1023**, and three bits
+used as four minus the count mean **at most four buffers** in one descriptor.
+
 **The 1 KB rule, exactly.** The length plus 0x10 is compared against the length plus 0x40F
 masked with 0xC00, which is the next 1 KB boundary of the length-plus-header expressed in those
 two bits. If the two agree, bit 28 of the channel's control word at +8 is cleared; if they do
