@@ -928,6 +928,14 @@ off**, because the AND reads its word as zero. Answering it is the first thing a
 do. (That address is the base of a larger structure, not a word of its own: the ULLA state
 block sections 5.10 and 5.2 use is the same structure at +0xC.)
 
+How central those four bytes are is worth one measurement rather than an adjective. Sweeping
+every literal load of that address in the image and following the register that holds it: the
+**first byte has five writers and seventy-nine readers**, and the **fourth has one writer and
+thirty-nine readers** [the writers of the first are at fw acib 0x16aa4, 0x16b30 and 0x174cc
+among them, which are 0xFDF3's own handler and its neighbours; the fourth's single writer is
+fw acib 0x1f8a6]. No other field of that structure is read more than a handful of times, so
+the feature word is not one gate among many: it is the state this module consults.
+
 **Where its own bits come from**, which decides what a controller advertises:
 
 | bits | written by | how |
@@ -1071,6 +1079,16 @@ also where the setup's own last state leaves it, so a link that is up sits there
 teardown starts [fw acib 0x68450, and 0x687a2 arriving at 4 on success]. Both
 are called from the same module, which keeps its own phase number at 0x1000df68 +0x84. What
 that module is for beyond driving this exchange is not traced, so it is not named here.
+
+Its block's shape, though, is countable. Sweeping every literal load of 0x1000df68 and
+following the register: **45 distinct fields** are touched, and they fall into three groups.
+The small state at +0 to +0x1A is the enable byte, the role byte, two more bytes and three
+words. The objects are at **+0xA4** (one writer, and the most-read field of the block),
+**+0xA8** and +0xAC. And **+0xB0 to +0x11C is a table of word slots**, all of them written in
+one burst by the enable path and each read at exactly one site [fw acib 0x621b0 to 0x62438 for
+the writes, 0x6241c being the enable], which makes it the module's own interface: 5.4 names
+five of those slots by what the two roles install in them, and the rest are entry points this
+document has no use for.
 
 **A refusal is not an event.** When a not-accepted PDU names opcode 0x73, the receive handler
 calls a thunk that passes the PDU body and the report goes straight to the host as mode 0,
