@@ -6,7 +6,8 @@ from openulla.codes import Mode, RejectReason, Result
 from openulla.controller import ACCEPT, PRIMARY_ROLE, AcceptChecks, Initiator, Responder
 from openulla.errors import ProtocolError
 from openulla.hci import UllaSetup
-from openulla.procedure import Event, SinkProcedure, SinkState
+from openulla.procedure import Event, Procedure, SinkProcedure, SinkState
+from openulla.procedure import State as procedure_state
 
 SETUP = UllaSetup(handle=0x000B, extra_flags=0x01, config_word=0x0102, flags=0xFF)
 
@@ -101,13 +102,46 @@ def test_the_transaction_id_of_the_answer_follows_the_request():
 def test_the_host_sees_a_rejection_as_the_peers_reason():
     initiator = Initiator()
     initiator.setup_request(SETUP)
-    event = initiator.on_reply(lmp.NotAccepted(lmp.OPCODE_ULLA_SETUP, 5).to_bytes())
+    answer = initiator.on_reply(lmp.NotAccepted(lmp.OPCODE_ULLA_SETUP, 5).to_bytes())
+    assert answer.pdu == b""
+    event = answer.host_event
+    assert event is not None
     assert (event.mode, event.result, event.reason) == (
         Mode.BT_ACL_ACTIVE,
         Result.SETUP_REJECTED_BY_PEER,
         5,
     )
     assert event.handle == SETUP.handle
+
+
+def test_an_accepted_setup_sends_the_configuration_and_tells_the_host_nothing_yet():
+    """The firmware reports the mode two states later, not here. [protocol.md 5.9]"""
+    initiator = Initiator()
+    initiator.setup_request(SETUP)
+    answer = initiator.on_reply(lmp.Accepted(lmp.OPCODE_ULLA_SETUP).to_bytes())
+    assert answer.host_event is None
+    assert lmp.parse(answer.pdu) == lmp.Configuration(0, 0)
+    assert initiator.procedure.state is procedure_state.AWAIT_MODULE_CALL
+    # And then the step a source has to drive itself, which is where the host hears.
+    event = initiator.on_module_result()
+    assert (event.mode, event.result) == (Mode.ULLA_ON, Result.SUCCESS)
+    assert initiator.procedure.state is procedure_state.AWAIT_SECOND_BEGIN
+
+
+def test_a_module_that_does_not_answer_with_one_is_an_error_to_the_host():
+    initiator = Initiator()
+    initiator.setup_request(SETUP)
+    initiator.on_reply(lmp.Accepted(lmp.OPCODE_ULLA_SETUP).to_bytes())
+    event = initiator.on_module_result(ok=False)
+    assert (event.mode, event.result) == (Mode.BT_ACL_ACTIVE, Result.ERROR)
+    assert initiator.procedure.state is procedure_state.SEND_SETUP  # back to the start
+
+
+def test_the_initiator_sends_nothing_while_its_link_test_has_not_passed():
+    initiator = Initiator(procedure=Procedure(link_test=False))
+    initiator.setup_request(SETUP)
+    answer = initiator.on_reply(lmp.Accepted(lmp.OPCODE_ULLA_SETUP).to_bytes())
+    assert (answer.pdu, answer.host_event) == (b"", None)
 
 
 def test_an_answer_about_another_opcode_is_refused():

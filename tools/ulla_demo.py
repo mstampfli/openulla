@@ -34,6 +34,20 @@ def show(label, data):
     print(f"  {label:<34} {data.hex(' ')}")
 
 
+def describe_pdu(pdu):
+    """A short name for one link-manager PDU, so the exchange reads as a sequence."""
+    parsed = lmp.parse(pdu)
+    if isinstance(parsed, lmp.SetupRequest):
+        return "the setup request 0x73"
+    if isinstance(parsed, lmp.Configuration):
+        return "the configuration 0x74"
+    if isinstance(parsed, lmp.Accepted):
+        return f"accepted, for 0x{parsed.accepted_opcode:02x}"
+    if isinstance(parsed, lmp.NotAccepted):
+        return f"not accepted, reason 0x{parsed.reason:02x}"
+    return "a PDU of this family"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", type=lambda s: int(s, 0), default=0, help="mode byte of 0x36")
@@ -97,7 +111,10 @@ def main():
     before = len(link.pdus)
     event = link.controller_setup(setup, responder=responder)
     for direction, pdu in link.pdus[before:]:
-        show(f"LMP {direction}, the setup", pdu)
+        show(f"LMP {direction}, {describe_pdu(pdu)}", pdu)
+    if event.result == 0:
+        print("     between those two the procedure waits for an event no earbud posts,")
+        print("     so this simulator supplies that one step: docs/protocol.md 5.9")
     show("vendor event 0xFF to the host", event.to_bytes())
     print(f"     {event.describe()}")
 

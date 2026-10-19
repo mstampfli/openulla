@@ -34,10 +34,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from . import lmp
-from .codes import Mode, RejectReason, Result
 from .errors import ProtocolError
 from .hci import ModeChangeEvent, UllaSetup
-from .procedure import Action, Event, SinkProcedure, SinkState
+from .procedure import (
+    MODULE_RESULT_OK,
+    Action,
+    Event,
+    Procedure,
+    SinkProcedure,
+    SinkState,
+    State,
+)
 
 ACCEPT = 0
 PRIMARY_ROLE = 0x80  # bit 7 of the reason byte: the role of the device refusing
@@ -154,6 +161,14 @@ class Responder:
         return self._accept_when_both_links_are(Event.LINK_STATE_ADVANCED, tid)
 
 
+@dataclass(frozen=True)
+class Reply:
+    """What the source does with the peer's answer: send something, tell the host, or both."""
+
+    pdu: bytes = b""
+    host_event: ModeChangeEvent | None = None
+
+
 @dataclass
 class Initiator:
     """The source's controller: emits the setup request and reports the outcome to its host.
@@ -161,11 +176,17 @@ class Initiator:
     A real controller reads the four-byte radio value from its own hardware with a validity
     check and up to ten retries [fw acib 0xdc9c0]; there is nothing to read here, so the
     caller supplies it and the simulated value is whatever it passes.
+
+    Like the responder, it owns a procedure and lets it decide the order. That matters most
+    on acceptance: the firmware does **not** tell the host the mode is on when the accepted
+    PDU arrives. It sends 0x74 and tells the host only two states later, when its own module
+    reports [protocol.md 5.9, fw acib 0x685f8 then 0x68788].
     """
 
     handle: int = 0
     radio_value: int = 0
     tid: int = 0
+    procedure: Procedure = field(default_factory=Procedure)
 
     def setup_request(self, setup: UllaSetup) -> bytes:
         """Build the 0x73 PDU from a host's 0xFE50 parameters. [fw acib 0x1da40, 0x68588]
@@ -178,6 +199,10 @@ class Initiator:
         reaches the context and nothing else.
         """
         self.handle = setup.handle
+        self.procedure.handle = setup.handle
+        step = self.procedure.begin()
+        if step.action is not Action.SEND_SETUP_REQUEST:
+            raise ProtocolError("the procedure did not ask for the setup request")
         return lmp.SetupRequest(
             radio_value=self.radio_value,
             config_word=setup.config_word,
@@ -186,25 +211,39 @@ class Initiator:
             tid=self.tid,
         ).to_bytes()
 
-    def on_reply(self, pdu: bytes) -> ModeChangeEvent:
-        """Turn the peer's answer into the vendor event the host sees. [fw acib 0x11d34]"""
+    def on_reply(self, pdu: bytes) -> Reply:
+        """Feed the peer's answer to the procedure and do what it says. [protocol.md 5.9]
+
+        An accepted PDU is event 1, and what comes of it is the configuration PDU, not a
+        host event. A not-accepted one never reaches the procedure at all: it is reported to
+        the host as the peer's refusal [fw acib 0x6848c].
+        """
         parsed = lmp.parse(pdu)
         if isinstance(parsed, lmp.Accepted):
             if parsed.accepted_opcode != lmp.OPCODE_ULLA_SETUP:
                 raise ProtocolError("the accepted PDU names another opcode")
-            return ModeChangeEvent(
-                handle=self.handle,
-                mode=Mode.ULLA_ON,
-                result=Result.SUCCESS,
-                reason=RejectReason.NOT_APPLICABLE,
-            )
+            step = self.procedure.feed(Event.SETUP_ACCEPTED)
+            if step.action is not Action.SEND_CONFIGURATION:
+                return Reply()  # the link test has not passed yet, so nothing goes out
+            return Reply(pdu=lmp.Configuration(0, 0, tid=self.tid).to_bytes())
         if isinstance(parsed, lmp.NotAccepted):
             if parsed.rejected_opcode != lmp.OPCODE_ULLA_SETUP:
                 raise ProtocolError("the not-accepted PDU names another opcode")
-            return ModeChangeEvent(
-                handle=self.handle,
-                mode=Mode.BT_ACL_ACTIVE,
-                result=Result.SETUP_REJECTED_BY_PEER,
-                reason=parsed.reason,
-            )
+            return Reply(host_event=self.procedure.peer_refused(parsed.reason))
         raise ProtocolError("a setup request is answered with accepted or not-accepted")
+
+    def on_module_result(self, ok: bool = True) -> ModeChangeEvent:
+        """The step a source has to drive itself, and the host event that follows it.
+
+        The procedure's third state waits for an event nothing in the earbud's firmware
+        posts, and its fourth turns the module's answer into the host's mode-change event
+        (5.9). A source implementation has to supply both, which is what this does: it takes
+        the request block as handed down, then reports.
+        """
+        self.procedure.module_result = MODULE_RESULT_OK if ok else 0
+        if self.procedure.state is State.AWAIT_MODULE_CALL:
+            self.procedure.feed(Event.MODULE_CALL)
+        step = self.procedure.feed(Event.MODULE_RESULT)
+        if step.host_event is None:
+            raise ProtocolError("the procedure did not report to the host")
+        return step.host_event

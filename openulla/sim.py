@@ -105,7 +105,18 @@ class Link:
         if not reply:
             raise ProtocolError("the sink held the answer back; its sibling link is not ready")
         self.pdus.append(("sink -> source", reply))
-        event = self.initiator.on_reply(reply)
+        answer = self.initiator.on_reply(reply)
+        if answer.host_event is not None:
+            return answer.host_event  # the peer refused, and that is the whole exchange
+        if answer.pdu:
+            self.pdus.append(("source -> sink", answer.pdu))
+            following = peer.receive(answer.pdu)
+            if following:
+                self.pdus.append(("sink -> source", following))
+        # What follows is the step the earbud's own firmware cannot take: nothing in it posts
+        # the event its procedure's third state waits for (protocol.md 5.9), so a source has
+        # to drive it. The simulator does, and says so rather than pretending otherwise.
+        event = self.initiator.on_module_result()
         if event.result == 0:
             self.feed(Event.ULLA_LINK_UP)
         return event
