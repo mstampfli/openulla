@@ -36,6 +36,7 @@ from openulla.codes import (
     RejectReason,
     Result,
 )
+from openulla.procedure import HANDLER_ADDRESSES
 from openulla.session import TRANSITIONS
 
 # acib, the Bluetooth controller image
@@ -117,11 +118,16 @@ ESCAPE_7F_STUB = 0x3BF52
 ESCAPE_7F_REFUSED = {0x08, 0x09, 0x0A, 0x0E, 0x0F, 0x12, 0x13, 0x14}
 EVENT_LITERAL = 0x11D70
 EVENT_LITERAL_VALUE = 0x0A0007FF
+PROCEDURE_TABLE = 0xF2664  # the nine state handlers of 5.9
+PROCEDURE_LITERAL = 0x682FC  # where the dispatcher loads that address from
 
 # rkof, the RTKitOS features image
 TRANSITION_INDEX = 0x1BE53C
 MODE_NAMES = 0x1BE190
 RESULT_NAMES = 0x1BE5BC
+PAST_MODE_NAMES = "ULLA_MGR_EVENT_UNKNOWN"  # what sits after the three mode names
+MODE_NAME_LOAD = 0x2781C  # the formatter's literal for the mode list [5.9, section 6]
+RESULT_NAME_LOAD = 0x27820  # and for the result list
 REASON_LOW_TABLE = 0x2777C  # byte table, reasons 0..6
 REASON_HIGH_TABLE = 0x2778C  # byte table, reasons 0x81..0x87
 A2DP_DESCRIPTORS = (0x1C14D0, 0x1C14E8, 0x1C1500)
@@ -342,6 +348,43 @@ def check_names(acib, rkof):
     return True, f"{len(Mode)} modes, {len(Result)} results, {checked} reasons, 2 unnamed"
 
 
+def check_procedure_table(acib, rkof):
+    """The source procedure's nine state handlers, and the dispatcher that indexes them. [5.9]"""
+    if u32(acib, PROCEDURE_LITERAL) != PROCEDURE_TABLE:
+        return False, (
+            f"the dispatcher's literal at 0x{PROCEDURE_LITERAL:x} is now "
+            f"0x{u32(acib, PROCEDURE_LITERAL):x}, not the table"
+        )
+    for state, address in HANDLER_ADDRESSES.items():
+        got = u32(acib, PROCEDURE_TABLE + 4 * state.value)
+        if got != address | 1:
+            return False, f"state {state.value} now runs 0x{got & ~1:x}, not 0x{address:x}"
+    after = u32(acib, PROCEDURE_TABLE + 4 * len(HANDLER_ADDRESSES))
+    if after != 0:
+        return False, f"the table does not end after nine entries: 0x{after:x}"
+    return True, f"table at acib 0x{PROCEDURE_TABLE:x}, {len(HANDLER_ADDRESSES)} states"
+
+
+def check_name_table_bounds(acib, rkof):
+    """That the mode and result lists are as long as we say, and nothing guards them. [6]
+
+    Stated as what the image must contain, not as the absence of something: a run of zeroes
+    would satisfy "no fourth mode name" and tell us nothing.
+    """
+    past_modes = cstring(rkof, u32(rkof, MODE_NAMES + 4 * len(Mode)))
+    if past_modes != PAST_MODE_NAMES:
+        return False, f"the word after the mode list now names {past_modes!r}"
+    last_result = cstring(rkof, u32(rkof, RESULT_NAMES + 4 * (len(Result) - 1)))
+    if last_result != RESULT_FIRMWARE_NAMES[Result.LSTO_ERROR]:
+        return False, f"the last result name is now {last_result!r}"
+    if u32(rkof, RESULT_NAMES + 4 * len(Result)) != 0:
+        return False, "the result list does not end after five names"
+    for literal, loads in ((MODE_NAMES, MODE_NAME_LOAD), (RESULT_NAMES, RESULT_NAME_LOAD)):
+        if u32(rkof, loads) != literal:
+            return False, f"the formatter no longer loads 0x{literal:x} from 0x{loads:x}"
+    return True, f"{len(Mode)} modes then {past_modes!r}, {len(Result)} results then a null"
+
+
 def check_a2dp_endpoints(acib, rkof):
     """The three stream endpoints, each descriptor pointing at its capability. [ulla.md 4.6]"""
     seen = {}
@@ -371,6 +414,8 @@ CHECKS = (
     ("extended PDU body builders", check_transmit_builders),
     ("mode-change event shape", check_event_shape),
     ("mode, result and reason names", check_names),
+    ("name table bounds", check_name_table_bounds),
+    ("source procedure state table", check_procedure_table),
     ("A2DP stream endpoints", check_a2dp_endpoints),
 )
 

@@ -11,7 +11,7 @@ compared, the numbers and the firmware addresses; the prose columns are prose.
 import pathlib
 import re
 
-from openulla import aap, bands, lmp, session
+from openulla import aap, bands, lmp, procedure, session
 from openulla.codes import RejectReason
 
 DOC = (pathlib.Path(__file__).resolve().parent.parent / "docs" / "protocol.md").read_text()
@@ -121,6 +121,19 @@ def test_the_commands_in_2_4_are_the_opcodes_in_the_code():
     assert documented == {int(op) for op in aap.Opcode} - {int(aap.Opcode.STATUS)}
 
 
+def test_the_state_table_in_5_9_is_the_table_in_the_code():
+    documented = {}
+    events = 0
+    for cells in rows(section("5.9")):
+        if len(cells) == 5 and cells[1].startswith("acib"):
+            documented[numbers(cells[0])[0]] = numbers(cells[1])[0]
+        elif len(cells) == 3 and cells[0].isdigit() and "acib" in cells[1]:
+            events += 1
+    assert documented == {int(state): address
+                          for state, address in procedure.HANDLER_ADDRESSES.items()}
+    assert events == len(procedure.Event)
+
+
 def test_every_section_the_tests_read_is_still_there():
-    for number in ("2.4", "3.4", "5.4", "5.6", "6.3"):
+    for number in ("2.4", "3.4", "5.4", "5.6", "5.9", "6.3"):
         assert rows(section(number)), number

@@ -22,6 +22,7 @@ fill it in; it says so, and the tests say so too.
 | `codes.py` | the numbered values with the firmware's own names, including the firmware's own spelling of each |
 | `errors.py` | two exceptions: malformed, and refused with the code the firmware would send |
 | `controller.py` | each end of the link-manager exchange, with the responder's four checks |
+| `procedure.py` | the source's own nine-state procedure: which event each state expects, what it sends, and which result the host is told |
 | `sink.py` | an earbud-shaped simulator |
 | `source.py` | what a host sends, and the vendor commands its controller would need |
 | `sim.py` | a whole negotiation with no hardware |
@@ -176,8 +177,10 @@ python3 tools/verify_claims.py --payloads payloads
   PASS  extended PDU body builders       69 extended opcodes over both spaces, 19 with no builder
   PASS  mode-change event shape          event 0xff, 7 parameters, id 0x0a00
   PASS  mode, result and reason names    3 modes, 5 results, 12 reasons, 2 unnamed
+  PASS  name table bounds                3 modes then 'ULLA_MGR_EVENT_UNKNOWN', 5 results then a null
+  PASS  source procedure state table     table at acib 0xf2664, 9 states
   PASS  A2DP stream endpoints            vendor 0xFF, AAC 0x02 and SBC 0x00, lengths and bytes as published
-10 of 10 claims hold
+12 of 12 claims hold
 ```
 
 The transition-table line is the one worth looking at twice: it expands the library's 41 rows

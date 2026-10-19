@@ -2,8 +2,12 @@
 
 Nothing here is invented. Each group cites where its numbering was read:
 
-  mode 0..3           rkof 0x1be190, four name pointers indexed by the mode value
+  mode 0..2           rkof 0x1be190, three name pointers indexed by the mode value
   result 0..4         rkof 0x1be5bc, five name pointers indexed by the result value
+                      Neither index is bounds-checked by the formatter that uses them
+                      [rkof 0x2774c, the loads at 0x27760 and 0x27766], so a value past the
+                      end of either list prints a neighbouring table's name rather than an
+                      error. The reason byte below is the one that is checked.
   reject reason       rkof 0x2777c: the formatter at 0x2774c branches through a byte table
                       at 0x2777c for reasons 0..6 and a second at 0x2778c for 0x81..0x87,
                       and tests 0xaa and 0xff directly (0x27798, 0x2779c). Reason 2 has no

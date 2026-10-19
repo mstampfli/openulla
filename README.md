@@ -354,8 +354,9 @@ link keys and other people's device addresses.
   a measurement.
 - `docs/protocol.md`: the setup protocol as a reference, for implementing it.
   Frames, fields, opcodes, the session state machine with all its transitions,
-  the earbud-to-earbud messages, the link-manager PDUs, the controller's vendor
-  command, and the reason codes.
+  the earbud-to-earbud messages, the link-manager PDUs, the nine-state
+  procedure the source's own controller runs, the controller's vendor command,
+  and the reason codes.
 - `docs/measurements.md`: what was observed against real earbuds from Linux,
   with the exact bytes sent and received.
 - `docs/fcc/README.md`: index of the FCC exhibits used for the AirPods Pro 2

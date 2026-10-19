@@ -435,6 +435,12 @@ context to build the PDU [fw acib 0x68588]:
 | the byte past the length | parameter 2 | [fw acib 0x1daea, context +0x10] |
 | nothing on the air | bit 2 of parameter 5 | [fw acib 0x1daf8, context +0x18] |
 
+That last row is as far as the bit is traced. Scanning the procedure for word reads of the
+context's +0x18 finds two: the copy itself [fw acib 0x68368] and the state-2 handler below,
+which puts the value, with a dozen other context fields, into the request block it builds for
+the layer underneath, at that block's +0x50 [fw acib 0x68700]. Whether any of the three calls
+that block is handed to puts it on the air is not traced here, so this note stops at the block.
+
 The receiving side reads the same fields from the same offsets [fw acib 0x675f4], so the
 layout is confirmed by the sending and receiving code independently. The 4-byte value comes
 from a hardware read with a validity check and up to ten retries [fw acib 0xdc9c0], so it is
@@ -728,6 +734,108 @@ byte of the word the earbud advertises is reduced to its bits 0, 3, 5 and 7
 [fw acib 0x3684e deciding it, 0x2942c and 0x294a8 applying the mask 0xA9]. Bit 5, the band
 family, survives that reduction. What the other bits of the word mean is open.
 
+### 5.9 The source's own procedure, state by state
+
+Everything above describes single messages. The controller runs them as a procedure, and that
+procedure is a state machine of its own, separate from the session manager of section 3 and a
+layer below it. It is the thing that actually puts 0x73 and 0x74 on the air.
+
+**How it is driven** [fw acib 0x6829c]. The dispatcher takes a procedure object, an event
+number and one argument. It reads the current state from the object's **+0x24**, refuses to
+run inside itself using bit 0 of the object's **+0x23**, calls the handler that the table at
+**acib 0xf2664** holds for that state, and writes the handler's return value back as the new
+state. The table is nine words long, so there are nine states, and a handler that does not
+expect an event returns its own number, which is how an unexpected event becomes "stay here".
+
+The object is one per module, not one per link: the installer writes its address into the
+module's own block at 0x1000df68 **+0xA4** [fw acib 0x6218c], so a source runs one setup at a
+time. The initialiser copies the host's parameters into it, keeps only bits 5 to 7 of the flag
+byte and zeroes the rest [fw acib 0x68344].
+
+| state | handler | events it expects | what it does | next |
+|---|---|---|---|---|
+| 0 | acib 0x68588 | 0 | sends the 0x73 setup request and claims the link's procedure slot with the number 5 | 1 |
+| 1 | acib 0x685f8 | 1, 2 | sets flag bit 1 on event 1, and once that bit and the link's own test both hold, sends 0x74 | 2 |
+| 2 | acib 0x6869c | 3 | builds the 0x74-byte request block from the context and hands it down | 3 |
+| 3 | acib 0x68788 | 4 | reports to the host: mode 1 and success, or mode 0 and result 1 | 4 or 0 |
+| 4 | acib 0x687fc | 5 | registers the first of the module's callbacks | 5 |
+| 5 | acib 0x6886c | 2, 6 | sets flag bit 4 on event 2, and once bits 2, 3 and 4 are all set registers two more callbacks | 7 |
+| 6 | acib 0x688f4 | any | nothing at all: two instructions returning 0 | 0 |
+| 7 | acib 0x688f8 | 7, 8 | one call back into the module | 8 |
+| 8 | acib 0x68924 | 7, 8, 9 | on 9 tears the link down and reports mode 0 with the success result | 8 or 0 |
+
+The flag byte at +0x23 is the whole of the machine's memory besides the state: bit 0 is the
+re-entry guard, bit 1 is "the peer accepted", bits 2 and 3 are the two paths of state 5, and
+bit 4 is its link condition. Bits 5 to 7 survive a new run and are not traced here.
+
+**The events**, each one at the site that posts it:
+
+| # | posted by | what has happened |
+|---|---|---|
+| 0 | acib 0x6842c, from 0x66da0 | the source entry point: the procedure is starting |
+| 1 | acib 0x3c6ec -> 0x61fcc -> 0x684dc | an accepted PDU naming opcode 0x73 arrived |
+| 2 | acib 0x628f8 -> 0x68424 | the link's own state byte read 3 and was set to 4 |
+| 3 | acib 0x66db0 | a call inside the module that owns the procedure |
+| 4 | acib 0x619a4 -> 0x684e4 | that module passes a {byte, word} pair |
+| 5 | acib 0x68450, from 0x66d72 | the second entry point, which starts the machine at state 4 |
+| 6 | acib 0x68578 | both paths of state 5 have reported |
+| 7 | acib 0x66fe8 | the first callback state 5 registered |
+| 8 | acib 0x67028 | the second callback state 5 registered |
+| 9 | acib 0x684fc | the stop entry point |
+
+So the machine has two entry points. The first sets the state to 0 and posts event 0, after
+putting the link into mode 0x35 [fw acib 0x6842c]. The second sets the state to **4** and
+posts event 5, with the link in mode 0x36 and a callback registered [fw acib 0x68450]. Both
+are called from the same module, which keeps its own phase number at 0x1000df68 +0x84. What
+that module is for beyond driving this exchange is not traced, so it is not named here.
+
+**A refusal is not an event.** When a not-accepted PDU names opcode 0x73, the receive handler
+calls a thunk that passes the PDU body and the report goes straight to the host as mode 0,
+result 3 and the peer's own reason byte, releasing the link's procedure slot that state 0
+claimed; the procedure's state is not touched [fw acib 0x3c7de -> 0x61ff0 -> 0x6848c]. The
+slot is a number at the link's +0x82, taken only while it reads zero and released only by the
+number that took it, which is how a second setup on the same link is kept out
+[fw acib 0x2515c taking it, 0x25304 releasing it]. That path also
+proves the reason byte's shape from the other side: its trace splits the byte into the low
+nibble and bit 7 [fw acib 0x684be and 0x684c4], which is exactly the 0x81 to 0x86 encoding of
+section 5.4. The accepted PDU reaches event 1 through the mirror image of the same dispatch,
+a switch on the accepted opcode [fw acib 0x3c6dc for 0x71, 0x72 and 0x73].
+
+**Which result the host is told** is decided in four different places, and together they
+account for the whole list of section 6:
+
+| result | when | where |
+|---|---|---|
+| 0 success | mode 1, after event 4 in state 3 | fw acib 0x687a2 |
+| 0 success | mode 0, after the teardown in state 8 | fw acib 0x6896a, with the object's +0x1C as the reason |
+| 1 error | event 4 in state 3 when the module's check does not return 1 | fw acib 0x687c4 |
+| 2 failed to be established | the link went away while it was in mode 0x35 | fw acib 0x683c2 |
+| 3 setup rejected by peer | the not-accepted PDU above | fw acib 0x6848c |
+| 4 supervision timeout | the link went away in any other mode | fw acib 0x683fe |
+
+**The role table.** The event posters above are not called directly; they are installed into
+the module's block by a role-dependent installer, which chooses one of three sets of the same
+slots by a byte at 0x1000df69 [fw acib 0x6218c, the source set at 0x621ac, a second at 0x62238
+and a third at 0x622d0]. The slots line up, which is the useful part: the source's slot +0xE0
+posts event 1 where the second set has acib 0x676fc, slot +0xE4 is the refusal report where
+the second set has 0x67714, and slot +0xD4 posts event 4 where it has 0x677b0, next to the
+setup-request receiver of section 5.5. So both roles are the same machine with different
+handlers, not two unrelated implementations.
+
+**Four more parameters** ride along in the context at +0x14 and +0x15 to +0x17. The
+initialiser leaves them as 3, 8, 8, 8 [fw acib 0x6832c]; the module installs a setter for them
+at its own +0x10C [fw acib 0x68300, installed at 0x6246c]; and state 2 copies them into the
+request block at +0x6C and +0x6D to +0x6F [fw acib 0x6871a onwards]. What the four mean is
+not traced.
+
+Two limits worth stating plainly. Nothing in the image takes the address of the function that
+posts event 3, so what calls it is open. And the request block that state 2 builds is
+only known by its offsets, because what the three calls it is handed to do with it was not
+followed [fw acib 0x68748 to 0x68762]; the one field traced into it on purpose is bit 2 of the
+host's flag byte, at the block's +0x50 (5.1).
+
+`openulla/procedure.py` is this table, and `tests/test_procedure.py` walks it.
+
 ## 6. Controller interface: HCI vendor commands
 
 The source's host starts the whole thing with vendor command **0xFE50** [fw acib table at
@@ -783,6 +891,13 @@ shape with five parameters and event id 0x0A09 [fw acib 0x11d74]; what it report
 Mode values [fw rkof 0x1be190]: 0 ordinary ACL, 1 ULLA on, 2 lite mode on.
 Result values [fw rkof 0x1be5bc]: 0 success, 1 error, 2 failed to establish, 3 setup rejected
 by peer, 4 supervision timeout error.
+
+Both lists are exactly that long, three names and five, and the formatter that prints them
+indexes each list by the value with no bound check at all [fw rkof 0x2774c, the two loads at
+0x27760 and 0x27766]. So a mode of 3 or a result of 5 does not print "invalid": it prints the
+name that happens to sit next to the list, which for the mode list is the first of the event
+names. The reason byte is the one of the three that is checked, through the branch table of
+section 5.4. It is worth knowing which way round that is before trusting a log.
 
 ### 6.0 What a source actually puts in those seven bytes
 
@@ -1089,9 +1204,14 @@ rule that was read from the firmware or measured.
 7. **Emit the setup request** and be ready for the four checks and their reasons (5.1, 5.4),
    or to receive one and answer it; the accept decision reads none of the PDU's own fields.
 8. **Report the outcome to your host** as the nine-byte vendor event, and expect the manager
-   to move on the link-up event (6, 3.6).
-9. **Do not expect to send back everything you receive**: a third of service 4's opcodes have
-   no inbound handler at all, the status reply among them (2.4).
+   to move on the link-up event (6, 3.6). Which result you report is not a choice: the
+   firmware has a different one for a local failure, a peer's refusal and a link that went
+   away in each of the two phases (5.9).
+9. **Keep the procedure's own state** if you want to behave like the firmware rather than
+   merely interoperate: it answers an unexpected event by staying where it is, waits for two
+   independent conditions before sending 0x74, and three before it goes on (5.9).
+10. **Do not expect to send back everything you receive**: a third of service 4's opcodes have
+    no inbound handler at all, the status reply among them (2.4).
 
 Steps 1 to 5 are what a Linux host can do today, and `openulla/` does them. Steps 6 to 8 need
 a controller that exposes its link-manager interface, which is the wall this project is at.
