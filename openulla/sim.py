@@ -111,9 +111,11 @@ class Link:
             return answer.host_event  # the peer refused, and that is the whole exchange
         if answer.pdu:
             self.pdus.append(("source -> sink", answer.pdu))
-            following = peer.receive(answer.pdu)
-            if following:
-                self.pdus.append(("sink -> source", following))
+            # Nothing answers a configuration PDU on the air: the receiver hands its two
+            # values to the procedure and sends nothing back (5.2), so a reply here would
+            # mean the responder had invented one.
+            if peer.receive(answer.pdu):
+                raise ProtocolError("a configuration PDU is not answered on the air")
         # What follows is the step the earbud's own firmware cannot take: nothing in it posts
         # the event its procedure's third state waits for (protocol.md 5.9), so a source has
         # to drive it. The simulator does, and says so rather than pretending otherwise.

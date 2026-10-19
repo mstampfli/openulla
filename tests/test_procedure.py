@@ -316,3 +316,81 @@ def test_the_third_machine_keeps_its_state_on_anything_else():
     assert (step.after, step.expected) == (ThirdState.AWAIT_MODULE_RESULT, False)
     with pytest.raises(ProtocolError):
         ThirdProcedure(busy=True).feed(Event.BEGIN)
+
+
+# the accept sets of 5.9 and 5.10, state by state -----------------------------------------
+
+SOURCE_ACCEPTS = {
+    State.SEND_SETUP: {Event.BEGIN},
+    State.AWAIT_SETUP_ACCEPTED: {Event.SETUP_ACCEPTED, Event.LINK_STATE_ADVANCED},
+    State.AWAIT_MODULE_CALL: {Event.MODULE_CALL},
+    State.AWAIT_MODULE_RESULT: {Event.MODULE_RESULT},
+    State.AWAIT_TEARDOWN_BEGIN: {Event.TEARDOWN_BEGIN},
+    State.AWAIT_TEARDOWN_ACCEPTED: {Event.LINK_STATE_ADVANCED, Event.TEARDOWN_ACCEPTED},
+    State.RESET_ONLY: set(Event),
+    State.AWAIT_TEARDOWN_STEP: {Event.CALLBACK_A, Event.CALLBACK_B},
+    State.AWAIT_TEARDOWN_DONE: {Event.CALLBACK_A, Event.CALLBACK_B, Event.TEARDOWN_COMPLETE},
+}
+SINK_ACCEPTS = {
+    SinkState.AWAIT_SETUP_REQUEST: {Event.BEGIN},
+    SinkState.AWAIT_BOTH_LINKS: {Event.SETUP_ACCEPTED, Event.LINK_STATE_ADVANCED},
+    SinkState.AWAIT_MODULE_CALL: {Event.LINK_STATE_ADVANCED, Event.MODULE_CALL},
+    SinkState.AWAIT_MODULE_RESULT: {Event.MODULE_RESULT},
+    SinkState.AWAIT_TEARDOWN_BEGIN: {Event.TEARDOWN_BEGIN},
+    SinkState.AWAIT_TEARDOWN_ACCEPTED: {Event.TEARDOWN_ACCEPTED},
+    SinkState.AWAIT_TEARDOWN_STEP: {Event.CALLBACK_A},
+    SinkState.AWAIT_TEARDOWN_DONE: {Event.CALLBACK_B},
+}
+THIRD_ACCEPTS = {
+    ThirdState.AWAIT_SETUP_REQUEST: {Event.BEGIN},
+    ThirdState.AWAIT_MODULE_CALL: {Event.SETUP_ACCEPTED, Event.LINK_STATE_ADVANCED},
+    ThirdState.AWAIT_MODULE_RESULT: {Event.MODULE_CALL},
+    ThirdState.AWAIT_TEARDOWN_BEGIN: {Event.MODULE_RESULT},
+    ThirdState.AWAIT_TEARDOWN_ACCEPTED: {Event.TEARDOWN_BEGIN},
+    ThirdState.AWAIT_TEARDOWN_STEP: {Event.TEARDOWN_ACCEPTED},
+    ThirdState.AWAIT_TEARDOWN_DONE: {Event.CALLBACK_A},
+}
+
+
+def test_every_source_state_expects_exactly_what_the_table_says():
+    """And an unexpected event never moves it, except where the firmware resets. [5.9]"""
+    for state, accepted in SOURCE_ACCEPTS.items():
+        for event in Event:
+            step = Procedure(state=state).feed(event)
+            assert step.expected == (event in accepted), (state, event)
+            if not step.expected:
+                assert step.after in (state, State.SEND_SETUP), (state, event)
+
+
+def test_every_sink_state_expects_exactly_what_the_table_says():
+    for state, accepted in SINK_ACCEPTS.items():
+        for event in Event:
+            step = SinkProcedure(state=state).feed(event)
+            assert step.expected == (event in accepted), (state, event)
+            if not step.expected:
+                assert step.after == state, (state, event)
+
+
+def test_every_third_state_expects_exactly_what_the_table_says():
+    for state, accepted in THIRD_ACCEPTS.items():
+        for event in Event:
+            step = ThirdProcedure(state=state).feed(event)
+            assert step.expected == (event in accepted), (state, event)
+            if not step.expected:
+                assert step.after == state, (state, event)
+
+
+def test_feed_all_walks_every_machine():
+    """The three dispatchers' batch entry, which the single-step tests do not reach."""
+    source = Procedure()
+    assert [s.after for s in source.feed_all([Event.BEGIN, Event.SETUP_ACCEPTED])] == [
+        State.AWAIT_SETUP_ACCEPTED, State.AWAIT_MODULE_CALL
+    ]
+    sink = SinkProcedure(role_byte_is_one=True)
+    assert [s.after for s in sink.feed_all([Event.BEGIN, Event.MODULE_CALL])] == [
+        SinkState.AWAIT_MODULE_CALL, SinkState.AWAIT_MODULE_RESULT
+    ]
+    third = ThirdProcedure()
+    assert [s.after for s in third.feed_all([Event.BEGIN, Event.SETUP_ACCEPTED])] == [
+        ThirdState.AWAIT_MODULE_CALL, ThirdState.AWAIT_MODULE_CALL
+    ]

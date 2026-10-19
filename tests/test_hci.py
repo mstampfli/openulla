@@ -193,3 +193,48 @@ def test_the_streams_control_path():
     for packet in (hci.stream_dma_address(0), hci.stream_start(), hci.stream_stop(),
                    hci.read_stream_descriptor()):
         assert int.from_bytes(packet[0:2], "little") in hci.ULLA_SESSION_COMMANDS
+
+
+def test_every_guard_in_this_module_refuses_what_the_firmware_refuses():
+    """Each of these is a bound read from a handler, so each deserves a red path."""
+    with pytest.raises(ProtocolError):
+        hci.opcode(0x40, 0)  # six bits of group
+    with pytest.raises(ProtocolError):
+        hci.opcode(0, 0x400)  # ten of command
+    with pytest.raises(ProtocolError):
+        hci.command(0x1_0000)
+    with pytest.raises(ProtocolError):
+        hci.command(0xFE50, bytes(256))
+    for call in (
+        # The dataclass validates when it serialises, the plain builders straight away.
+        lambda: hci.manager_setup(0x0F00, 0).command(),
+        lambda: hci.ulla_second_command(0x0F00, 0),
+        lambda: hci.read_link_band(0x0F00),
+        lambda: hci.set_link_band(0x0F00, 0),
+    ):
+        with pytest.raises(ProtocolError):
+            call()  # a connection handle is twelve bits
+    with pytest.raises(ProtocolError):
+        hci.country_codes([])
+    with pytest.raises(ProtocolError):
+        hci.country_codes([8])
+    with pytest.raises(ProtocolError):
+        hci.country_code(8)
+    assert hci.country_code(7) == bytes.fromhex("31 fd 01 07")
+    assert hci.country_codes([0, 0xFF]) == bytes.fromhex("92 ff 03 02 00 ff")
+
+
+def test_the_event_parser_refuses_every_malformed_shape():
+    good = hci.ModeChangeEvent(1, 1, 0, 0xFF).to_bytes()
+    assert hci.ModeChangeEvent.from_bytes(good) == hci.ModeChangeEvent(1, 1, 0, 0xFF)
+    for broken in (
+        b"\xff",  # too short
+        bytes.fromhex("3e 07 00 0a 01 00 01 00 ff"),  # not the vendor event
+        bytes.fromhex("ff 07 09 0a 01 00 01 00 ff"),  # not the mode-change id
+    ):
+        with pytest.raises(ProtocolError):
+            hci.ModeChangeEvent.from_bytes(broken)
+    # A mode and a result outside their name tables print as numbers, not as an exception,
+    # because the firmware's own formatter does not bound-check them either (protocol.md 6).
+    assert "0x07" in hci.ModeChangeEvent(1, 7, 9, 0xFF).describe()
+    assert "0x09" in hci.ModeChangeEvent(1, 7, 9, 0xFF).describe()

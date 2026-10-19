@@ -4,7 +4,7 @@ import pytest
 from openulla import aap, procedure, sibling, sim
 from openulla.codes import AapReject, Mode, RejectReason, Result, SessionStatus
 from openulla.controller import AcceptChecks, Responder
-from openulla.errors import Refused
+from openulla.errors import ProtocolError, Refused
 from openulla.hci import UllaSetup
 from openulla.session import Event, State
 from openulla.sink import Sink
@@ -155,3 +155,27 @@ def test_the_teardown_half_of_both_procedures_runs_and_reports():
     # And both machines are back at their own first state.
     assert link.initiator.procedure.state is procedure.State.SEND_SETUP
     assert link.sink.responder.procedure.state is procedure.SinkState.AWAIT_SETUP_REQUEST
+
+
+def test_the_simulators_own_edges():
+    """The paths a happy run does not take: a held answer, a timeout, a bare exchange."""
+    link = sim.connect()
+    # exchange() is the one-PDU helper, used by the demo for the feature and band messages.
+    from openulla import lmp
+    reply = link.exchange(lmp.Features(0x60).to_bytes())
+    assert lmp.parse(reply) == lmp.Features(0, reply=True)
+    assert link.pdus[-2][0] == "source -> sink" and link.pdus[-1][0] == "sink -> source"
+    assert link.exchange(lmp.AllowedBands(0xE6).to_bytes()) == b""  # nothing comes back
+
+    # A sink whose sibling link is not ready holds the accepted PDU, and the simulator says so
+    # rather than pretending the setup finished.
+    held = Responder(sibling_ready=False)
+    link = sim.connect()
+    link.open_and_start(mode=0)
+    link.quiesce()
+    with pytest.raises(ProtocolError):
+        link.controller_setup(SETUP, responder=held)
+
+    # And the transport raises instead of blocking when nothing has been sent.
+    with pytest.raises(TimeoutError):
+        sim.connect().transport.recv(timeout=0.0)
