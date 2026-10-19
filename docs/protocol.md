@@ -1607,6 +1607,11 @@ per-link record, one byte at the record's +0xC4 with the records 0xC8 apart
 0xFE7B's byte goes into exactly that place. Below those two is the DMA and radio side, which
 is as far as this document follows.
 
+One asymmetry to expect: of those five, the earbud's own session manager sends only the start
+and the stop, never 0xFE57 [fw rkof 0x26940 and 0x26866 among the 62 ids its queued sender
+can carry, which do not include 0x257]. So on an earbud that address arrives from somewhere
+else, and this document does not say where.
+
 So an implementation that gets as far as a working link has a defined way to drive the stream:
 hand the controller a DMA address, start, stop, and read that descriptor back. What travels
 through the DMA is the part that is still open, and the next three notes say why.
