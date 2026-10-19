@@ -1418,7 +1418,9 @@ spaces share a dispatcher and one handler.
 Three things establish it. The features handler answers with escape opcode **0x7F** and
 extended opcode **4** passed as immediates, which is the specification's extended features
 response [fw acib 0x2777c, 0x2777e]. The table has 34 entries for extended opcodes 0x01 to
-0x22, which is exactly the specification's extended opcode range. And every transmit length 5.7
+0x22, which is the specification's extended opcode range up to the three SAM PDUs that Core 5.2
+added above it; the top of that range is version-dependent, and 0x22 is where this controller's
+table ends. And every transmit length 5.7
 lists for this space is the length the specification gives the extended opcode of that number:
 12 bytes for the features request and response at 0x03 and 0x04, 15 for the clock adjustment at
 0x05, 3 for its acknowledgement at 0x06, 6 for its request at 0x07, 3 for the packet-type-table
@@ -1506,7 +1508,9 @@ approximately; an earlier version of this paragraph cited the store and called i
 **four** parallel arrays of eighteen entries: an allowed-mask bit, a maximum payload, the
 four-bit TYPE code that goes in the baseband header, and the slot count coded 0, 1 and 2 for
 one, three and five slots [fw acib 0xf11a0, 0xf11e8, 0xf120c and 0xf121e, read at 0x137a6 to
-0x137ca, 0x14584, 0x149ee and 0x4a3b4]. Twelve of the eighteen are the
+0x137ca, at 0x14548 and 0x1454a, at 0x149ee, and at 0x4a362 and 0x4a364; an earlier version of
+this list named 0x14584 and 0x4a3b4, which are the literal-pool words those loads read and not
+instructions]. Twelve of the eighteen are the
 specification's, carrying exactly its payload maxima, and that is the control which identifies
 the table: 17, 27, 54, 83, 121, 183, 224, 339, 367, 552, 679 and 1021 bytes all appear. Six are
 left over:
@@ -1520,17 +1524,48 @@ left over:
 | 20 | 1288 | 0xE | 5 | 4 Mb/s, five slots |
 | 21 | 2586 | 0xF | 5 | 8 Mb/s, five slots |
 
-**The slot counts are not inferred: the firmware states them.** The fourth parallel array holds
-one byte per entry, 0, 1 and 2 for one, three and five slots, and it agrees with every entry
-above [fw acib the array at 0xf121e, its pointer loaded at 0x149ee and indexed at 0x149f8]. The
-TYPE codes say the same thing a second way, since table 2 uses exactly the seven codes table 1
-does and those codes carry fixed slot counts there: 0x3, 0x4 and 0x8 for one slot, 0xA and 0xB
-for three, 0xE and 0xF for five.
+**The fourth parallel array states a three-valued class per entry, which this project reads as
+the slot count.** It holds one byte per entry, 0, 1 or 2, and its consumer uses that byte as an
+index: it scales by eight and selects one of three counter pairs [fw acib the array at 0xf121e,
+its pointer loaded at 0x149ee, indexed at 0x149f8, scaled at 0x149fc]. So the firmware states a
+class and not a number of slots, and what maps 0, 1 and 2 onto one, three and five slots is the
+TYPE codes, since table 2 uses exactly the seven codes table 1 does and those carry fixed slot
+counts there: 0x3, 0x4 and 0x8 for one slot, 0xA and 0xB for three, 0xE and 0xF for five. An
+earlier version of this paragraph said the slot counts were stated rather than inferred and
+offered the TYPE codes as a second, independent way of reading them; it is one argument, and
+the fourth array corroborates its *grouping* rather than its values. The twelve specified
+entries are what tie the class to a slot count outside this firmware, because their payloads
+are the Bluetooth specification's own figures for one-, three- and five-slot packets.
 
 **The mask bits lie at 16 to 21**, above the sixteen-bit packet-type field a host can reach,
 which is why section 9 of [measurements.md](measurements.md) found no way to ask for them;
 feeding the recovered table nothing but that sixteen-bit field reproduces that result, since the
 best it can then choose is 3-DH5.
+
+**And which entries each table may select is not inferred either: the firmware states it as
+three immediates.** A requested packet-type mask is never searched raw. One function bounds the
+link index to eight, selects a constant by the active table, ANDs the request with it, stores
+the result in the link's record at +0x40 and tail-calls the chooser [fw acib 0x1445e the bound,
+0x1447a the table-2 constant, 0x1447e and 0x14482 table 0's halves, 0x1448a and 0x1448e table
+1's, 0x14492 the AND, 0x14494 the store, 0x144a0 the tail call]:
+
+| active table | constant | what it permits |
+|---|---|---|
+| 0 | **0xFFC0CCF9** | DM1, DH1, DM3, DH3, DM5, DH5 |
+| 1 | **0xFFC033EF** | DM1, 2-DH1, 3-DH1, 2-DH3, 3-DH3, 2-DH5, 3-DH5 |
+| 2 | **0xFFFF00E9** | DM1 and Apple's six |
+
+Those three words reproduce the whole table-membership column, DM1's presence in all three
+included. The halves above bit 15 are the part worth reading twice: tables 0 and 1 carry
+**0xFFC0**, which allows bits 22 to 31 and clears 16 to 21, while table 2 carries **0xFFFF**.
+Apple's six bits are legal in exactly one table, said by the image rather than argued from
+which branch of the mask filter leaves them alone, which is how this project put it before.
+
+This is also why `openulla.packets.choose` takes the table as an argument. Searching a raw
+request does not merely over-admit, it answers wrongly: 0xFFFF on a table-2 link reaches the
+chooser as 0xE9 and selects DM1, where an unmasked search would answer 3-DH5, a packet that
+link cannot send. When no bit matches, the chooser logs and stores 17 - DM1's payload - in the
+link's +0x3E [fw acib 0x137ba, 0x137c0, 0x137ca].
 
 **The split into two rate groups is also the firmware's own, and it says which group is which.**
 A fifth array holds the eighteen TYPE codes grouped by rate class rather than in table order
@@ -1545,16 +1580,34 @@ four groups of three:
 | 12 to 14 | 0x4, 0xA, 0xE | the **lower** of Apple's two, reusing the 2 Mb/s pattern |
 | 15 to 17 | 0x8, 0xB, 0xF | the **higher**, reusing the 3 Mb/s pattern |
 
-7.3 shows the same index deciding the payload header's width, and indices 12 to 17 are exactly
-the ones that get the wider header, which is what ties these rate classes to these six packet
-types. The two Apple groups repeat EDR's two TYPE patterns, so **which of them is the faster is
-stated by the layout** and not only by the payloads: the group that reuses the 3 Mb/s pattern is
-the one whose entries carry the larger payloads.
+**What ties a rate-class index to an actual packet is a sixth array, and it is decisive.**
+Eighteen halfwords hold the payload maxima in rate-class order [fw acib 0xf77e0]:
 
-**And the array stops at eighteen.** The bytes after it are unrelated, so there are exactly four
-rate classes beyond the basic set and Apple's filings' two extra mode names, HDRp4 and HDRp8,
-are **not** separate packet types in this table. Whatever they are, they are not a fifth and
-sixth group here.
+    17  27  121  183  224  339 | 54  367  679 | 83  552  1021 | 112  703  1288 | 242  1416  2586
+
+Every group is identified by payload, not by position. Indices 6 to 8 carry 2-DH1, 2-DH3 and
+2-DH5's own maxima and 9 to 11 carry the 3 Mb/s ones, so the standard pair whose rates are
+known sits in this array **slower group first**; indices 12 to 14 and 15 to 17 are Apple's two
+groups, and they follow the same shape. A seventh array of eighteen halfwords beside it gives
+each index's slot class, 1, 1, 2, 2, 3, 3 for the basic six and then 1, 2, 3 four times [fw
+acib 0xf77bc, read at 0xd2d24]. 7.3 shows the same index deciding the payload header's width.
+
+**Which group is the faster comes from the payloads, not from the TYPE patterns.** The two
+Apple groups do repeat EDR's two TYPE patterns, and that is consistent with the labelling, but
+it cannot establish it: a packet-type table is a reinterpretation of the same four header bits,
+so reusing a code carries no rate with it. Exchange the two groups' TYPE codes in the image and
+the payload argument would give the same answer while the TYPE argument would give the
+opposite. What does decide it is that at a fixed slot count one group's payload is about twice
+the other's, in the same array where the standard 2 and 3 Mb/s groups sit in that same order.
+An earlier version of this paragraph said the faster group was "stated by the layout", which
+claimed the TYPE patterns as an argument they cannot carry.
+
+**The array holds eighteen entries, but nothing in the firmware bounds the read.** Its single
+reader indexes it with a raw byte out of a descriptor and tests only whether that byte exceeds
+0xB [fw acib 0xd2a54 the byte, 0xd2d92 the index, 0xd2dc8 the test]. So eighteen is what the
+parallel arrays hold, not a limit the code enforces, and reading Apple's filings' two extra
+mode names HDRp4 and HDRp8 as **not** separate packet types here is an inference from the data
+layout rather than from a bound. An earlier version of this paragraph asserted the bound.
 
 **What the payloads add is the factor between the two rates, and no more than that.** Dividing a
 payload by a rate gives the time it occupies, and the three- and five-slot pairs agree to about
@@ -1624,14 +1677,17 @@ body is 0x2a204 to 0x2a212; the same shape at 0x28f7a and 0x29212 through 0x293a
 specification's form goes out only when **all three** are clear. 5.11 states that three-way condition correctly for the reply it traces, and
 this section now agrees with it rather than contradicting it.
 
-The last row's sender also confirms 5.7's body layout from the other side: before choosing a
-form each path copies **ten bytes**, and each puts them where 5.7 says that form's builder reads
-them. On the specification's path they go to the message block's **+0x16**, which is where 5.7
-has the builder for 0x7F/0x11 read ten bytes; on Apple's they go to **+0x11**, which is where
-5.7 has 0x7B/0x1A read ten bytes after its leading byte [fw acib 0x45ff8 after the branch at
-0x45f94, and 0x45fc4 on the other side]. 5.7's layouts were read off the builders, so each form
-is confirmed twice over from opposite ends. An earlier version of this said the copy happened
-before the choice and named only one destination.
+The last row's sender also confirms 5.7's body layout from the other side: **after** choosing a
+form, each path copies **ten bytes** to that form's own offset, and each offset is where 5.7
+says that form's builder reads them. On the specification's path they go to the message block's
+**+0x16**, which is where 5.7 has the builder for 0x7F/0x11 read ten bytes; on Apple's they go
+to **+0x11**, which is where 5.7 has 0x7B/0x1A read ten bytes after its leading byte [fw acib
+0x45f94 the branch, 0x45fc4 Apple's copy and 0x45fd6 its 0x7B, 0x45ff8 the specification's and
+0x4600a its 0x7F]. Each path also copies the same ten bytes a second time, into a different
+structure at +0x207 [fw acib 0x45fb2 and 0x45fee]. 5.7's layouts were read off the builders, so
+each form is confirmed twice over from opposite ends. Two earlier versions of this paragraph
+got the ordering wrong, the first naming only one destination and the second still saying the
+copy happened before the choice while its own correction note said otherwise.
 
 The lengths come from 5.7's own table, which was written before any of this was known, so the
 agreement is not circular. 0x7B/0x1A is the clearest case of the pattern: "one byte, then ten
@@ -1677,9 +1733,15 @@ logs a second time when it is negative, so the value is **signed** in the diagno
 a byte is what it passes on, and then calls the applier [fw acib 0x3c216, 0x3c226, 0x3c228,
 0x3c23e]. The applier branches on a per-link gate, and the two paths are different things.
 
-- **Gate set**: it only *stores* the byte, at the record's +0x6B, and only while the link's
-  active packet-type table is 2; with any other table it takes an error path [fw acib 0x25c28,
-  0x25c2c the test, 0x25c4a the store through 0x154e4, 0x25c50 the error].
+**The table-2 test comes first and governs both paths**, which an earlier version of this
+section attached to the store alone: the applier reads the link's +0x17E, compares it against 2
+and branches away if it differs, and the gate is only examined inside that arm [fw acib 0x25c28
+the read, 0x25c2c the test, 0x25c2e the branch, 0x25c30 the gate test]. A link in table 0 or 1
+neither stores nor applies anything; it falls through to a common exit, and it only logs on the
+way out when the gate is set [fw acib 0x25c4e the log test, 0x25c66 the exit]. Within table 2:
+
+- **Gate set**: it only *stores* the byte, at the record's +0x6B [fw acib 0x25c4a the store
+  through 0x154e4].
 - **Gate clear**: it *applies*. It compares the byte against the link's current permission,
   writes it if they differ, and re-runs the packet-type chooser [fw acib 0x25c6e the read,
   0x25c8c the write, 0x25c9a into 0x1373c, which is the function 5.13's chooser and mask filter
@@ -1694,13 +1756,27 @@ are the six packet types of 5.13, so this byte is the permission for them. The g
 separates storing from applying: the one function that replays a stored byte clears the gate
 first, and the message's own arm does not [fw acib 0x15636].
 
-**That gives a third confirmation of which of the six is 4 Mb/s and which is 8, and it comes
-from neither of the first two arguments.** The filter keeps the **even** mask bits when **bit 4**
-of the permission is set, and the **odd** ones only when **bits 3 and 4** are both set. One bit
-enables one rate and a second bit adds the other, which is the shape the specification uses for
-EDR's own two rates, and the two sets those tests pick out are precisely the two 5.13 named from
-the TYPE codes and from the payload arithmetic. `openulla/lmp.py` encodes the message and reports
-which types a given byte leaves selectable.
+**That gives a third confirmation of the split into two groups of three - and not of which
+group is the faster.** The filter clears mask bits 16, 18 and 20 unless **bit 4** of the
+permission is set, and bits 17, 19 and 21 unless **bits 3 and 4** are both set. The two sets
+are two immediates in the instruction stream: 0x2A0000 clears bits 17, 19 and 21 and 0x150000
+clears bits 16, 18 and 20 [fw acib 0x1377e the first, 0x13786 the second]. Those sets are
+exactly
+the two groups 5.13 reads off the TYPE codes and the rate-class array, so the partition now has
+three independent sources.
+
+It cannot say which group is faster, though, and an earlier version of this paragraph claimed
+it could. **The same filter's standard branch gates the specification's own two EDR rates with
+the same two bits, and it puts the faster set on the weaker condition**: bit 4 alone keeps
+3-DH1, 3-DH3 and 3-DH5, while 2-DH1, 2-DH3 and 2-DH5 go only when bits 3 and 4 are both clear.
+Its two immediates are 0x2204 and 0x1102 [fw acib 0x13790 the first, 0x13794 its test, 0x1379a
+the second, 0x1379e its test]. In Apple's branch that bit-4-alone condition keeps the *smaller*
+payloads. So transferring the shape gives the opposite answer, and the orientation has to come
+from the payloads at a fixed slot count, as 5.13 says. The earlier paragraph also described
+this shape as the specification's; it is this firmware's own permission byte, and the
+specification announces its two EDR rates as two independent feature bits, both of which real
+earbuds set [testing.md, the measured feature pages]. `openulla/lmp.py` encodes the message and
+reports which types a given byte leaves selectable, keyed on those two immediates.
 
 There is a **standard counterpart**: the same reader and writer take a flag, and with it clear
 they touch the record's **+0x67** instead, which is the byte the filter's standard branch
@@ -2422,17 +2498,31 @@ setter]. That block's own initialiser then says what the controller boots with: 
 on would look like.
 
 The same initialiser walks the block's per-link records and so counts them: it steps a negative
-offset up to zero in strides of **0xC4**, nine times, clearing one field of each
-[fw acib 0x133ec to 0x133fc]. That stride and base are the ones the 0x7B/0x0C setter of 5.14
-indexes with, so the two findings are reading one array of nine link records.
+offset up to zero in strides of **0xC4**, nine times, writing **two** fields of each record -
+zero into the record's +0xB4 and **0xFF** into its +0x6E [fw acib 0x133ec to 0x133fc, with the
+offsets 0x798 and 0x752 read against the loop's starting offset of -0x6E4, which is nine
+strides]. An earlier version of this said it cleared one field. That stride and base are the
+ones the 0x7B/0x0C setter of 5.14 indexes with, so the two findings are reading one array of
+nine link records.
 
 **And a host can read back what it set.** One function reads the size at +0x718 and the
 companion byte at +0x730 through their getters, lays them out as a halfword each with a byte
 from another global between them, and sends the result under id **0x105** [fw acib 0x15430 and
 0x15534 the two getters, 0xaec8 to 0xaee8 the layout, 0xaef0 the send]. That is the **only**
-reader of +0x730 in the payload, which is how the two fields are known to belong together. What
-the companion byte's two values of 8 and 0x17 mean is still open; it is not a packet-type index,
-since that table has eighteen entries.
+reader of +0x730 in the payload, which is how the two fields are known to belong together.
+
+What the companion byte means is still open, but it has more writers than 0xFD02's two and that
+narrows it. The byte setter has **seven** call sites [fw acib 0x160ec writing 8 and 0x16104
+writing 0x17, both 0xFD02's; 0x1d010 and 0x1d08c from the two halfword commands below; 0x1e3c6
+writing **4 or 8** on a test of another value at 0x1e3c0; and 0x61a1e and 0x61a56, both 8]. An
+earlier version of this paragraph said the byte had two values. The two halfword commands are
+the informative ones: each derives the byte by dividing a constant by the size it has just set,
+**0x5180 / (size + 8)** on one and **0x5140 / size** on the other [fw acib 0x1d004 and 0x1d086].
+So the byte is a quotient of a fixed budget by a packet length, not a second independent
+setting, and 0xFD02's own pair (2586, 8) and (339, 0x17) are consistent with that reading
+without establishing it. It is still not a packet-type index, since that table has eighteen
+entries. The boot value is not the literal 8 either: the initialiser passes 8 through a function
+and stores what comes back [fw acib 0x133d2 to 0x133d8].
 
 **The earbud never sends this command to itself.** 0xFD02's command code 0x102 appears nowhere
 in the RTKitOS features image, and neither does the full opcode. The queued sender that image
@@ -2459,16 +2549,16 @@ command at all. The size setter has **five** call sites, not two:
 | site | what writes the size |
 |---|---|
 | acib 0x160f4 and 0x1610c | 0xFD02's handler, 2586 or 339 |
-| acib 0x1cff4 | the handler of **0xFD7C**, with the halfword at its request's +0xB, so any value [fw acib handler 0x1cfd0] |
-| acib 0x1d06e | the handler of **0xFD7D**, likewise [fw acib handler 0x1d038] |
+| acib 0x1cff4 | the handler of **0xFD7C**, with the halfword from its request, behind a state test that otherwise returns an error [fw acib handler 0x1cfd0, the test at 0x1cfe6 and the error at 0x1cfee] |
+| acib 0x1d06e | the handler of **0xFD7D**, likewise, except that **0xFFFF means leave it alone**: both of its writes are skipped on that value [fw acib handler 0x1d038, the sentinel at 0x1d05a and its two tests at 0x1d05e and 0x1d068] |
 | acib 0x57ac6 | a hard-coded **1024**, inside the function at acib 0x57a8c [fw acib 0x57ac2] |
 
 That last function is reached from **0xFD5F**'s handler and also from acib 0x57b30, which is not
 in the command table at all [fw acib callers 0x1c632 inside handler 0x1c618, and 0x57d70]. So a
 host is not confined to the two values and not to one command, and the controller's own code
 writes the field with a constant on a path no host has to touch. What **is** established: the
-block boots with 2586, 0xFD02 writes one of two values, three other commands write it too, and
-one internal path writes 1024.
+block boots with 2586, 0xFD02 writes one of two values, three other commands write it too, each
+behind its own gate, and one internal path writes 1024.
 
 ### 6.9 One command puts a link into Apple's packet-type table
 
@@ -2501,10 +2591,25 @@ It is also an independent confirmation of the six. 5.13 derived that set from th
 arrays and 5.14 from two bit tests in a filter; here the same six appear as a single immediate
 written by a command handler, which none of those arguments could have produced.
 
-One caution, so the table above is not read as more than it says: what the link's **+0x78** is
-has not been established. The mask the chooser actually walks comes from the 0x1000B494 record's
-+0x40 [fw acib 0x13750], which is a different structure. What is established is that this
-handler writes that immediate there, and what the immediate is.
+**The link's +0x78 is the requested packet-type mask, and it does reach the chooser.** An
+earlier version of this section said what it was had not been established and that the mask the
+chooser walks came from a different structure; the same handler resolves it four instructions
+later. It reads the link's active table from +0x17E, the mask from +0x78 and the link index
+from +7, and passes the three to the resolver of 5.13 [fw acib 0x16a18, 0x16a1a, 0x16a1c,
+0x16a20], which masks the value with the active table's legality constant, stores the result in
+the 0x1000B494 record's +0x40 and tail-calls the chooser [fw acib 0x14492, 0x14494, 0x144a0].
+So +0x78 is the request and +0x40 is the request after the table's own filter - the same value
+at two stages, not two structures. Writing 0x3F0000 there and 2 at +0x17E therefore does
+exactly what the table above suggests: on table 2 the constant is 0xFFFF00E9, so all six
+survive the AND.
+
+**One thing this section under-reports rather than overstates.** The flag byte's bit 0 goes to
+a global at 0x1000BC38 + 0xD0 [fw acib 0x169c4 to 0x169ce], and that global is the first thing
+the mask filter tests: when its bit 0 is set the filter takes the table-2 branch for **every**
+link, whatever that link's own +0x17E says [fw acib 0x13760 the load, 0x13764 and 0x13766 the
+test and its branch past the per-link test at 0x1376a]. So the one flag byte has a reach beyond
+the link named in the request. The handler also stores the request's +0xF into the same global
+block at +0xDD and passes +0x10 to another function [fw acib 0x169f0, 0x169ee].
 
 ## 7. The audio layer, and what is not known
 
@@ -2693,7 +2798,9 @@ follows from their own size before any firmware is read. That header is sixteen 
 LLID, one of FLOW, a **ten-bit** length at bit 3, and three bits above it the specification
 leaves undefined. Ten bits hold 1023. The five-slot entry of Apple's table carries **2586**.
 
-The firmware has the wider header, and keeps both. A block of leaf accessors covers every form:
+The firmware has the wider header, and keeps both. A block of leaf accessors covers every
+length field; it has one more member than this table, a writer for the byte form's LLID and
+FLOW [fw acib 0x78cb2]:
 
 | what it touches | read | write |
 |---|---|---|
@@ -2721,9 +2828,22 @@ Lay that against the array and it is exact. Indices 0 and 1 are TYPE 0x3 and 0x4
 and DH1, the only packets that use the one-byte header. Indices 2 to 0xB are the rest of the
 basic-rate set and both EDR rate groups, all of which use the two-byte header with its ten-bit
 length. **Indices 0xC to 0x11 are Apple's six**, and they take the twelve-bit field, the two
-one-slot ones included. That matches `openulla/packets.py`'s own width rule, which was derived
-from a different question entirely - whether each entry can express its own maximum - so two
-independent routes give the same assignment.
+one-slot ones included.
+
+Two cautions about that sentence, because an earlier version of it claimed more than the
+firmware says. **The second test is not a range.** It reads `cmp r6, #0xb` followed by a
+branch-if-higher [fw acib 0xd2dc8], so the rule the firmware enforces is "anything above 0xB
+takes the twelve-bit writer" and there is no upper bound on it anywhere in the function; 0xC to
+0x11 is simply where the eighteen entries that exist end. **And this is the only route to the
+assignment, not one of two.** `openulla/packets.py`'s width rule is `entry.tables ==
+(TABLE_APPLE,)`, which is this same rule restated rather than an independent derivation, and
+the test named beside it, `test_every_payload_fits_its_own_length_field`, is a consistency
+check that is far weaker than it looks: the smallest field that holds each payload would give
+**ten** bits to 112, 242 and 703, so that test discriminates on one entry only, 2-DH1's 54
+bytes against a five-bit field. What establishes twelve bits for all six is the index test
+above and nothing else. A second selector in the payload agrees with it while keying on the
+three-valued slot class rather than the index [fw acib 0xd5d30 to 0xd5d86], which is a
+consistency check on the reading and not a second derivation of it either.
 
 A second function reaches the same twelve-bit writer while testing the active table against 2
 and the allowed mask against **0x3F0000**, which is exactly the six mask bits of 5.13 [fw acib

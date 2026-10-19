@@ -47,6 +47,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from openulla.errors import ProtocolError
+
 # The table a link uses. 0 and 1 are the specification's basic-rate and EDR tables; 2 is
 # reachable only through Apple's own packet-type-table request [protocol.md 5.13].
 TABLE_BASIC = 0
@@ -72,14 +74,10 @@ class PacketType:
 # slots, 0xE and 0xF are five. That mapping is the specification's, and the six extra entries
 # reuse it, which is how their slot counts are known rather than guessed.
 #
-# The `tables` column has three sources and they are worth separating. For the twelve specified
-# entries it is the specification's own: a table is a reinterpretation of the four header bits,
-# so DH1 and 2-DH1 cannot both be selectable at once. For the six extra entries it is this
-# firmware: their mask bits are 16 to 21, and the only branch of the packet-type mask filter
-# that leaves those bits alone is the one taken when the active table is 2 [fw acib 0x1376a the
-# test, 0x13772 to 0x13786 that branch]. DM1 stays in all three for the same reason read the
-# other way: that branch clears only bits 16 to 21, so bit 3 survives it and the chooser can
-# still pick DM1 whatever table is active.
+# The `tables` column is not inferred at all: the firmware states each table's legal entries as
+# a single immediate, and `TABLE_LEGAL` below holds the three of them. An earlier version of
+# this comment argued the column indirectly, from which branch of the mask filter leaves bits
+# 16 to 21 alone; the immediates say it outright, DM1's membership of all three included.
 TABLE: tuple[PacketType, ...] = (
     PacketType(0, 3, 17, 0x3, 1, "DM1", (0, 1, 2)),
     PacketType(1, 4, 27, 0x4, 1, "DH1", (0,)),
@@ -107,6 +105,41 @@ SPECIFIED_PAYLOADS = (17, 27, 54, 83, 121, 183, 224, 339, 367, 552, 679, 1021)
 APPLE_MASK_BITS = (16, 17, 18, 19, 20, 21)
 # What this project reads the two extra rates as, in Mb/s [see the module docstring].
 APPLE_RATES = (4, 8)
+# Each table's legal entries, as the firmware's own immediate. A packet-type request is ANDed
+# with the constant for the link's active table before the chooser ever runs, and the result is
+# stored in the link's record at +0x40 [fw acib 0x1447a the table-2 constant as a literal,
+# 0x1447e and 0x14482 the halves of table 0's, 0x1448a and 0x1448e table 1's, 0x14492 the AND,
+# 0x14494 the store, 0x144a0 the tail call to the chooser]. These three words reproduce the
+# whole `tables` column above, and note which bits each permits above bit 15: tables 0 and 1
+# allow 22 to 31 and clear Apple's 16 to 21, table 2 allows all of them.
+TABLE_LEGAL: dict[int, int] = {
+    TABLE_BASIC: 0xFFC0CCF9,
+    TABLE_EDR: 0xFFC033EF,
+    TABLE_APPLE: 0xFFFF00E9,
+}
+# How the permission byte of 5.14 partitions Apple's six bits, as the filter's own two
+# immediates rather than as a parity rule of ours. The first set is cleared unless bits 3 and 4
+# of the byte are both set, the second when bit 4 is clear [fw acib 0x13772 the byte, 0x13778
+# the test of both bits, 0x1377e the first immediate, 0x13782 the bit-4 test, 0x13786 the
+# second]. Together they are exactly `APPLE_MASK_BITS`, which is the partition's third
+# independent confirmation; which of the two groups is the faster does not follow from these
+# gates, and the module docstring says where it does come from.
+PERMISSION_MASK_BOTH_BITS = 0x2A0000
+PERMISSION_MASK_BIT_FOUR = 0x150000
+# The same filter's other branch, taken when the active table is not 2, and the reason the
+# gates above cannot say which Apple group is the faster. It reads the standard permission byte
+# at +0x67 and gates the specification's two EDR rates with the same two bits: the **3** Mb/s
+# set goes when bit 4 is clear, the 2 Mb/s set only when bits 3 and 4 are both clear [fw acib
+# 0x13790 the first immediate, 0x13794 the bit-4 test, 0x1379a the second immediate, 0x1379e
+# the test of both bits]. So "kept by bit 4 alone" is the faster set here and the slower set in
+# Apple's branch. The shape is the same; what it means about rate is not transferable.
+STANDARD_MASK_BIT_FOUR = 0x2204  # 3-DH1, 3-DH3, 3-DH5
+STANDARD_MASK_BOTH_BITS = 0x1102  # 2-DH1, 2-DH3, 2-DH5
+# What the chooser leaves behind when no entry matches: it logs and stores this halfword in the
+# link's record at +0x3E where a payload maximum would go [fw acib 0x137ba the log, 0x137c0 the
+# literal, 0x137ca the store]. It is DM1's 17 bytes, which is why a failed search does not read
+# as an error downstream.
+NO_MATCH_PAYLOAD = 17
 
 
 # The payload header. The specification's one-slot form is eight bits, two of LLID, one of FLOW
@@ -128,8 +161,16 @@ def length_bits(entry: PacketType) -> int:
 
     The one-byte header with its five-bit length belongs to the basic-rate one-slot packets
     alone: every EDR packet carries the two-byte header whatever its slot count, which is why
-    2-DH1 and 3-DH1 are not in that case despite being one slot. Their 54 and 83 bytes would
-    not fit five bits, and `test_every_payload_fits_its_own_length_field` is what says so.
+    2-DH1 and 3-DH1 are not in that case despite being one slot.
+
+    Where this comes from, stated exactly because an earlier version of the docstring implied
+    more: the whole assignment is the firmware's own index test [fw acib 0xd2da4 and 0xd2dc8,
+    protocol.md 7.3], and the table-membership rule below is that test restated. It is not an
+    independent derivation, and the obvious independent rule - the narrowest field that holds
+    the entry's own maximum - gives a *different* answer, ten bits rather than twelve for
+    112, 242 and 703. `test_every_payload_fits_its_own_length_field` is a consistency check
+    that only rules out a five-bit field for 2-DH1's 54 bytes; it says nothing about which of
+    ten and twelve any Apple entry takes.
     """
     if entry.slots == 1 and TABLE_BASIC in entry.tables:
         return LENGTH_BITS_ONE_SLOT
@@ -176,15 +217,28 @@ def for_table(table: int) -> tuple[PacketType, ...]:
     return tuple(entry for entry in TABLE if table in entry.tables)
 
 
-def choose(allowed: int) -> PacketType | None:
-    """The entry the controller picks for an allowed mask, reproducing its own search.
+def choose(allowed: int, table: int) -> PacketType | None:
+    """The entry the controller picks for a requested mask on a link running `table`.
 
-    It walks the table from the last entry down and takes the first whose mask bit the allowed
-    mask permits, so the largest payload wins [fw acib 0x137a8 the starting index, 0x137ae the
-    mask load, 0x137b2 the test, 0x137b6 the decrement].
+    It walks the table from the last entry down and takes the first whose mask bit the mask
+    permits, so the largest payload wins [fw acib 0x137a8 the starting index, 0x137ae the mask
+    load, 0x137b2 the test, 0x137b6 the decrement].
+
+    The table is not optional, because the firmware never searches a raw request: the request
+    is ANDed with the active table's legality constant first and the chooser reads the result
+    [`TABLE_LEGAL`; fw acib 0x14492 the AND, 0x13750 where the chooser loads it]. Leaving that
+    out changes the answer rather than merely widening it - a request of 0xFFFF on a table-2
+    link reaches the chooser as 0xE9, so the entry is DM1, where an unmasked search would
+    answer 3-DH5, a packet that link cannot send at all.
+
+    Returning None is where this stops reproducing the firmware, which has no such answer: it
+    logs and stores `NO_MATCH_PAYLOAD` instead.
     """
+    if table not in TABLE_LEGAL:
+        raise ProtocolError(f"there are three packet-type tables, not a table {table}")
+    permitted = allowed & TABLE_LEGAL[table]
     for entry in reversed(TABLE):
-        if allowed & (1 << entry.mask_bit):
+        if permitted & (1 << entry.mask_bit):
             return entry
     return None
 

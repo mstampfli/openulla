@@ -397,19 +397,27 @@ class PacketPermission:
     def allows(self) -> tuple[packets.PacketType, ...]:
         """Which of Apple's six packet types this byte leaves selectable.
 
-        The filter clears the odd mask bits when bits 3 and 4 are not both set, and the even
-        ones when bit 4 is clear [fw acib 0x13778 to 0x13786]. So the byte does not name a
-        packet; it names which half of each pair survives, and this reports what is left.
+        The filter clears one set of mask bits unless bits 3 and 4 are both set, and the other
+        when bit 4 is clear [fw acib 0x13778 to 0x13786]. So the byte does not name a packet;
+        it names which half of each pair survives, and this reports what is left.
+
+        The two sets come from the firmware's own immediates, `packets.PERMISSION_MASK_*`, and
+        not from a parity rule written here. That distinction has teeth: the sets happen to be
+        the odd and the even mask bits, so `mask_bit % 2` gives the same answers today and
+        would keep giving them if the image's two immediates were exchanged.
         """
         both_set = self.permission & 0x18 == 0x18
         bit_four = bool(self.permission & 0x10)
         allowed: list[packets.PacketType] = []
         for entry in packets.for_table(packets.TABLE_APPLE):
-            if entry.mask_bit not in packets.APPLE_MASK_BITS:
-                allowed.append(entry)  # DM1 is not one of the six and is not filtered here
-                continue
-            odd = entry.mask_bit % 2 == 1
-            if (both_set if odd else bit_four):
+            bit = 1 << entry.mask_bit
+            if bit & packets.PERMISSION_MASK_BOTH_BITS:
+                keep = both_set
+            elif bit & packets.PERMISSION_MASK_BIT_FOUR:
+                keep = bit_four
+            else:
+                keep = True  # DM1 is not one of the six and is not filtered here
+            if keep:
                 allowed.append(entry)
         return tuple(allowed)
 

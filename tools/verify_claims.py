@@ -158,7 +158,29 @@ PACKET_PAYLOADS = 0xF11E8  # one halfword payload maximum per entry
 PACKET_TYPE_CODES = 0xF120C  # one byte of baseband TYPE per entry
 PACKET_SLOTS = 0xF121E  # one byte of slot count per entry, coded 0, 1, 2 for 1, 3, 5 slots
 PACKET_RATE_CLASS = 0xF7804  # the same TYPE codes grouped by rate class, not in table order
+PACKET_RATE_PAYLOAD = 0xF77E0  # the payload maxima in that same order, which identify the groups
+PACKET_RATE_SLOTS = 0xF77BC  # the slot class per rate-class index, read at acib 0xd2d24
+WIDTH_SELECTOR_CMP = 0xD2DC8  # cmp r6, #0xb: a threshold, not the range 0xC to 0x11 [7.3]
 MASK_IMMEDIATE_AT = 0x169E0  # mov.w r0, #0x3f0000 in 0xFDEE's handler, which is those six bits
+# Each packet-type table's legal entries, which the firmware states outright [5.13]. Table 2's
+# is a literal-pool word loaded at 0x1447a; tables 0 and 1 are built by movw/movt pairs under
+# an IT block, so each half is read where it stands.
+LEGAL_TABLE_2_LITERAL = 0x1447A
+LEGAL_MOVW_MOVT = {0: (0x1447E, 0x14482), 1: (0x1448A, 0x1448E)}
+LEGAL_AND = 0x14492  # ands r1, r5: the request met with the constant
+LEGAL_STORE = 0x14494  # str r1, [r0, #0x40]: where the chooser then reads it
+# The mask filter's four immediates [5.14]. Apple's two partition its six bits; the standard
+# branch's two are the specification's own EDR rate pairs, and the bit-4 gate covers the
+# faster set there against the slower one in Apple's branch, which is why the gate shape
+# cannot say which Apple group is faster.
+PERMISSION_IMMEDIATES = (
+    ("Apple's bits-3-and-4 gate", 0x1377E, 0x2A0000),
+    ("Apple's bit-4 gate", 0x13786, 0x150000),
+)
+STANDARD_IMMEDIATES = (
+    ("the 3 Mb/s set", 0x13790, 0x2204),
+    ("the 2 Mb/s set", 0x1379A, 0x1102),
+)
 # The sender that chooses between the two forms: (where the immediate is, what it must be).
 TABLE_SENDER_ARMS = (
     (0x29E46, 0x217F, 0x29E3A, 0x220B),  # movs r1, #0x7f / movs r2, #0xb
@@ -580,6 +602,23 @@ def mov_imm(img, off):
         return None
     field = (((first >> 10) & 1) << 11) | (((second >> 12) & 7) << 8) | (second & 0xFF)
     return thumb_expand(field)
+
+
+def thumb_imm16(img, off):
+    """The sixteen-bit immediate of a Thumb MOVW or MOVT, which carry it as imm4:i:imm3:imm8.
+
+    Neither `mov_imm` nor `data_imm` reads these: both expect the modified-immediate field,
+    and these two instructions take their sixteen bits as they stand. The firmware builds two
+    of the three packet-type legality constants out of a MOVW and a MOVT pair, so each half
+    has to be read where it stands rather than from a literal pool.
+    """
+    first, second = u16(img, off), u16(img, off + 2)
+    if first & 0xFBF0 not in (0xF240, 0xF2C0):  # MOVW T3, MOVT
+        return None
+    imm4 = first & 0xF
+    i = (first >> 10) & 1
+    imm3 = (second >> 12) & 7
+    return (imm4 << 12) | (i << 11) | (imm3 << 8) | (second & 0xFF)
 
 
 def wide_imm(img, off):
@@ -1422,17 +1461,152 @@ def check_packet_type_table(acib, rkof, ctab, sbd1):
         )
     # The fifth array groups the same TYPE codes by rate class: six basic-rate codes, then
     # groups of three, so its last six are these six as two rate groups. [5.13, 7.3]
+    #
+    # The slice is eighteen bytes long by construction, so its length says nothing; what is
+    # checked is the content, and the group comparison below is deliberately read as what it
+    # is - a demonstration that the two EDR groups and the two Apple groups are *not*
+    # distinguishable by TYPE code, which is why 5.13 does not orient the rates from them.
     classes = acib[PACKET_RATE_CLASS: PACKET_RATE_CLASS + len(packets.TABLE)]
-    if len(classes) != 18 or classes[:6] != bytes((0x3, 0x4, 0xA, 0xB, 0xE, 0xF)):
+    if classes[:6] != bytes((0x3, 0x4, 0xA, 0xB, 0xE, 0xF)):
         opening = classes[:6].hex(" ")
         return False, f"the rate-class array opens with {opening}, not the basic-rate six"
     if classes[6:9] != classes[12:15] or classes[9:12] != classes[15:18]:
         return False, "its four groups of three are no longer two repeated patterns"
+    # The sixth array is what ties a rate-class index to an actual entry, by payload identity
+    # rather than by ordering: eighteen halfwords of payload maxima in rate-class order. [5.13]
+    by_class = [u16(acib, PACKET_RATE_PAYLOAD + 2 * i) for i in range(len(packets.TABLE))]
+    if sorted(by_class) != sorted(entry.payload for entry in packets.TABLE):
+        return False, f"0x{PACKET_RATE_PAYLOAD:x} is not the same eighteen payloads: {by_class}"
+    want_groups = {
+        (0, 6): [17, 27, 121, 183, 224, 339],
+        (6, 9): [54, 367, 679],      # 2-DH1, 2-DH3, 2-DH5
+        (9, 12): [83, 552, 1021],    # 3-DH1, 3-DH3, 3-DH5
+        (12, 15): [112, 703, 1288],  # Apple's lower group
+        (15, 18): [242, 1416, 2586],  # Apple's higher group
+    }
+    for (lo, hi), want in want_groups.items():
+        if by_class[lo:hi] != want:
+            return False, f"rate-class indices {lo} to {hi - 1} are {by_class[lo:hi]}, not {want}"
+    # And the standard pair whose rates are known sits slower-group-first, which is the shape
+    # Apple's two groups follow. This is the orientation argument, so it is checked here.
+    if not max(by_class[6:9]) < max(by_class[9:12]):
+        return False, "the 2 Mb/s group no longer precedes the 3 Mb/s group"
+    if not max(by_class[12:15]) < max(by_class[15:18]):
+        return False, "Apple's two groups are no longer in the same order"
+    # The seventh array: the slot class per rate-class index. [5.13]
+    slot_class = [u16(acib, PACKET_RATE_SLOTS + 2 * i) for i in range(len(packets.TABLE))]
+    if slot_class != [1, 1, 2, 2, 3, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]:
+        return False, f"0x{PACKET_RATE_SLOTS:x} is not the slot classes: {slot_class}"
+    # The width selector is a threshold, not a range: "anything above 0xB". [7.3]
+    if u16(acib, WIDTH_SELECTOR_CMP) != 0x2E0B:  # cmp r6, #0xb
+        return False, f"0x{WIDTH_SELECTOR_CMP:x} is no longer cmp r6, #0xb"
     return True, (
         f"{len(packets.TABLE)} entries over four arrays with the slot counts agreeing, all "
         f"twelve specified payloads present, {len(extra)} more at mask bits "
         f"{packets.APPLE_MASK_BITS[0]} to {packets.APPLE_MASK_BITS[-1]}, Apple's request "
-        f"bounded to {packets.MAX_TABLE}, 0xFDEE writes 0x{six:x}"
+        f"bounded to {packets.MAX_TABLE}, 0xFDEE writes 0x{six:x}, and three more arrays: "
+        "payloads and slot classes in rate-class order, both groups slower first"
+    )
+
+
+def check_table_legality_constants(acib, rkof, ctab, sbd1):
+    """Each table's legal entries, as the firmware's own three immediates. [5.13]
+
+    This is the strongest statement of the table-membership column in the image, and it
+    replaces an indirect argument about which branch of the mask filter leaves bits 16 to 21
+    alone. Table 2's constant is a literal-pool word; the other two are built by movw/movt
+    pairs, so each half is checked where it stands.
+    """
+    if literal_word(acib, LEGAL_TABLE_2_LITERAL) != packets.TABLE_LEGAL[packets.TABLE_APPLE]:
+        got = literal_word(acib, LEGAL_TABLE_2_LITERAL)
+        return False, (
+            f"0x{LEGAL_TABLE_2_LITERAL:x} loads {got and hex(got)}, not table 2's constant"
+        )
+    for table, (low_at, high_at) in LEGAL_MOVW_MOVT.items():
+        want = packets.TABLE_LEGAL[table]
+        low, high = thumb_imm16(acib, low_at), thumb_imm16(acib, high_at)
+        if low != want & 0xFFFF or high != want >> 16:
+            return False, (
+                f"table {table}'s constant reads 0x{high:04x}{low:04x} at 0x{low_at:x}, "
+                f"not 0x{want:08x}"
+            )
+    # The column itself, entry by entry, against those three words.
+    for table, legal in packets.TABLE_LEGAL.items():
+        for entry in packets.TABLE:
+            if bool(legal & (1 << entry.mask_bit)) != (table in entry.tables):
+                return False, f"{entry.name} disagrees with table {table}'s constant"
+    # The half above bit 15 is the part that confines Apple's six to table 2.
+    six = sum(1 << bit for bit in packets.APPLE_MASK_BITS)
+    for table in (packets.TABLE_BASIC, packets.TABLE_EDR):
+        if packets.TABLE_LEGAL[table] & six:
+            return False, f"table {table}'s constant now permits one of Apple's six"
+    if packets.TABLE_LEGAL[packets.TABLE_APPLE] & six != six:
+        return False, "table 2's constant no longer permits all six"
+    # The AND and the store that put the filtered mask where the chooser reads it.
+    if u16(acib, LEGAL_AND) != 0x4029:  # ands r1, r5
+        return False, f"0x{LEGAL_AND:x} no longer ANDs the request with the constant"
+    if u16(acib, LEGAL_STORE) != 0x6401:  # str r1, [r0, #0x40]
+        return False, f"0x{LEGAL_STORE:x} no longer stores it at the record's +0x40"
+    return True, (
+        f"three constants 0x{packets.TABLE_LEGAL[0]:08x} 0x{packets.TABLE_LEGAL[1]:08x} "
+        f"0x{packets.TABLE_LEGAL[2]:08x} reproduce all "
+        f"{len(packets.TABLE_LEGAL) * len(packets.TABLE)} membership answers, "
+        "and only table 2's permits bits 16 to 21"
+    )
+
+
+def check_permission_partition(acib, rkof, ctab, sbd1):
+    """The mask filter's four immediates: the partition, and why it cannot orient the rates.
+
+    Apple's branch gates one group of three on bit 4 of the permission byte and the other on
+    bits 3 and 4 together. The standard branch gates the specification's own two EDR rates with
+    the same two bits - and puts the *faster* set on the weaker condition, which is the reverse
+    of Apple's branch. 5.14 rested an orientation argument on that shape; these four immediates
+    are what showed it cannot carry one, so they are checked rather than quoted. [5.14]
+    """
+    for name, where, want in PERMISSION_IMMEDIATES:
+        got = data_imm(acib, where)
+        if got != want:
+            return False, f"{name} at 0x{where:x} is {got and hex(got)}, not 0x{want:x}"
+    for name, where, want in STANDARD_IMMEDIATES:
+        got = thumb_imm16(acib, where)
+        if got != want:
+            return False, f"{name} at 0x{where:x} is {got and hex(got)}, not 0x{want:x}"
+    if (packets.PERMISSION_MASK_BOTH_BITS, packets.PERMISSION_MASK_BIT_FOUR) != (
+        PERMISSION_IMMEDIATES[0][2], PERMISSION_IMMEDIATES[1][2]
+    ):
+        return False, "packets.py's two permission masks are not the filter's two immediates"
+    if (packets.STANDARD_MASK_BIT_FOUR, packets.STANDARD_MASK_BOTH_BITS) != (
+        STANDARD_IMMEDIATES[0][2], STANDARD_IMMEDIATES[1][2]
+    ):
+        return False, "packets.py's two standard masks are not the filter's two immediates"
+    apple_bit4 = packets.PERMISSION_MASK_BIT_FOUR
+    apple_both = packets.PERMISSION_MASK_BOTH_BITS
+    six = sum(1 << bit for bit in packets.APPLE_MASK_BITS)
+    if apple_bit4 | apple_both != six or apple_bit4 & apple_both:
+        return False, "Apple's two gates no longer partition exactly the six mask bits"
+    named = {entry.mask_bit: entry for entry in packets.TABLE}
+
+    def group(mask):
+        return [named[bit] for bit in range(32) if mask & (1 << bit) and bit in named]
+
+    # The inversion: bit 4 alone keeps the larger payloads among the specification's EDR
+    # pairs and the smaller ones among Apple's.
+    std_fast = max(e.payload for e in group(packets.STANDARD_MASK_BIT_FOUR))
+    std_slow = max(e.payload for e in group(packets.STANDARD_MASK_BOTH_BITS))
+    apple_gated = max(e.payload for e in group(apple_bit4))
+    apple_other = max(e.payload for e in group(apple_both))
+    if not (std_fast > std_slow and apple_gated < apple_other):
+        return False, (
+            f"the gate shape no longer inverts: standard {std_fast} vs {std_slow}, "
+            f"Apple {apple_gated} vs {apple_other}"
+        )
+    if {e.name for e in group(packets.STANDARD_MASK_BIT_FOUR)} != {"3-DH1", "3-DH3", "3-DH5"}:
+        return False, "the standard bit-4 gate is no longer the 3 Mb/s set"
+    return True, (
+        "four immediates: Apple's two partition the six exactly, the standard branch's two are "
+        f"the EDR rate pairs, and the bit-4 gate keeps {std_fast} bytes there against "
+        f"{apple_gated} here, so the shape inverts"
     )
 
 
@@ -1717,6 +1891,8 @@ CHECKS = (
     ("ctab is the table again", check_ctab_manifest),
     ("no standard road to a new rate", check_standard_rate_roads),
     ("the packet-type table", check_packet_type_table),
+    ("each table's legal entries", check_table_legality_constants),
+    ("the permission partition", check_permission_partition),
     ("shared host commands", check_shared_host_commands),
     ("payload header width", check_payload_header_width),
     ("the five paired procedures", check_paired_procedures),

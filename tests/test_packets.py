@@ -74,24 +74,58 @@ def test_the_payload_ratios_say_a_factor_of_two_and_the_one_slot_pair_does_not_f
         return packets.payload_window_us(entry, rate)
 
     # Dividing by a rate is scale-invariant, so it fixes the ratio of the two rates and not
-    # their size: at 4 and 8 the three- and five-slot pairs agree to within about ten
-    # microseconds, and at 4.5 and 9 they agree exactly as well. That is why `packets.APPLE_RATES`
-    # cites Apple's filing for the absolute values rather than this arithmetic.
+    # their size: whatever pair is tried, the relative spread is identical, which is the whole
+    # point. That is why `packets.APPLE_RATES` cites Apple's filing for the absolute values
+    # rather than this arithmetic.
+    #
+    # Every slot count is covered here, and the threshold is one the three-slot pair actually
+    # meets. The first version of this loop computed the five-slot spread alone under a 0.005
+    # threshold, which was the single value admitting the five-slot pair (0.0039) while
+    # excluding the three-slot pair (0.0071) the prose cites in the same breath - the same
+    # defect as the ratio check it was written to fix.
+    spreads = {}
     for low_rate, high_rate in ((4, 8), (4.5, 9), (3, 6)):
-        spread_5 = abs(window("apple_4mbit_5slot", low_rate)
-                       - window("apple_8mbit_5slot", high_rate))
-        assert spread_5 / window("apple_4mbit_5slot", low_rate) < 0.005
+        for slots in (1, 3, 5):
+            low, high = pair(slots)
+            base = packets.payload_window_us(low, low_rate)
+            rel = abs(base - packets.payload_window_us(high, high_rate)) / base
+            spreads.setdefault(slots, set()).add(round(rel, 9))
+    assert all(len(v) == 1 for v in spreads.values()), f"not scale-invariant: {spreads}"
+    assert spreads[3].pop() < 0.008 and spreads[5].pop() < 0.008
+    # And the one-slot pair is the outlier here too, by a factor of ten.
+    assert spreads[1].pop() > 0.08
     assert packets.APPLE_RATES == (4, 8)
     with pytest.raises(ValueError):
         packets.payload_window_us(packets.TABLE[0], 0)
 
 
 def test_the_chooser_reproduces_what_a_standard_host_can_ask_for():
-    """Given only the sixteen-bit field, the best it can pick is 3-DH5 [measurements.md 9]."""
-    assert packets.choose(0xFFFF).name == "3-DH5"
-    assert packets.choose(0xFFFFFFFF).name == "apple_8mbit_5slot"
-    assert packets.choose(1 << 3).name == "DM1"
-    assert packets.choose(0) is None
+    """Given only the sixteen-bit field, the best it can pick is 3-DH5 [measurements.md 9].
+
+    Every call names its table, because the legality constant is applied before the search and
+    changes the answer rather than widening it. The same 0xFFFF request resolves to a different
+    packet on each of the three tables, and on table 2 it resolves to DM1 - the one entry all
+    three share - because a standard host cannot reach bits 16 to 21 at all.
+    """
+    assert packets.choose(0xFFFF, packets.TABLE_EDR).name == "3-DH5"
+    assert packets.choose(0xFFFF, packets.TABLE_BASIC).name == "DH5"
+    assert packets.choose(0xFFFF, packets.TABLE_APPLE).name == "DM1"
+    assert packets.choose(0xFFFFFFFF, packets.TABLE_APPLE).name == "apple_8mbit_5slot"
+    # And the mask bits of the other tables' entries cannot smuggle one in.
+    assert packets.choose(0xFFFFFFFF, packets.TABLE_EDR).name == "3-DH5"
+    assert packets.choose(1 << 3, packets.TABLE_APPLE).name == "DM1"
+    assert packets.choose(0, packets.TABLE_APPLE) is None
+    with pytest.raises(ValueError):
+        packets.choose(0xFFFF, 3)
+    # The three constants are the firmware's statement of the whole tables column.
+    for table, legal in packets.TABLE_LEGAL.items():
+        for entry in packets.TABLE:
+            assert bool(legal & (1 << entry.mask_bit)) == (table in entry.tables), entry.name
+    # Tables 0 and 1 clear Apple's six bits; table 2 is the only one that allows them.
+    for table in (packets.TABLE_BASIC, packets.TABLE_EDR):
+        assert packets.TABLE_LEGAL[table] & 0x3F0000 == 0
+    assert packets.TABLE_LEGAL[packets.TABLE_APPLE] & 0x3F0000 == 0x3F0000
+    assert packets.NO_MATCH_PAYLOAD == packets.TABLE[0].payload == 17
     assert packets.by_mask_bit(21).payload == 2586
     with pytest.raises(ValueError):
         packets.by_mask_bit(31)
@@ -257,15 +291,22 @@ def test_the_firmware_reply_block_and_the_halfword_pair_agree():
     assert lmp.BandBlock.ITEM_FIELDS[kind] == 0x62
 
 
-def test_the_permission_byte_has_one_bit_per_rate():
-    """A third, independent confirmation of which of the six is 4 and which is 8 Mb/s.
+def test_the_permission_byte_partitions_the_six_into_the_same_two_groups():
+    """A third confirmation of the **partition**, which is not a confirmation of the rates.
 
-    The rate assignment in `packets.py` rests on two arguments: the TYPE codes carried over from
-    table 1, and the payload arithmetic. This is a third and it comes from neither. The
-    packet-type mask filter keeps the even mask bits when bit 4 of the permission byte is set,
-    and the odd ones only when bits 3 and 4 are both set [fw acib 0x13778 to 0x13786]. So one
-    bit enables one rate and a second bit adds the other, which is the shape EDR uses for its
-    own two rates, and the sets it picks out are exactly the two this project named.
+    The packet-type mask filter keeps one set of Apple's mask bits when bit 4 of the permission
+    byte is set and the other only when bits 3 and 4 are both set [fw acib 0x13778 to 0x13786].
+    Those two sets are exactly the two groups of three that the TYPE codes and the rate-class
+    array give, so the partition has three independent sources.
+
+    What it does **not** do is say which group is the faster, and an earlier version of this
+    test claimed it did. The same filter's other branch gates the specification's own two EDR
+    rates with the same two bits, and there "kept by bit 4 alone" is the **3** Mb/s set - the
+    faster one - while in Apple's branch that condition keeps the group with the *smaller*
+    payloads. Transferring the shape gives the opposite answer, so it cannot be the argument.
+    The orientation comes from the payloads at a fixed slot count, and the absolute 4 and 8
+    from Apple's filings [see `packets.APPLE_RATES`]. The inversion is asserted below so the
+    claim cannot quietly come back.
     """
     def names(value):
         pdu = lmp.PacketPermission(permission=value)
@@ -280,6 +321,31 @@ def test_the_permission_byte_has_one_bit_per_rate():
     assert names(0x18) == four | eight
     # Bit 3 alone, or neither: none of the six.
     assert names(0x08) == set()
+
+    # Anchored on the firmware's two immediates, so that exchanging them in the image turns
+    # this red. Without it the assertions above hold on `mask_bit % 2` alone.
+    def bits(mask):
+        return {e.name for e in packets.TABLE if (1 << e.mask_bit) & mask}
+
+    assert bits(packets.PERMISSION_MASK_BIT_FOUR) == four
+    assert bits(packets.PERMISSION_MASK_BOTH_BITS) == eight
+    assert (packets.PERMISSION_MASK_BIT_FOUR | packets.PERMISSION_MASK_BOTH_BITS) == sum(
+        1 << b for b in packets.APPLE_MASK_BITS
+    ), "the two gates must partition exactly the six, with no bit in both or in neither"
+    assert not packets.PERMISSION_MASK_BIT_FOUR & packets.PERMISSION_MASK_BOTH_BITS
+
+    # The inversion, which is why the gates cannot orient the rates: in the standard branch the
+    # bit-4-alone condition keeps the 3 Mb/s set, the faster of the specification's two.
+    assert bits(packets.STANDARD_MASK_BIT_FOUR) == {"3-DH1", "3-DH3", "3-DH5"}
+    assert bits(packets.STANDARD_MASK_BOTH_BITS) == {"2-DH1", "2-DH3", "2-DH5"}
+    standard_faster = bits(packets.STANDARD_MASK_BIT_FOUR)
+    apple_same_gate = bits(packets.PERMISSION_MASK_BIT_FOUR)
+    assert max(e.payload for e in packets.TABLE if e.name in standard_faster) > max(
+        e.payload for e in packets.TABLE if e.name in bits(packets.STANDARD_MASK_BOTH_BITS)
+    ), "the bit-4 set is the larger-payload one among the specification's EDR pairs"
+    assert max(e.payload for e in packets.TABLE if e.name in apple_same_gate) < max(
+        e.payload for e in packets.TABLE if e.name in bits(packets.PERMISSION_MASK_BOTH_BITS)
+    ), "and the smaller-payload one among Apple's, which is the inversion"
     assert names(0x00) == set()
     # The even mask bits are the slower set and the odd ones the faster, which is what makes
     # the filter's two tests line up with the two rates at all.
