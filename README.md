@@ -328,6 +328,19 @@ an iPhone's software ever drives this link, that the lite mode uses the 2.4 GHz
 band, or that a non-Apple controller could form these modulations. Those are the
 open questions, and they are the cheap ones to answer.
 
+**Two contributors have since narrowed the first of them**, both reported in
+[issue #3](https://github.com/mstampfli/openulla/issues/3) and recorded with
+their limits in [docs/ulla.md](docs/ulla.md) section 8. On a Mac with Apple's N1
+controller, every transmitted packet in the system's own link-quality reports for
+these earbuds was HDR4 or HDR8, and a band-switch manager asked for the 5 GHz
+mode 73 times in an afternoon and never got it. On an older Broadcom Mac, a
+capture of an established session, 18,623 records, contains **none of the
+eighteen vendor opcodes this project documents** - so in steady state that host
+uses no part of the interface described here. Neither settles whether a Mac ever
+drives the link: the one command that would prove it is sent at a mode change,
+not in steady state, so the decisive capture is one spanning connection setup or
+a deliberate band switch.
+
 ## How you can help
 
 In rough order of how little hardware it needs:
@@ -352,6 +365,13 @@ In rough order of how little hardware it needs:
    message and the capture then holds the feature words both ends advertise;
    then the vendor command's parameters against the ones the earbud's own code
    uses (6.0); then the band mask and channel ranges (6.2 and 6.5).
+
+   **Capture across a connection setup or a band switch, not a steady stream.**
+   That is the lesson of the Broadcom result in ulla.md section 8: a capture of
+   an already-established session held 18,623 records and not one of the opcodes
+   this project documents, because the command that starts the mode change is
+   sent once, at the change. Connect the earbuds while capturing, or provoke the
+   switch, and the window you need is in the trace.
 
    Do **not** try to answer this by asking the earbuds from a second host while
    an Apple device holds them. We measured that: the earbuds evict the second

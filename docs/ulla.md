@@ -437,3 +437,54 @@ Not recovered, and not to be filled in until it is:
   the two computed values of protocol.md 5.2, one a 26-bit quantity built from a
   per-link byte and one a module's own measurement less 0x57. What they measure
   is open; they do not affect acceptance, only the radio configuration.
+
+## 8. Observed on Apple hosts, by contributors
+
+Neither of these is our own measurement. Both were reported publicly in
+[issue #3](https://github.com/mstampfli/openulla/issues/3) by the people who
+made them, with their own limits stated; they are recorded here because they
+bear directly on the question section 2.4 leaves open, what a Mac's software
+does with a radio that has the modes. Raw captures stayed with their authors.
+
+**An Apple N1 Mac, reported by NuiceT** (MacBook Pro Mac17,9, macOS 27.0.1,
+these earbuds on 9A348, read-only observation of logs and binaries):
+
+- bluetoothd's A2DP link-quality reports counted **every transmitted packet as
+  HDR4 or HDR8 and none as 3-EDR** while these earbuds were the only connected
+  audio device. So an N1 Mac does use Apple's HDR packet types with them. The
+  week-long sums are not attributed per device.
+- A `BandSwitchManager` evaluated these earbuds **73 times in two and a half
+  hours**, every time with the 5 GHz mode requested and the link still at
+  2.4 GHz, every time ending "HRB conditions are not met". No completed band
+  change and no failure of a band-change command appears in the retained week.
+- `/usr/sbin/bluetoothd` carries the message ids `BTAudioMsgIdUllaChangeMode`,
+  `BTAudioMsgIdUllaModeChanged`, `BTAudioMsgIdUllaClearSession` and
+  `BTAudioMsgIdUllaModeChangeLongTimeout`, and metric names of the form
+  `ulla_time_mode_both_*`. The same metric family is in the earbuds' own RF
+  tuning map, reproducible with `tools/tmap_keys.py`, so the two ends share that
+  vocabulary. A name in a binary is not a running code path.
+
+**A Broadcom Mac, reported by dberweger2017** (MacBook Pro 17,1, macOS 27.2,
+BCM_4378, same earbud firmware):
+
+- An HCI capture of an **established** AirPods session, 18,623 records, contains
+  **no 0xFE50**, and its whole vendor-command inventory is `FC1C FC57 FCE2 FCE9
+  FD02 FD4A FD4B FD4D FDC1 FDDD FDE4 FE2D`. Comparing that inventory against
+  this project's own tables, which is ours rather than theirs: **not one of the
+  eighteen vendor opcodes documented here appears in it** - no 0xFE50, none of
+  the eleven session commands of protocol.md 6.6, neither feature-bit command of
+  5.8, and no band command of 6.1. Their 0xFE2D is in the same numeric range and
+  is not one of ours.
+- The same `BandSwitchManager` exists there, logging `EnableHRB 1,
+  forceSupportHRB 0`, which is configuration rather than a switch.
+- The microphone path is ordinary: an eSCO link set up with the standard
+  Synchronous Connection command, with the AirPods input at 24 kHz.
+
+What the pair establishes and what it does not. On a Broadcom-era Mac, in steady
+state, **none of the host interface this project documents is in use** - which is
+a real negative result, and the strongest reading of that capture. It does not
+close the N1 question: a different controller, and the one command that would
+appear is sent at a mode change rather than in steady state, so a capture
+spanning connection setup or a deliberate band switch is where it would show. It
+also does not establish that HRB is ULLA; Apple's own patent language argues
+against reading "HRB TDD" that way (2.6).
