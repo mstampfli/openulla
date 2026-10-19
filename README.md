@@ -266,9 +266,20 @@ and each point is sourced in [docs/ulla.md](docs/ulla.md).
   change; ten more reach an ULLA session, five of them sharing one gate chain
   that answers 0x0C while no session is active.
   [docs/protocol.md](docs/protocol.md) 6.6.
+- **The stream's control path exists twice**, once for a session and once for a
+  link that is already up, with the same four steps and the same assert, and the
+  firmware tells you in its own words what the start needs: an audio DMA address.
+  [docs/protocol.md](docs/protocol.md) 7.1 and 6.6.
+- **The statistics reports are staged and unwired in this build**, which is
+  worth knowing before you wait for one: each of the three report types has its
+  own notification id and a fixed length, and the subscription is accepted, but
+  nothing fills the first type's counters, nothing posts the second's request,
+  and the third has no producer anywhere in the firmware.
+  [docs/protocol.md](docs/protocol.md) 2.6.
 - **The implementation exists**, in `openulla/`, with a simulated earbud, a
   decoder, a capture reader, an L2CAP sink server and a verifier that
-  re-derives fifteen groups of claims from a firmware image. See
+  re-derives twenty-three groups of claims from a firmware image, the audio
+  DSP's own node among them. See
   [docs/implementation.md](docs/implementation.md).
 - **A Linux laptop can start a ULLA session and be told it succeeded.** Sending
   seven bytes over an ordinary Bluetooth channel moves the earbuds' session
