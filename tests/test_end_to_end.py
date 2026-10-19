@@ -1,7 +1,7 @@
 """A whole setup, driven against the simulated earbud: every layer in one run."""
 import pytest
 
-from openulla import aap, sibling, sim
+from openulla import aap, procedure, sibling, sim
 from openulla.codes import AapReject, Mode, RejectReason, Result, SessionStatus
 from openulla.controller import AcceptChecks, Responder
 from openulla.errors import Refused
@@ -136,3 +136,22 @@ def test_the_transcript_holds_every_frame_and_pdu_of_the_run():
     assert any("opcode 0x36" in line for line in lines)
     assert any("LMP e6" in line for line in lines)
     assert any("LMP 06 73" in line for line in lines)
+
+
+def test_the_teardown_half_of_both_procedures_runs_and_reports():
+    """The second half of 5.9 and 5.10, driven through the simulator."""
+    link = sim.connect()
+    link.open_and_start(mode=0)
+    link.quiesce()
+    up = link.controller_setup(SETUP)
+    assert (up.mode, up.result) == (Mode.ULLA_ON, Result.SUCCESS)
+    # Where the firmware leaves the two ends after a successful setup.
+    assert link.initiator.procedure.state is procedure.State.AWAIT_TEARDOWN_BEGIN
+    assert link.sink.responder.procedure.state is procedure.SinkState.AWAIT_SETUP_REQUEST
+
+    down = link.controller_teardown()
+    assert (down.mode, down.result) == (Mode.BT_ACL_ACTIVE, Result.SUCCESS)
+    assert down.handle == SETUP.handle
+    # And both machines are back at their own first state.
+    assert link.initiator.procedure.state is procedure.State.SEND_SETUP
+    assert link.sink.responder.procedure.state is procedure.SinkState.AWAIT_SETUP_REQUEST

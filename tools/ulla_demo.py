@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openulla import bands, lmp, sim
+from openulla import bands, hci, lmp, sim
 from openulla.controller import AcceptChecks, Responder
 from openulla.hci import UllaSetup
 from openulla.session import Event
@@ -137,8 +137,26 @@ def main():
         Event.STREAM_HOST_SETUP_COMPLETE,
     )
     print(f"     manager now in {link.sink.state.name}")
+
+    print("8. the controller side of the stream, which is section 7.1")
+    show("HCI 0xFE57, the DMA address", hci.stream_dma_address(0x10044000))
+    show("HCI 0xFE52, start the stream", hci.stream_start())
+    show("HCI 0xFE53, read the descriptor", hci.read_stream_descriptor())
+    show("HCI 0xFE58, stop the stream", hci.stream_stop())
+    print("     the start refuses without that address: the firmware asserts on it")
+
+    print("9. the host stops the stream, and both controllers run the teardown")
+    link.source.stop_stream()
+    show("stop stream, opcode 0x3A", link.transport.sent[-1])
+    link.feed(Event.PEER_STREAM_STOP_RSP)
+    print(f"     manager now in {link.sink.state.name}")
+    down = link.controller_teardown(responder=responder)
+    show("vendor event 0xFF to the host", down.to_bytes())
+    print(f"     {down.describe()}")
+
     print("\nthe audio itself is not here: the link has moved to the other radio, whose packet")
-    print("format is produced by hardware. docs/protocol.md section 7 says what that means.")
+    print("format is produced by hardware. docs/protocol.md section 7 says what that means,")
+    print("and 7.2 says what the transfer descriptor underneath it looks like.")
     return 0
 
 

@@ -10,10 +10,11 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 
-from . import aap
+from . import aap, procedure
 from .controller import Initiator, Responder
 from .errors import ProtocolError
 from .hci import ModeChangeEvent, UllaSetup
+from .procedure import SinkState
 from .session import Event, State
 from .sink import Sink
 from .source import Source
@@ -116,6 +117,8 @@ class Link:
         # What follows is the step the earbud's own firmware cannot take: nothing in it posts
         # the event its procedure's third state waits for (protocol.md 5.9), so a source has
         # to drive it. The simulator does, and says so rather than pretending otherwise.
+        if peer.procedure.state is SinkState.AWAIT_MODULE_RESULT:
+            peer.procedure.feed(procedure.Event.MODULE_RESULT)  # the sink reports and idles
         event = self.initiator.on_module_result()
         if event.result == 0:
             self.feed(Event.ULLA_LINK_UP)
@@ -134,6 +137,31 @@ class Link:
     def quiesce(self) -> None:
         """The local audio path has stopped, which is what moves it to controller setup."""
         self.feed(Event.LOCAL_FLOW_OFF_DONE)
+
+    def controller_teardown(self, responder: Responder | None = None) -> ModeChangeEvent:
+        """Run the second half of both procedures: the teardown. [protocol.md 5.9, 5.10]
+
+        Both ends start it at their own fourth state, the source's through the entry that
+        puts the link in mode 0x36 and the sink's through the matching one. The events after
+        that are the ones their handlers expect: the teardown's accepted answer, then the
+        callbacks each registers, and the last one reports mode 0 with the success result.
+        """
+        peer = responder or self.sink.responder
+        source, sink = self.initiator.procedure, peer.procedure
+        source.begin_teardown()
+        sink.begin_teardown()
+        # The source's fifth state wants three flags: the two paths of the teardown's
+        # accepted answer and its own link condition (5.9).
+        source.feed(procedure.Event.LINK_STATE_ADVANCED)
+        source.path_reported(both=True)  # posts event 6, the teardown's accepted answer
+        sink.feed(procedure.Event.TEARDOWN_ACCEPTED)
+        source.feed(procedure.Event.CALLBACK_A)
+        sink.feed(procedure.Event.CALLBACK_A)
+        sink.feed(procedure.Event.CALLBACK_B)
+        step = source.feed(procedure.Event.TEARDOWN_COMPLETE)
+        if step.host_event is None:
+            raise ProtocolError("the teardown did not report to the host")
+        return step.host_event
 
     def finish_setup(self) -> State:
         """The DSP's side of the session, after the link is up."""

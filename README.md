@@ -142,6 +142,17 @@ $ python3 tools/ulla_demo.py
 7. the host starts the stream
   start stream, opcode 0x38          04 00 04 00 38 00
      manager now in STREAM_OPEN
+8. the controller side of the stream, which is section 7.1
+  HCI 0xFE57, the DMA address        57 fe 04 00 40 04 10
+  HCI 0xFE52, start the stream       52 fe 00
+  HCI 0xFE53, read the descriptor    53 fe 00
+  HCI 0xFE58, stop the stream        58 fe 04 00 00 00 00
+     the start refuses without that address: the firmware asserts on it
+9. the host stops the stream, and both controllers run the teardown
+  stop stream, opcode 0x3A           04 00 04 00 3a 00
+     manager now in SESSION_OPEN
+  vendor event 0xFF to the host      ff 07 00 0a 0b 00 00 00 ff
+     handle 0x000b BT_ACL_ACTIVE SUCCESS NOT_APPLICABLE
 ```
 
 Steps 1 to 3 are bytes a Linux laptop has really exchanged with real earbuds.
