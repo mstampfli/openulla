@@ -16,7 +16,7 @@ fill it in; it says so, and the tests say so too.
 | `aap.py` | the host interface: AAP service 4 on L2CAP PSM 0x1001, the open exchange, the commands of protocol.md 2.4, the status reply and the 0x17 wrapper |
 | `session.py` | the earbud's session manager: 17 states, 40 events, all 41 rows of the firmware's transition table, and the machine that walks them |
 | `sibling.py` | the earbud-to-earbud messages, including the reversed address order |
-| `lmp.py` | the link-manager PDUs: 0x73, 0x74, accepted, not accepted, and both escape messages |
+| `lmp.py` | the link-manager PDUs: 0x73, 0x74, accepted, not accepted, and the escape messages, including Apple's packet-type-table request, its power control pair, the halfword pair and the counted band block |
 | `hci.py` | the vendor commands, the band command family and the mode-change event |
 | `bands.py` | the radio's band plan, the frequency function, and the rules that pick a band |
 | `codes.py` | the numbered values with the firmware's own names, including the firmware's own spelling of each |

@@ -1654,6 +1654,16 @@ halfword at the same +0x62 and requires the link to be in procedure state 0x2F w
 at 1 [fw acib 0x297d6, 0x297da, 0x297e2], which is the state 5.11 records 0x10's own sender
 writing. So the pair 5.11 traced from the sending side closes here from the receiving side.
 
+**0x22, 0x23, 0x25 and 0x26 resisted the same approach, and the reason is worth recording.**
+Their four consumers are neighbours and all four read the same two globals, which looked like a
+module until the globals were counted: 0x1000329C is referenced 206 times in this payload and
+the hardware aperture three of them read is referenced 142 times. Shared use of the most-used
+addresses in an image is not evidence of anything, so nothing is claimed from it. What is left
+is one real asymmetry, and it is this document's own: **0x22, 0x23 and 0x25 have no builder at
+all** (5.7), so they are messages this end accepts and never sends, while 0x26 has one. That
+belongs with the observation 5.6 already makes about 0x24 and 0x28, and points the same way:
+the other end of this link implements more of the space than the earbud does.
+
 **0x15 and 0x16 are a band request and its answer.** 0x15's consumer replies with escape 0x7B
 extended opcode **0x16** [fw acib 0x29a2a, 0x29a2c]. 0x16's consumer requires the same 0x2F and
 1, then tests **bit 5** of the link's +0x47 ANDed with the first byte of 0x10003290 and gives up

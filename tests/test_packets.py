@@ -170,3 +170,40 @@ def test_the_receivers_masks_fall_on_two_bit_boundaries():
     for code in lmp.ValueAndCode.SECOND_CLASS:
         assert 2 in [(code >> (2 * i)) & 3 for i in range(2)], code
     assert lmp.ValueAndCode.FIRST_CLASS & lmp.ValueAndCode.SECOND_CLASS == frozenset()
+
+
+def test_the_halfword_pair_round_trips_both_directions():
+    """0x7B/0x10 and 0x7B/0x11, a request and its answer [protocol.md 5.15]."""
+    for reply in (False, True):
+        pdu = lmp.LinkHalfword(value=0x1234, reply=reply)
+        raw = pdu.to_bytes()
+        assert len(raw) == lmp.LinkHalfword.LENGTH
+        assert raw[1] == (0x11 if reply else 0x10)
+        assert lmp.parse(raw) == pdu
+    # Little-endian, like everything else in this protocol.
+    assert lmp.LinkHalfword(value=0x5B).to_bytes() == bytes((0xF6, 0x10, 0x5B, 0x00))
+    with pytest.raises(lmp.ProtocolError):
+        lmp.LinkHalfword(value=0x10000).to_bytes()
+    with pytest.raises(lmp.ProtocolError):
+        lmp.LinkHalfword.from_bytes(bytes((0xF6, 0x10, 0x01)))
+    with pytest.raises(lmp.ProtocolError):
+        lmp.LinkHalfword.from_bytes(bytes((0xF6, 0x0D, 0x01, 0x00)))
+
+
+def test_the_counted_band_block_carries_its_own_length():
+    """0x7B/0x15 and 0x7B/0x16, a count byte then that many [protocol.md 5.15]."""
+    for reply in (False, True):
+        pdu = lmp.BandBlock(block=bytes(range(4)), reply=reply)
+        raw = pdu.to_bytes()
+        assert raw[1] == (0x16 if reply else 0x15)
+        assert raw[2] == 4 and len(raw) == 7
+        assert lmp.parse(raw) == pdu
+    assert lmp.BandBlock().to_bytes() == bytes((0xF6, 0x15, 0x00))
+    assert lmp.BandBlock.FEATURE_BIT == lmp.FEATURE_BIT_BANDS
+    with pytest.raises(lmp.ProtocolError):
+        lmp.BandBlock(block=bytes(256)).to_bytes()
+    # A count that does not match what followed is refused, not truncated silently.
+    with pytest.raises(lmp.ProtocolError):
+        lmp.BandBlock.from_bytes(bytes((0xF6, 0x15, 0x03, 0x01)))
+    with pytest.raises(lmp.ProtocolError):
+        lmp.BandBlock.from_bytes(bytes((0xF6, 0x15)))

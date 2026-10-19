@@ -148,6 +148,24 @@ def describe_lmp(data: bytes) -> list[str]:
             + ("set" if parsed.word & (1 << lmp.FEATURE_BIT_MODE_PROCEDURE) else "clear"),
             "    a feature is usable only where both ends' words carry its bit",
         ]
+    elif isinstance(parsed, lmp.LinkHalfword):
+        lines += [
+            "  the halfword pair (0x7B/0x%02x): value 0x%04x"
+            % (parsed.ext_opcode, parsed.value),
+            "    the " + ("answer" if parsed.reply else "request")
+            + ", kept at the link's +0x62; what it means is open, protocol.md 5.15",
+        ]
+        if parsed.reply and parsed.value == lmp.LinkHalfword.SEEN_IN_REPLY:
+            lines += ["    this is the one value the firmware is seen putting in the answer"]
+    elif isinstance(parsed, lmp.BandBlock):
+        lines += [
+            "  the counted band block (0x7B/0x%02x): %d bytes"
+            % (parsed.ext_opcode, len(parsed.block)),
+            "    the " + ("answer" if parsed.reply else "request")
+            + f", gated on the band feature bit {lmp.BandBlock.FEATURE_BIT}, protocol.md 5.15",
+            "    contents: " + (parsed.block.hex(" ") if parsed.block else "empty")
+            + " (what they hold is open)",
+        ]
     elif isinstance(parsed, lmp.PacketTableRequest):
         selectable = parsed.selectable()
         names = {0: "the basic-rate packets", 1: "the EDR packets"}

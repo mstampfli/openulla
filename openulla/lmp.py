@@ -43,6 +43,11 @@ EXT_FEATURE_REPLY = 0x0B
 EXT_SELECTOR_REQUEST = 0x0E  # 0x7B: one selector byte, answered with the pair below (5.11)
 EXT_VALUE_AND_CODE = 0x0F  # 0x7B: a value byte and a four-bit code; 0x7F/0x20 is the same
 EXT_PACKET_TABLE = 0x0D  # 0x7B: Apple's packet-type-table request, the counterpart of 0x7F/0x0B
+EXT_LINK_HALFWORD_REQUEST = 0x10  # 0x7B: one halfword each way, kept at the link's +0x62
+EXT_LINK_HALFWORD_REPLY = 0x11
+EXT_BAND_BLOCK_REQUEST = 0x15  # 0x7B: a counted byte block, in the band module (5.15)
+EXT_BAND_BLOCK_REPLY = 0x16
+PROCEDURE_STATE = 0x2F  # what both replies above require at the link's +0x7D [acib 0x297da]
 EXT_ALLOWED_BANDS = 0x17  # in the 0x7B space; 0x17 also exists behind 0x7F, unrelated
 EXT_BAND_RANGES = 0x1C
 MAX_BAND_RANGES = 5
@@ -322,6 +327,106 @@ def mode_procedure_agreed(own: int, peer: int) -> bool:
     return agreed(own, peer, FEATURE_BIT_MODE_PROCEDURE) or agreed(
         own, peer, FEATURE_BIT_MODE_PROCEDURE, byte=3
     )
+
+
+@dataclass(frozen=True)
+class LinkHalfword:
+    """Escape 0x7B, extended opcodes 0x10 and 0x11: one halfword each way.
+
+    A request and its answer. The request's consumer stores the halfword at the link's +0x62,
+    sets the link's +0x3E and replies with extended opcode 0x11 as an immediate; the reply's
+    consumer stores the same halfword in the same place and requires the link to be in
+    procedure state 0x2F with its +0x80 at 1, which is the state the request's own sender
+    writes [fw acib 0x2978c, 0x29798, 0x297a0, 0x297a2 for the request, 0x297c8, 0x297d6,
+    0x297da, 0x297e2 for the reply; protocol.md 5.15 and 5.11].
+
+    What the halfword means is open. The name is structural for that reason, and the one
+    value this firmware is seen putting in the reply block is 0x5B [fw acib 0x297a6].
+    """
+
+    value: int
+    reply: bool = False
+    tid: int = 0
+
+    LENGTH = 4  # header, extended opcode, one halfword
+    SEEN_IN_REPLY = 0x5B
+
+    @property
+    def ext_opcode(self) -> int:
+        return EXT_LINK_HALFWORD_REPLY if self.reply else EXT_LINK_HALFWORD_REQUEST
+
+    def to_bytes(self) -> bytes:
+        if not 0 <= self.value <= 0xFFFF:
+            raise ProtocolError("the value is one halfword")
+        return bytes((header(ESCAPE_7B, self.tid), self.ext_opcode)) + octets.p16(self.value)
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> LinkHalfword:
+        head = parse_header(data)
+        if head.opcode != ESCAPE_7B or head.ext_opcode not in (
+            EXT_LINK_HALFWORD_REQUEST,
+            EXT_LINK_HALFWORD_REPLY,
+        ):
+            raise ProtocolError("not the halfword pair")
+        if len(data) != cls.LENGTH:
+            raise ProtocolError(f"its body is one halfword, got {len(data) - 2}")
+        return cls(
+            value=octets.u16(data, 2),
+            reply=head.ext_opcode == EXT_LINK_HALFWORD_REPLY,
+            tid=head.tid,
+        )
+
+
+@dataclass(frozen=True)
+class BandBlock:
+    """Escape 0x7B, extended opcodes 0x15 and 0x16: a counted byte block, each way.
+
+    A request and its answer in the same module as both band messages of section 6: 0x15's
+    consumer replies with extended opcode 0x16 as an immediate, and 0x16's consumer requires
+    procedure state 0x2F and then tests **bit 5** of the AND of the two ends' capability
+    bytes, which is the band family bit [fw acib 0x29a1c, 0x29a2a, 0x29a2c for the request,
+    0x29a70 to 0x29a96 for the reply; protocol.md 5.15].
+
+    The body is a count byte followed by that many bytes [5.7's builder for 0x15, 0x16 and
+    0x24]. What those bytes hold is open, which is why this carries them as bytes.
+    """
+
+    block: bytes = b""
+    reply: bool = False
+    tid: int = 0
+
+    FEATURE_BIT = 5  # the band family bit its reply is gated on, the same as FEATURE_BIT_BANDS
+
+    @property
+    def ext_opcode(self) -> int:
+        return EXT_BAND_BLOCK_REPLY if self.reply else EXT_BAND_BLOCK_REQUEST
+
+    def to_bytes(self) -> bytes:
+        if len(self.block) > 0xFF:
+            raise ProtocolError("the count is one byte, so at most 255 follow it")
+        return (
+            bytes((header(ESCAPE_7B, self.tid), self.ext_opcode, len(self.block)))
+            + self.block
+        )
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> BandBlock:
+        head = parse_header(data)
+        if head.opcode != ESCAPE_7B or head.ext_opcode not in (
+            EXT_BAND_BLOCK_REQUEST,
+            EXT_BAND_BLOCK_REPLY,
+        ):
+            raise ProtocolError("not the counted band block")
+        if len(data) < 3:
+            raise ProtocolError("the count byte is missing")
+        count = data[2]
+        if len(data) != 3 + count:
+            raise ProtocolError(f"its count says {count} bytes, {len(data) - 3} followed")
+        return cls(
+            block=data[3:],
+            reply=head.ext_opcode == EXT_BAND_BLOCK_REPLY,
+            tid=head.tid,
+        )
 
 
 @dataclass(frozen=True)
@@ -605,6 +710,16 @@ def parse(data: bytes) -> object:
         return Features.from_bytes(data)
     if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_PACKET_TABLE:
         return PacketTableRequest.from_bytes(data)
+    if head.opcode == ESCAPE_7B and head.ext_opcode in (
+        EXT_LINK_HALFWORD_REQUEST,
+        EXT_LINK_HALFWORD_REPLY,
+    ):
+        return LinkHalfword.from_bytes(data)
+    if head.opcode == ESCAPE_7B and head.ext_opcode in (
+        EXT_BAND_BLOCK_REQUEST,
+        EXT_BAND_BLOCK_REPLY,
+    ):
+        return BandBlock.from_bytes(data)
     if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_ALLOWED_BANDS:
         return AllowedBands.from_bytes(data)
     if head.opcode == ESCAPE_7B and head.ext_opcode == EXT_BAND_RANGES:
