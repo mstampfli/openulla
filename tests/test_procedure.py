@@ -16,6 +16,8 @@ from openulla.procedure import (
     SinkProcedure,
     SinkState,
     State,
+    ThirdProcedure,
+    ThirdState,
 )
 
 
@@ -184,8 +186,9 @@ def test_each_table_is_as_long_as_its_dispatcher_indexes():
     assert len(SINK_HANDLER_ADDRESSES) == 8
     assert len(THIRD_HANDLER_ADDRESSES) == 7
     # The three tables are consecutive runs of words, in this order.
-    assert max(SINK_HANDLER_ADDRESSES.values()) < min(THIRD_HANDLER_ADDRESSES)
-    assert max(THIRD_HANDLER_ADDRESSES) < min(HANDLER_ADDRESSES.values())
+    assert max(SINK_HANDLER_ADDRESSES.values()) < min(THIRD_HANDLER_ADDRESSES.values())
+    assert max(THIRD_HANDLER_ADDRESSES.values()) < min(HANDLER_ADDRESSES.values())
+    assert set(THIRD_HANDLER_ADDRESSES) == set(ThirdState)
 
 
 def test_the_sink_forwards_to_its_sibling_and_waits_for_both_links():
@@ -267,3 +270,49 @@ def test_the_sinks_dispatcher_also_refuses_to_run_inside_itself():
     sink = SinkProcedure(busy=True)
     with pytest.raises(ProtocolError):
         sink.feed(Event.BEGIN)
+
+
+# the third role's machine ---------------------------------------------------------------
+
+
+def test_the_third_machine_is_the_sinks_with_one_state_fewer():
+    """Every event number after the first is one lower. [protocol.md 5.10]"""
+    third = ThirdProcedure(handle=0x000B)
+    step = third.begin()
+    assert (step.after, step.action) == (ThirdState.AWAIT_MODULE_CALL, Action.CLAIM_SLOT)
+    step = third.feed(Event.SETUP_ACCEPTED)  # the sink answers this with its event 2
+    assert (step.after, step.action) == (ThirdState.AWAIT_MODULE_CALL, Action.SEND_ACCEPTED)
+    step = third.feed(Event.LINK_STATE_ADVANCED)
+    assert (step.after, step.action) == (
+        ThirdState.AWAIT_MODULE_RESULT, Action.BUILD_REQUEST_BLOCK
+    )
+    step = third.feed(Event.MODULE_CALL)
+    assert step.after == ThirdState.AWAIT_SETUP_REQUEST
+    assert step.host_event is not None
+    assert (step.host_event.mode, step.host_event.handle) == (Mode.ULLA_ON, 0x000B)
+
+
+def test_the_third_machines_second_half_runs_one_event_lower_too():
+    third = ThirdProcedure(handle=2, stop_reason=0xAA)
+    step = third.begin_phase_two()
+    assert (step.before, step.after) == (
+        ThirdState.AWAIT_SECOND_BEGIN, ThirdState.AWAIT_BOTH_PATHS
+    )
+    step = third.feed(Event.BEGIN_PHASE_TWO)
+    assert (step.after, step.action) == (ThirdState.AWAIT_CALLBACK_A, Action.REGISTER_CALLBACK)
+    assert third.feed(Event.BOTH_PATHS_READY).after == ThirdState.ESTABLISHED
+    step = third.feed(Event.CALLBACK_A)
+    assert (step.after, step.action) == (ThirdState.AWAIT_SETUP_REQUEST, Action.TEAR_DOWN)
+    assert step.host_event is not None
+    assert step.host_event.reason == RejectReason.ULLA_LITE_UTP_DISCONNECTED
+
+
+def test_the_third_machine_keeps_its_state_on_anything_else():
+    third = ThirdProcedure(state=ThirdState.AWAIT_MODULE_RESULT, module_result=0)
+    step = third.feed(Event.MODULE_CALL)
+    assert step.after == ThirdState.AWAIT_MODULE_RESULT
+    assert step.host_event is not None and step.host_event.result == Result.ERROR
+    step = third.feed(Event.STOP)
+    assert (step.after, step.expected) == (ThirdState.AWAIT_MODULE_RESULT, False)
+    with pytest.raises(ProtocolError):
+        ThirdProcedure(busy=True).feed(Event.BEGIN)

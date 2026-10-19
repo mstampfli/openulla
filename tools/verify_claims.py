@@ -360,7 +360,7 @@ def check_procedure_tables(acib, rkof):
     """The three procedures' state handlers, and the dispatchers that index them. [5.9, 5.10]"""
     for name, table, literal, addresses in (
         ("sink", SINK_TABLE, SINK_LITERAL, list(SINK_HANDLER_ADDRESSES.values())),
-        ("third", THIRD_TABLE, THIRD_LITERAL, list(THIRD_HANDLER_ADDRESSES)),
+        ("third", THIRD_TABLE, THIRD_LITERAL, list(THIRD_HANDLER_ADDRESSES.values())),
         ("source", PROCEDURE_TABLE, PROCEDURE_LITERAL, list(HANDLER_ADDRESSES.values())),
     ):
         if u32(acib, literal) != table:

@@ -55,10 +55,9 @@ A not-accepted PDU naming 0x73 is not an event: it goes straight to the host as 
 result 3 and the peer's own reason byte, and releases the link's procedure slot state 0
 claimed [fw acib 0x3c7de -> 0x61ff0 -> 0x6848c]. That is the path `peer_refused` models.
 
-Two limits, stated rather than smoothed over: the request block a state-2 handler builds is
+One limit, stated rather than smoothed over: the request block a state-2 handler builds is
 modelled by its offsets only, because what the calls it is handed to do with it was not
-followed [fw acib 0x68748 onwards, 0x6799c onwards]; and the third role's seven states are
-published as their addresses only, because only its two entry points were read.
+followed [fw acib 0x68748 onwards, 0x6799c onwards].
 """
 from __future__ import annotations
 
@@ -112,11 +111,29 @@ class SinkState(IntEnum):
     ESTABLISHED = 7
 
 
+class ThirdState(IntEnum):
+    """The third role's seven states.
+
+    It is the sink's machine with the state that waits for both links taken out: the same
+    request block, handed to the same three calls, and the same host report, with every event
+    number after the first one lower [fw acib 0x6809e against the sink's 0x679a0].
+    """
+
+    AWAIT_SETUP_REQUEST = 0
+    AWAIT_MODULE_CALL = 1
+    AWAIT_MODULE_RESULT = 2
+    AWAIT_SECOND_BEGIN = 3
+    AWAIT_BOTH_PATHS = 4
+    AWAIT_CALLBACK_A = 5
+    ESTABLISHED = 6
+
+
 class Event(IntEnum):
     """The event numbers, named after the source's posting sites.
 
     The sink uses the same numbering from the same slots, with one shift: its stop event is
-    8, where the source's is 9.
+    8, where the source's is 9. The third role's are one lower again from its second state
+    on, because it has one state fewer.
     """
 
     BEGIN = 0
@@ -606,6 +623,148 @@ _SINK_HANDLERS: dict[SinkState, Callable[[SinkProcedure, Event], Step[SinkState]
     SinkState.ESTABLISHED: _sink_established,
 }
 
+@dataclass
+class ThirdProcedure:
+    """The third role: a second responder, on a second link.
+
+    The receive path picks it for a setup request that arrives on a link other than the one
+    whose handle the sink's module has stored, and ignores a second request on that stored
+    link [fw acib 0x634e4]. So an earbud can hold two responder procedures at once. What the
+    role is *for* is not traced; what it does is.
+
+    Its host events carry the handle of the stored link rather than its own, which is the one
+    place it differs from the sink beyond the missing state [fw acib 0x68162].
+    """
+
+    handle: int = 0
+    """The handle this machine reports with: the stored link's, not the incoming one's."""
+    state: ThirdState = ThirdState.AWAIT_SETUP_REQUEST
+    busy: bool = False
+    module_result: int = MODULE_RESULT_OK
+    stop_reason: int = RejectReason.NOT_APPLICABLE
+    """The byte at +0x1D, which its second entry sets and its teardown reports
+    [fw acib 0x67e00, 0x6825c]."""
+    history: list[Step[ThirdState]] = field(default_factory=list)
+
+    def begin(self) -> Step[ThirdState]:
+        """State 0, event 0, with the link put into mode 0x35 [fw acib 0x67dd8]."""
+        self.state = ThirdState.AWAIT_SETUP_REQUEST
+        return self.feed(Event.BEGIN)
+
+    def begin_phase_two(self) -> Step[ThirdState]:
+        """Its second entry: state 3 and event 4, both one lower than the sink's.
+
+        It puts the link into mode 0x36 with a callback and keeps its third argument as the
+        reason the teardown will report [fw acib 0x67dfc].
+        """
+        self.state = ThirdState.AWAIT_SECOND_BEGIN
+        return self.feed(Event.MODULE_RESULT)
+
+    def feed(self, event: Event) -> Step[ThirdState]:
+        """Run one event through the handler of the current state. [fw acib 0x67ba4]"""
+        if self.busy:
+            raise ProtocolError("the dispatcher refuses to run inside itself")
+        self.busy = True
+        try:
+            step = _THIRD_HANDLERS[self.state](self, event)
+        finally:
+            self.busy = False
+        self.state = step.after
+        self.history.append(step)
+        return step
+
+    def feed_all(self, events: Iterable[Event]) -> list[Step[ThirdState]]:
+        return [self.feed(event) for event in events]
+
+
+def _third_unexpected(third: ThirdProcedure, event: Event, stay: ThirdState) -> Step[ThirdState]:
+    return Step(event, third.state, stay, expected=False)
+
+
+def _third_await_request(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+    """Event 0 claims the link's slot and moves on, answering nobody. [fw acib 0x67fac]
+
+    Unlike the sink's first state it neither sends a reply nor hands anything to a second
+    link [fw acib 0x67fbe].
+    """
+    if event != Event.BEGIN:
+        return _third_unexpected(third, event, ThirdState.AWAIT_SETUP_REQUEST)
+    return Step(event, ThirdState.AWAIT_SETUP_REQUEST, ThirdState.AWAIT_MODULE_CALL,
+                Action.CLAIM_SLOT)
+
+
+def _third_await_module_call(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+    """Event 1 sends the accepted PDU, event 2 builds the request block. [fw acib 0x67fec]"""
+    if event == Event.SETUP_ACCEPTED:
+        return Step(event, ThirdState.AWAIT_MODULE_CALL, ThirdState.AWAIT_MODULE_CALL,
+                    Action.SEND_ACCEPTED)
+    if event != Event.LINK_STATE_ADVANCED:
+        return _third_unexpected(third, event, ThirdState.AWAIT_MODULE_CALL)
+    return Step(event, ThirdState.AWAIT_MODULE_CALL, ThirdState.AWAIT_MODULE_RESULT,
+                Action.BUILD_REQUEST_BLOCK)
+
+
+def _third_await_module_result(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+    """Event 3 reports to the host and, on success, goes back to idle. [fw acib 0x68104]"""
+    if event != Event.MODULE_CALL:
+        return _third_unexpected(third, event, ThirdState.AWAIT_MODULE_RESULT)
+    ok = third.module_result == MODULE_RESULT_OK
+    host = ModeChangeEvent(
+        handle=third.handle,
+        mode=Mode.ULLA_ON if ok else Mode.BT_ACL_ACTIVE,
+        result=Result.SUCCESS if ok else Result.ERROR,
+        reason=RejectReason.NOT_APPLICABLE,
+    )
+    after = ThirdState.AWAIT_SETUP_REQUEST if ok else ThirdState.AWAIT_MODULE_RESULT
+    return Step(event, ThirdState.AWAIT_MODULE_RESULT, after, host_event=host)
+
+
+def _third_await_second_begin(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+    """Event 4 moves on. [fw acib 0x68184]"""
+    if event != Event.MODULE_RESULT:
+        return _third_unexpected(third, event, ThirdState.AWAIT_SECOND_BEGIN)
+    return Step(event, ThirdState.AWAIT_SECOND_BEGIN, ThirdState.AWAIT_BOTH_PATHS)
+
+
+def _third_await_both_paths(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+    """Event 5 registers a callback. [fw acib 0x681b4]"""
+    if event != Event.BEGIN_PHASE_TWO:
+        return _third_unexpected(third, event, ThirdState.AWAIT_BOTH_PATHS)
+    return Step(event, ThirdState.AWAIT_BOTH_PATHS, ThirdState.AWAIT_CALLBACK_A,
+                Action.REGISTER_CALLBACK)
+
+
+def _third_await_callback_a(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+    """Event 6, one call. [fw acib 0x681f8]"""
+    if event != Event.BOTH_PATHS_READY:
+        return _third_unexpected(third, event, ThirdState.AWAIT_CALLBACK_A)
+    return Step(event, ThirdState.AWAIT_CALLBACK_A, ThirdState.ESTABLISHED)
+
+
+def _third_established(third: ThirdProcedure, event: Event) -> Step[ThirdState]:
+    """Event 7 tears it down and reports mode 0 with the success result. [fw acib 0x6821c]"""
+    if event != Event.CALLBACK_A:
+        return _third_unexpected(third, event, ThirdState.ESTABLISHED)
+    host = ModeChangeEvent(
+        handle=third.handle,
+        mode=Mode.BT_ACL_ACTIVE,
+        result=Result.SUCCESS,
+        reason=third.stop_reason,
+    )
+    return Step(event, ThirdState.ESTABLISHED, ThirdState.AWAIT_SETUP_REQUEST, Action.TEAR_DOWN,
+                host_event=host)
+
+
+_THIRD_HANDLERS: dict[ThirdState, Callable[[ThirdProcedure, Event], Step[ThirdState]]] = {
+    ThirdState.AWAIT_SETUP_REQUEST: _third_await_request,
+    ThirdState.AWAIT_MODULE_CALL: _third_await_module_call,
+    ThirdState.AWAIT_MODULE_RESULT: _third_await_module_result,
+    ThirdState.AWAIT_SECOND_BEGIN: _third_await_second_begin,
+    ThirdState.AWAIT_BOTH_PATHS: _third_await_both_paths,
+    ThirdState.AWAIT_CALLBACK_A: _third_await_callback_a,
+    ThirdState.ESTABLISHED: _third_established,
+}
+
 HANDLER_ADDRESSES: dict[State, int] = {
     State.SEND_SETUP: 0x68588,
     State.AWAIT_SETUP_ACCEPTED: 0x685F8,
@@ -629,14 +788,14 @@ SINK_HANDLER_ADDRESSES: dict[SinkState, int] = {
     SinkState.ESTABLISHED: 0x67B18,
 }
 """The table at acib 0xf2628."""
-THIRD_HANDLER_ADDRESSES: tuple[int, ...] = (
-    0x67FAC, 0x67FEC, 0x68104, 0x68184, 0x681B4, 0x681F8, 0x6821C,
-)
-"""The third role's table at acib 0xf2648, seven states, by number.
-
-Only its two entry points were read: acib 0x67dd8 sets the state to 0 and posts event 0, and
-0x67f58 posts event 5. Its first state neither answers a peer nor hands anything to a second
-link, which is as much as can be said without tracing the rest [fw acib 0x67fbe]. The receive
-path picks it for a request that arrives on a link other than the one whose handle the sink's
-module has stored, and ignores a second request on that stored link [fw acib 0x634e4].
-"""
+THIRD_HANDLER_ADDRESSES: dict[ThirdState, int] = {
+    ThirdState.AWAIT_SETUP_REQUEST: 0x67FAC,
+    ThirdState.AWAIT_MODULE_CALL: 0x67FEC,
+    ThirdState.AWAIT_MODULE_RESULT: 0x68104,
+    ThirdState.AWAIT_SECOND_BEGIN: 0x68184,
+    ThirdState.AWAIT_BOTH_PATHS: 0x681B4,
+    ThirdState.AWAIT_CALLBACK_A: 0x681F8,
+    ThirdState.ESTABLISHED: 0x6821C,
+}
+"""The third role's table at acib 0xf2648. Its entry points are acib 0x67dd8, which sets the
+state to 0 and posts event 0, and 0x67dfc, which sets it to 3 and posts event 4."""

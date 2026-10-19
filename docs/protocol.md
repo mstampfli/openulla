@@ -912,14 +912,29 @@ rejected opcode and the reason into the body and sends it with opcode 4; the hol
 links are ready goes through acib 0x302f8, which picks one of the two by its verdict argument
 and is gated on two bytes of the sink's module block [fw acib 0x30300, 0x30306].
 
-**The third role** is published as its table and its two entry points only, because that is
-all that was read: the handlers are acib 0x67fac, 0x67fec, 0x68104, 0x68184, 0x681b4, 0x681f8
-and 0x6821c; its first entry sets the state to 0, puts the link in mode 0x35 and posts event 0
-[fw acib 0x67dd8], and a second posts event 5 [fw acib 0x67f58]. Its first state neither
-answers a peer nor hands anything to a second link [fw acib 0x67fbe]. The receive path picks
-it for a request arriving on a link other than the one whose handle the sink's module has
-stored, and ignores a second request on that stored link [fw acib 0x634e4] - so this earbud
-can hold two responder procedures at once, on two different links, in two different machines.
+**The third role is the sink's machine with the waiting state taken out.** Its seven handlers
+do the same work in the same order, with every event number after the first one lower:
+
+| state | handler | events it expects | what it does | next |
+|---|---|---|---|---|
+| 0 | acib 0x67fac | 0 | claims the link's slot and moves on, answering nobody and forwarding nothing | 1 |
+| 1 | acib 0x67fec | 1, 2 | event 1 sends the accepted PDU, event 2 builds the request block and hands it to the same three calls as the sink's | 1 or 2 |
+| 2 | acib 0x68104 | 3 | reports to the host, mode 1 and success or mode 0 and result 1 | 0 or 2 |
+| 3 | acib 0x68184 | 4 | three calls into its module | 4 |
+| 4 | acib 0x681b4 | 5 | registers a callback | 5 |
+| 5 | acib 0x681f8 | 6 | one call back into the module | 6 |
+| 6 | acib 0x6821c | 7 | tears the link down and reports mode 0 with the success result | 0 |
+
+Its entry points match the sink's one for one, one number lower: the first puts the link in
+mode 0x35, sets the state to 0 and posts event 0 [fw acib 0x67dd8], and the second puts it in
+mode 0x36 with a callback, sets the state to 3, posts event 4 and keeps its third argument as
+the reason byte the teardown will report [fw acib 0x67dfc, reported at 0x6825c].
+
+Two details of its own. Its host events carry the handle of the link whose handle the sink's
+module stored, not of its own link [fw acib 0x68162 against the sink's 0x67a4c]. And the
+receive path picks it for a request arriving on a link other than that stored one, ignoring a
+second request on the stored link itself [fw acib 0x634e4] - so this earbud can hold two
+responder procedures at once, on two different links, in two different machines.
 
 `openulla/procedure.py` holds the sink's table beside the source's, and `openulla.controller`
 drives it rather than keeping a second copy of the same rules: the four checks decide, and
