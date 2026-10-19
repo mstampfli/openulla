@@ -192,7 +192,16 @@ or capturing on the Linux side of the same link both avoid the question.
 Every address in the docstrings is a byte offset into a payload of Apple's own published
 firmware, build 9A348, which `tools/fetch_firmware.sh` fetches and `tools/ftab.py` splits.
 No firmware and no disassembly is redistributed here, so the addresses are the way to check a
-value, and `tools/verify_claims.py` does it for you:
+value, and `tools/verify_claims.py` does it for you.
+
+**The whole path was walked from nothing on 2026-10-19**, which is the only way to know it
+still works: Apple's catalog served build 9A348 as `A3048.zip`, 11,455,085 bytes, SHA-256
+beginning `a04ff3f0d74e47e4` — the same asset [ulla.md](ulla.md) section 1 names. The
+`firmware.uarp` inside it, SHA-256 beginning `78171265810972c3`, is byte for byte the file
+every address in this repository was read from, and the four payloads extracted from that
+download pass **23 of 23 claims**. If your own download gives those two prefixes, you have the
+same bytes; if it does not, Apple has published a new build and the tool will tell you which
+claims moved.
 
 ```sh
 tools/fetch_firmware.sh

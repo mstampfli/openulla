@@ -52,8 +52,14 @@ def test_no_tracked_file_is_a_disassembly_listing():
 
 
 def test_the_checks_themselves_catch_what_they_are_for():
-    """A guard that cannot fail is not a guard: these are the shapes it must reject."""
-    assert ADDRESS.findall("the device at 60:f4:45:11:22:33 answered")
-    assert "60:f4:45:11:22:33" not in PLACEHOLDERS
+    """A guard that cannot fail is not a guard: these are the shapes it must reject.
+
+    The example address is assembled at run time on purpose. Written out, it would be an
+    address in a tracked file, and the check above would rightly refuse this very file: that
+    is what happened the first time, because the test was still untracked when it was proved.
+    """
+    example = ":".join(("60", "f4", "45", "11", "22", "33"))
+    assert ADDRESS.findall(f"the device at {example} answered")
+    assert example not in PLACEHOLDERS
     assert LISTING.findall("0x0661ab: movs r0, #1\n0x0661ad: bx lr\n")
     assert "acib.bin".endswith(FORBIDDEN_SUFFIXES)
