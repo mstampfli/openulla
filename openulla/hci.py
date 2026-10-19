@@ -56,6 +56,25 @@ OPCODE_PACKET_TABLE_DIRECT = 0xFDEE  # handler fw acib 0x169bc: one flag byte ->
 OPCODE_PACKET_SIZE_HALFWORD = 0xFD7C  # an arbitrary size from the request
 OPCODE_PACKET_SIZE_HALFWORD_ALT = 0xFD7D
 OPCODE_PACKET_SIZE_INTERNAL = 0xFD5F  # reaches the hard-coded 1024 at fw acib 0x57ac2
+# A vendor command's parameters begin at **+0xB** of the request structure its handler is
+# given. That is calibrated on 0xFE50, whose mode byte is its seventh parameter and is read at
+# +0x11 [fw acib 0x1daa2], and whose handle is its first two and is read at +0xB [fw acib
+# 0x1daa6]. The two commands below are read against that basis, so their field positions are
+# parameter offsets and not guesses.
+PACKET_SIZE_MODE_FIELD = 0  # 0xFD02's mode byte, read at fw acib 0x160d6 (+0xB)
+PACKET_SIZE_MODE_WIDE = 1  # the one mode that selects the wide size [fw acib 0x160e6]
+PACKET_SIZE_WIDE = 2586  # fw acib 0x160f0, which is Apple's five-slot payload maximum
+PACKET_SIZE_WIDE_BUFFER = 2600  # fw acib 0x160fa, the companion figure it sets with it
+PACKET_SIZE_BASIC = 339  # fw acib 0x16108, which is DH5's payload maximum
+PACKET_SIZE_BASIC_BUFFER = 352  # fw acib 0x16112
+# 0xFDEE's fields. Its handler takes the handle through the lookup at fw acib 0x18c08, which
+# reads the halfword at +0xB, and reads the flag at +0xD; it also reads +0xF and +0x10, whose
+# meaning is not established [fw acib 0x169bc, 0x169ee, 0x169e4].
+PACKET_TABLE_HANDLE_FIELD = 0
+PACKET_TABLE_FLAG_FIELD = 2
+PACKET_TABLE_UNREAD_FIELD = 3  # the one byte in that span the handler never reads
+PACKET_TABLE_PERMISSION_SET = 0x18  # what the flag's set path writes [fw acib 0x169d8]
+PACKET_TABLE_PERMISSION_CLEAR = 0x11  # and its clear path [fw acib 0x16a00]
 # The stream's control path of protocol.md 7.1, named here so that the senders below and
 # openulla/describe.py agree on which opcode is which.
 OPCODE_STREAM_DMA_ADDRESS = 0xFE57

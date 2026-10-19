@@ -21,6 +21,22 @@ STREAM_COMMAND_NAMES = {
     hci.OPCODE_STREAM_STOP: "stop",
     hci.OPCODE_STREAM_DESCRIPTOR: "read the four-word descriptor back",
 }
+# Apple's six mask bits as one number, which is the immediate 0xFDEE writes.
+APPLE_SIX_BITS = sum(1 << bit for bit in packets.APPLE_MASK_BITS)
+# The other three writers of the maximum packet size (6.8). A capture reader wants these named
+# because who owns that field is not settled, so any of them appearing is worth noticing.
+SIZE_WRITER_NAMES = {
+    hci.OPCODE_PACKET_SIZE_HALFWORD: (
+        "also writes the maximum packet size, from its own request, behind a state test"
+    ),
+    hci.OPCODE_PACKET_SIZE_HALFWORD_ALT: (
+        "also writes the maximum packet size, from its own request, except that 0xFFFF there "
+        "means leave it unchanged"
+    ),
+    hci.OPCODE_PACKET_SIZE_INTERNAL: (
+        "reaches an internal path that writes a hard-coded 1024 to the maximum packet size"
+    ),
+}
 
 
 def named(value: int, enum: type[IntEnum]) -> str:
@@ -289,6 +305,50 @@ def describe_hci_command(data: bytes) -> list[str]:
             "  the feature group that carries the mode procedure is switched "
             + ("on" if params[0] else "off")
         )
+    elif opcode == hci.OPCODE_PACKET_SIZE and len(params) > hci.PACKET_SIZE_MODE_FIELD:
+        mode = params[hci.PACKET_SIZE_MODE_FIELD]
+        wide = mode == hci.PACKET_SIZE_MODE_WIDE
+        size = hci.PACKET_SIZE_WIDE if wide else hci.PACKET_SIZE_BASIC
+        buffer = hci.PACKET_SIZE_WIDE_BUFFER if wide else hci.PACKET_SIZE_BASIC_BUFFER
+        lines += [
+            "  the maximum packet size (protocol.md 6.8)",
+            f"  mode {mode} selects {size} bytes, with {buffer} as the companion figure",
+            "  " + (
+                f"{size} is the five-slot payload of Apple's own packet-type table, so this "
+                "host is configuring for HDR"
+                if wide
+                else f"{size} is DH5's payload maximum, the largest standard packet"
+            ),
+        ]
+    elif opcode == hci.OPCODE_PACKET_TABLE_DIRECT and len(params) > hci.PACKET_TABLE_FLAG_FIELD:
+        handle = int.from_bytes(params[hci.PACKET_TABLE_HANDLE_FIELD:][:2], "little")
+        flag = params[hci.PACKET_TABLE_FLAG_FIELD]
+        lines.append("  the direct route into Apple's packet-type table (protocol.md 6.9)")
+        lines.append(f"  handle 0x{handle:04x}, flag byte 0x{flag:02x}")
+        if flag:
+            lines += [
+                f"  permission 0x{hci.PACKET_TABLE_PERMISSION_SET:02x}, which leaves all six of "
+                "Apple's packet types selectable",
+                f"  the link's requested mask becomes 0x{APPLE_SIX_BITS:x} and its active table "
+                f"becomes {packets.TABLE_APPLE}, with no negotiation",
+            ]
+        else:
+            lines.append(
+                f"  permission 0x{hci.PACKET_TABLE_PERMISSION_CLEAR:02x} on the standard byte "
+                "instead, so this does not reach Apple's table"
+            )
+        if flag & 1:
+            lines.append(
+                "  bit 0 is set, which also forces the table-2 branch of the mask filter for "
+                "EVERY link, not only this one"
+            )
+        if len(params) > hci.PACKET_TABLE_UNREAD_FIELD:
+            lines.append(
+                f"  the handler also reads two later bytes whose meaning is not established, "
+                f"and never reads parameter {hci.PACKET_TABLE_UNREAD_FIELD}"
+            )
+    if opcode in SIZE_WRITER_NAMES:
+        lines.append(f"  {SIZE_WRITER_NAMES[opcode]}")
     if opcode in STREAM_COMMAND_NAMES:
         lines.append(f"  the stream's control path: {STREAM_COMMAND_NAMES[opcode]}")
     elif opcode in hci.ULLA_SESSION_COMMANDS and opcode != hci.OPCODE_ULLA_SETUP:

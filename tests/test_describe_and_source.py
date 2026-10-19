@@ -316,3 +316,64 @@ def test_an_undefined_bit_is_reported_rather_than_named():
     # An unknown page number defines nothing, so every set bit in it is reported.
     assert features.undefined(9, b"\x05") == [0, 2]
     assert features.MAX_PAGE == 2
+
+
+def test_the_two_short_levers_decode_the_way_a_capture_reader_needs():
+    """0xFD02 and 0xFDEE are the two commands issue #3 asks contributors to look for.
+
+    A decoder that cannot name them is no use for that question, so both are decoded here, and
+    the figures come from `packets.TABLE` rather than being written twice.
+    """
+    from openulla import describe, hci, packets
+
+    def lines(opcode, params):
+        return "\n".join(describe.describe_hci_command(hci.command(opcode, params)))
+
+    wide = lines(hci.OPCODE_PACKET_SIZE, bytes([hci.PACKET_SIZE_MODE_WIDE]))
+    assert "2586" in wide and "2600" in wide and "Apple" in wide
+    basic = lines(hci.OPCODE_PACKET_SIZE, bytes([hci.PACKET_SIZE_MODE_WIDE + 1]))
+    assert "339" in basic and "DH5" in basic
+    # One fact, one place: both sizes are entries of the recovered table.
+    assert hci.PACKET_SIZE_WIDE == packets.by_mask_bit(21).payload
+    assert hci.PACKET_SIZE_BASIC == next(e.payload for e in packets.TABLE if e.name == "DH5")
+
+    # 0xFDEE with its flag set reaches table 2 and all six bits, and bit 0 reaches every link.
+    direct = lines(hci.OPCODE_PACKET_TABLE_DIRECT, bytes([0x0B, 0, 1, 0, 0, 0]))
+    assert "handle 0x000b" in direct
+    assert f"0x{describe.APPLE_SIX_BITS:x}" in direct and "0x3f0000" in direct
+    assert f"table becomes {packets.TABLE_APPLE}" in direct
+    assert "EVERY link" in direct
+    assert describe.APPLE_SIX_BITS == 0x3F0000
+    # With the flag clear it must NOT claim to reach Apple's table.
+    clear = lines(hci.OPCODE_PACKET_TABLE_DIRECT, bytes([0x0B, 0, 0, 0, 0, 0]))
+    assert "does not reach Apple's table" in clear
+    assert "EVERY link" not in clear
+    # An even flag is set but has bit 0 clear, so only the wider warning applies.
+    even = lines(hci.OPCODE_PACKET_TABLE_DIRECT, bytes([0x0B, 0, 2, 0, 0, 0]))
+    assert "selectable" in even and "EVERY link" not in even
+
+    # The other three writers of the size are named, and 0xFD7D's sentinel is called out.
+    assert "leave it unchanged" in lines(hci.OPCODE_PACKET_SIZE_HALFWORD_ALT, b"\xff\xff")
+    assert "state test" in lines(hci.OPCODE_PACKET_SIZE_HALFWORD, b"\x00\x04")
+    assert "1024" in lines(hci.OPCODE_PACKET_SIZE_INTERNAL, b"")
+    # Too short to carry its field: it must still name the command and not raise.
+    assert "0xfd02" in lines(hci.OPCODE_PACKET_SIZE, b"")
+
+
+def test_the_vendor_parameter_offsets_rest_on_a_stated_calibration():
+    """Every field position above is a parameter offset, read off the request's +0xB basis.
+
+    That basis is the one thing here that is not visible in a capture, so it is pinned to the
+    command it was calibrated on: 0xFE50's seventh parameter is its mode byte and the firmware
+    reads it at +0x11, its first two are the handle and are read at +0xB. If the basis were
+    wrong, every field below would be wrong by the same eleven bytes, which is exactly the kind
+    of constant offset that reads as plausible.
+    """
+    from openulla import hci
+
+    basis = 0x11 - (hci.UllaSetup.LENGTH - 1)  # the mode byte is the last of the seven
+    assert basis == 0xB, basis
+    assert hci.PACKET_SIZE_MODE_FIELD == 0xB - basis  # its handler reads +0xB, so parameter 0
+    assert hci.PACKET_TABLE_FLAG_FIELD == 0xD - basis
+    assert hci.PACKET_TABLE_HANDLE_FIELD == 0xB - basis
+    assert hci.PACKET_TABLE_UNREAD_FIELD == 0xE - basis

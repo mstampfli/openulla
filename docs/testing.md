@@ -39,6 +39,14 @@ hold tens of thousands of records and none of them. Start the capture, then conn
   equivalent route. A Vision Pro capture is the single most valuable contribution this project
   could receive, because that device is known to use the link.
 
+`tools/capture_decode.py` now reads the two short levers out of a capture for you rather than
+leaving you to look up a parameter byte. For **0xFD02** it names the mode byte and says which
+of the two maximum packet sizes that mode selects, including that mode 1 selects the five-slot
+payload of Apple's own packet-type table. For **0xFDEE** it names the handle, the flag byte,
+the permission and the active table the flag reaches, and warns when bit 0 is set, because that
+bit reaches every link and not only the one named. It also names 0xFD7C, 0xFD7D and 0xFD5F
+wherever they appear, since each of them also writes the maximum packet size.
+
 **What to look for, in order.** The feature exchange first (protocol.md 5.8): if a host drives
 this link at all, that is its first message, and the capture then holds the feature words both
 ends advertise. Then the vendor command's parameters against the ones the earbuds' own code
