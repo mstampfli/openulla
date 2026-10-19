@@ -22,6 +22,12 @@ and the bit says which role is refusing; an earbud facing a source is the primar
 On acceptance the sink copies the parsed fields into its own context, forwards an identical
 0x73 to its sibling link, and sends the accepted PDU only once both links are ready
 [fw acib 0x677c8, 0x303a8, 0x302f8].
+
+Two refusals sit outside that list of four, both proven and both published in protocol.md
+5.10. Before the checks run, a role test of its own refuses with 0x81 [fw acib 0x634ce]. And
+after they pass, a request the sink cannot hand to its sibling is refused with 0x24, the
+standard "LMP PDU not allowed" code, which the firmware's own reason formatter cannot even
+name [fw acib 0x6783c]. So a decoder has to pass an unknown reason byte through.
 """
 from __future__ import annotations
 
@@ -31,6 +37,7 @@ from . import lmp
 from .codes import Mode, RejectReason, Result
 from .errors import ProtocolError
 from .hci import ModeChangeEvent, UllaSetup
+from .procedure import Action, Event, SinkProcedure, SinkState
 
 ACCEPT = 0
 PRIMARY_ROLE = 0x80  # bit 7 of the reason byte: the role of the device refusing
@@ -71,10 +78,18 @@ class AcceptChecks:
 
 @dataclass
 class Responder:
-    """The sink's controller: answers a setup request, forwarding to its sibling first."""
+    """The sink's controller: answers a setup request, forwarding to its sibling first.
+
+    The decisions about *when* each PDU goes out are not made here: they belong to the sink's
+    own procedure, which openulla.procedure holds as the firmware's eight-state table, and
+    this class drives that one instead of keeping a second copy of the same rules
+    [fw acib 0x63448 for this order, 0x677c8 and 0x67858 for the states].
+    """
 
     checks: AcceptChecks = field(default_factory=AcceptChecks)
     sibling_ready: bool = True
+    """Whether the second link is ready: the procedure's own both-links test."""
+    procedure: SinkProcedure = field(default_factory=SinkProcedure)
     received: lmp.SetupRequest | None = None
     forwarded: bytes | None = None
     link_band: int | None = None
@@ -105,21 +120,38 @@ class Responder:
         raise ProtocolError("this responder answers the setup PDUs only")
 
     def _setup(self, request: lmp.SetupRequest) -> bytes:
+        """The four checks, then the procedure's first two states. [fw acib 0x63448]"""
         reason = self.checks.decide()
         if reason != ACCEPT:
             return lmp.NotAccepted(lmp.OPCODE_ULLA_SETUP, reason, tid=request.tid).to_bytes()
+        self.procedure.both_links_ready = self.sibling_ready
+        step = self.procedure.begin()
+        if step.action is Action.REFUSE:
+            # Not one of the reasons the checks give: the sibling could not take it (5.10).
+            return lmp.NotAccepted(
+                lmp.OPCODE_ULLA_SETUP, step.reason or 0, tid=request.tid
+            ).to_bytes()
         self.received = request
-        self.forwarded = request.to_bytes()  # the identical PDU the sink sends on
-        if not self.sibling_ready:
+        if step.action is Action.FORWARD_TO_SIBLING:
+            self.forwarded = request.to_bytes()  # the identical PDU the sink sends on
+        return self._accept_when_both_links_are(Event.SETUP_ACCEPTED, request.tid)
+
+    def _accept_when_both_links_are(self, event: Event, tid: int) -> bytes:
+        """Feed the procedure and send the accepted PDU only if it says to. [fw acib 0x67858]"""
+        if self.procedure.state is not SinkState.AWAIT_BOTH_LINKS:
+            return lmp.Accepted(lmp.OPCODE_ULLA_SETUP, tid=tid).to_bytes()
+        step = self.procedure.feed(event)
+        if step.action is not Action.SEND_ACCEPTED:
             return b""  # the accepted PDU waits until both links are ready
-        return lmp.Accepted(lmp.OPCODE_ULLA_SETUP, tid=request.tid).to_bytes()
+        return lmp.Accepted(lmp.OPCODE_ULLA_SETUP, tid=tid).to_bytes()
 
     def sibling_became_ready(self, tid: int = 0) -> bytes:
         """The accepted PDU the sink held back until its second link was ready."""
         if self.received is None:
             raise ProtocolError("no setup request was accepted")
         self.sibling_ready = True
-        return lmp.Accepted(lmp.OPCODE_ULLA_SETUP, tid=tid).to_bytes()
+        self.procedure.both_links_ready = True
+        return self._accept_when_both_links_are(Event.LINK_STATE_ADVANCED, tid)
 
 
 @dataclass

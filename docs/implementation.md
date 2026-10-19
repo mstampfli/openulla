@@ -21,7 +21,7 @@ fill it in; it says so, and the tests say so too.
 | `bands.py` | the radio's band plan, the frequency function, and the rules that pick a band |
 | `codes.py` | the numbered values with the firmware's own names, including the firmware's own spelling of each |
 | `errors.py` | two exceptions: malformed, and refused with the code the firmware would send |
-| `controller.py` | each end of the link-manager exchange, with the responder's four checks |
+| `controller.py` | each end of the link-manager exchange: the responder's four checks, and the procedure below driving when each PDU goes out |
 | `procedure.py` | the controller's own procedures, one per role: which event each state expects, what it sends, and which result the host is told |
 | `sink.py` | an earbud-shaped simulator |
 | `source.py` | what a host sends, and the vendor commands its controller would need |

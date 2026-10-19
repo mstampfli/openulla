@@ -921,6 +921,10 @@ it for a request arriving on a link other than the one whose handle the sink's m
 stored, and ignores a second request on that stored link [fw acib 0x634e4] - so this earbud
 can hold two responder procedures at once, on two different links, in two different machines.
 
+`openulla/procedure.py` holds the sink's table beside the source's, and `openulla.controller`
+drives it rather than keeping a second copy of the same rules: the four checks decide, and
+everything about when each PDU goes out comes from the machine.
+
 ## 6. Controller interface: HCI vendor commands
 
 The source's host starts the whole thing with vendor command **0xFE50** [fw acib table at

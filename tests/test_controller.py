@@ -6,6 +6,7 @@ from openulla.codes import Mode, RejectReason, Result
 from openulla.controller import ACCEPT, PRIMARY_ROLE, AcceptChecks, Initiator, Responder
 from openulla.errors import ProtocolError
 from openulla.hci import UllaSetup
+from openulla.procedure import Event, SinkProcedure, SinkState
 
 SETUP = UllaSetup(handle=0x000B, extra_flags=0x01, config_word=0x0102, flags=0xFF)
 
@@ -130,6 +131,32 @@ def test_the_responder_answers_a_feature_request_with_its_own_word():
     assert reply == lmp.Features(0x000000E0, reply=True)
     assert responder.peer_features == 0x00000060
     assert lmp.agreed(responder.features, responder.peer_features, lmp.FEATURE_BIT_BANDS)
+
+
+def test_the_responder_drives_the_firmwares_own_procedure():
+    """One set of rules, not two: the states come from openulla.procedure. [protocol.md 5.10]"""
+    responder = Responder()
+    responder.receive(Initiator().setup_request(SETUP))
+    assert responder.procedure.state is SinkState.AWAIT_MODULE_CALL
+    assert [step.event for step in responder.procedure.history] == [
+        Event.BEGIN, Event.SETUP_ACCEPTED
+    ]
+
+
+def test_a_request_the_sibling_cannot_take_is_refused_with_the_standard_code():
+    responder = Responder(procedure=SinkProcedure(sibling_accepts=False))
+    reply = lmp.parse(responder.receive(Initiator().setup_request(SETUP)))
+    assert reply == lmp.NotAccepted(lmp.OPCODE_ULLA_SETUP, 0x24)
+    assert responder.forwarded is None
+    assert responder.procedure.state is SinkState.AWAIT_SETUP_REQUEST
+
+
+def test_the_role_byte_path_answers_without_forwarding_anything():
+    responder = Responder(procedure=SinkProcedure(role_byte_is_one=True), sibling_ready=False)
+    reply = lmp.parse(responder.receive(Initiator().setup_request(SETUP)))
+    assert reply == lmp.Accepted(lmp.OPCODE_ULLA_SETUP)
+    assert responder.forwarded is None
+    assert responder.procedure.state is SinkState.AWAIT_MODULE_CALL
 
 
 def test_a_feature_reply_is_kept_and_not_answered():
