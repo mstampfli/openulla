@@ -665,6 +665,11 @@ argument]: in the 0x7B space 0x01, 0x0A to 0x0F, 0x17, 0x18, 0x1B, 0x1C, 0x24, 0
 0x28; in the 0x7F space 0x03, 0x04, 0x0B, 0x0C, 0x0D, 0x10, 0x11, 0x15, 0x16, 0x17, 0x19,
 0x21, 0x22, 0x23 and 0x26. Three senders compute their extended opcode at runtime and one
 function sends two different messages on two paths, so that list is a floor, not a ceiling.
+One of those three settles it: it takes the escape opcode, the extended opcode and the
+transaction flag from three bytes of an array it is handed, so it can send anything at all
+[fw acib 0x4aa8c to 0x4aa92]. Any list read off the call sites is what can certainly be sent,
+never what cannot. For the ordinary opcodes the same question does have a clean answer, and
+5.2 gives it.
 
 **Two of those are messages the earbuds send and will not accept.** 0x7B/0x24 is one of the
 twelve on the reject stub, and 0x7B/0x28 is past the end of the 39-entry table altogether. So
@@ -724,7 +729,8 @@ not accepted, which is the asymmetry above.
 
 Two rows are the messages this document decodes in full, and this table is how they were
 checked: 0x7B/0x17's one byte is the allowed-band mask of section 6.2, and 0x7B/0x1C's 3N
-bytes are the band ranges of section 6.5, whose count the length carries.
+bytes are the band ranges of section 6.5, whose count the length carries. A third pair, with
+its two fields and what the receiver does with them, is traced end to end in 5.11.
 
 ### 5.8 The feature exchange, which gates everything else
 
@@ -756,7 +762,10 @@ One quirk, for anyone comparing against a capture: when a per-link identity chec
 halfword of 0xF, a byte of at most 10, and a ten-byte comparison at the link's 0x4E), the low
 byte of the word the earbud advertises is reduced to its bits 0, 3, 5 and 7
 [fw acib 0x3684e deciding it, 0x2942c and 0x294a8 applying the mask 0xA9]. Bit 5, the band
-family, survives that reduction. What the other bits of the word mean is open.
+family, survives that reduction; bits 1 and 2, the two in the table above that steer the reply
+of 5.11, do not. The mask is applied to the word the earbud advertises, so it is the peer's
+view of those two bits that goes to zero, and with it the peer's reason to answer in the 0x7B
+space. What the remaining bits mean is open.
 
 ### 5.9 The source's own procedure, state by state
 
