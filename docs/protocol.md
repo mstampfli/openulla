@@ -2325,6 +2325,14 @@ offset up to zero in strides of **0xC4**, nine times, clearing one field of each
 [fw acib 0x133ec to 0x133fc]. That stride and base are the ones the 0x7B/0x0C setter of 5.14
 indexes with, so the two findings are reading one array of nine link records.
 
+**And a host can read back what it set.** One function reads the size at +0x718 and the
+companion byte at +0x730 through their getters, lays them out as a halfword each with a byte
+from another global between them, and sends the result under id **0x105** [fw acib 0x15430 and
+0x15534 the two getters, 0xaec8 to 0xaee8 the layout, 0xaef0 the send]. That is the **only**
+reader of +0x730 in the payload, which is how the two fields are known to belong together. What
+the companion byte's two values of 8 and 0x17 mean is still open; it is not a packet-type index,
+since that table has eighteen entries.
+
 ## 7. The audio layer, and what is not known
 
 Once the mode change succeeds the radio carries the audio. The parts that are established:
