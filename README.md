@@ -387,10 +387,10 @@ link keys and other people's device addresses.
   [docs/implementation.md](docs/implementation.md).
 - `tests/`: the suite over the layouts, the state machine, the band plan and a
   whole simulated negotiation. `python3 -m pytest`.
-- `interop/vectors.txt`: every message this project documents, as bytes, so an
-  implementation in another language can check itself against them without
-  reading Python. Generated from the library, so it cannot drift; the format is
-  in [interop/README.md](interop/README.md).
+- `interop/`: four generated files for an implementation in another language -
+  every message as bytes, the session manager's table, the three controller
+  procedures and every named number. Generated from the library, so they cannot
+  drift; the formats are in [interop/README.md](interop/README.md).
 - `docs/implementation.md`: what the code covers, what the simulator refuses to
   invent, and why the last step needs a controller that does not exist yet.
 - `docs/ulla.md`: the report; every claim cites a quote, a firmware address or
@@ -417,9 +417,9 @@ link keys and other people's device addresses.
 - `tools/ulla_decode.py`: decodes one frame, PDU, sibling message, vendor
   command or vendor event from hex, naming its fields and, for the band
   messages, which bands a mask means. Useful when reading a capture or a log.
-- `tools/ulla_vectors.py`: writes or checks `interop/vectors.txt`. `--check`
-  fails if the file and the library disagree, which is what keeps the artifact
-  honest.
+- `tools/ulla_interop.py`: writes or checks the four files in `interop/`.
+  `--check` fails if any of them and the library disagree, which is what keeps
+  the artifacts honest.
 - `tools/ulla_sink.py`: answers like an earbud on a real L2CAP channel, PSM
   0x1001, so a source implementation can be tested over real Bluetooth with no
   earbuds involved. It prints every internal event it supplies by name, and
