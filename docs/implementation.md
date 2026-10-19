@@ -242,8 +242,20 @@ python3 tools/ftab.py $U payload NERF payloads/NERF.bin
 python3 tools/ftab.py $U payload CTAB payloads/ctab.bin
 python3 tools/payload_survey.py --payloads payloads
 
-# R1FW is a third container, and it holds a second rkos and sbd1 that no claim here has read:
-python3 tools/ftab.py $U list --payload R1FW
+# R1FW is a third container and holds a second rkos and sbd1, differently sized and not the
+# same images. Neither names the link [ulla.md 4.7]:
+for tag in rkos sbd1 bver; do
+    python3 tools/ftab.py $U extract $tag "payloads/R1FW-$tag.bin" --payload R1FW
+done
+
+# And the SuperBinary's own twenty records, for the same question one level up. CMAP appears
+# twice and TMAP three times, so those need slicing by the offset and size `uarp.py list`
+# prints rather than `extract`, which takes only the first of a repeated tag.
+python3 tools/uarp.py $U list
+for tag in AUCH AUER AUFM AUFR AULB AUPC AUPS AUUF AUUT CTAB FTAB NERF R1FW STFC STFW; do
+    python3 tools/uarp.py $U extract $tag "payloads/SB-$tag.bin"
+done
+python3 tools/payload_survey.py --payloads payloads
 ```
 
 ```

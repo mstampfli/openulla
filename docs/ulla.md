@@ -405,15 +405,23 @@ Every firmware claim in these documents comes from three payloads: `acib`, `rkof
 That could be where the looking happened rather than where the material is, so it was checked.
 `tools/payload_survey.py` is the check and it scans whatever is in the directory you give it.
 
-**What was measured, exactly.** The 46 entries of the `FTAB` table less `sbd2`, which is a
-zero-byte record and so carries nothing, plus `CTAB` and `NERF`, which are SuperBinary payloads
-in their own right: 45 + 2 = **47 files**. That is not the build. The
-SuperBinary holds **twenty** payload records, and the ones not examined are `TMAP` three times,
-`R1FW`, `STFC`, `STFW`, nine `AU*` records and `CMAP` twice. **`R1FW` is itself an `rkosftab`
-container** and holds a second `rkos` of 335,008 bytes and a second `sbd1` of 284,096, so two
-of the very tags every claim here rests on exist in a second, differently sized copy that this
-project has not read. An earlier version of this section called the 47 "the whole build", which
-was wrong twice over: it is about half the payload bytes, and 46 less one plus one is 46.
+**What was measured.** Every payload record this container holds at any level: the
+**twenty** SuperBinary records, the **46** entries of the `FTAB` table inside one of them (one
+of which, `sbd2`, is a zero-byte record and so carries nothing), and the **three** members of
+`R1FW` inside another. An earlier version of this section measured only `FTAB`'s entries plus
+two records and called that "the whole build", which was wrong twice over: it was about half
+the payload bytes, and 46 less one plus one is 46, not 47.
+
+**`R1FW` was the gap worth closing, because it is a third container** - an `rkosftab` like
+`FTAB` - and it holds a second `rkos` of 335,008 bytes and a second `sbd1` of 284,096, two of
+the very tags every claim here rests on. They are **not** the same images: neither is a prefix
+or a substring of its `FTAB` namesake, and at the same offsets they agree in 1.5 and 5.5 per
+cent of bytes. Neither names the link in any spelling. What they are is partly readable: the
+`R1FW` `rkos` carries Apple's code-signing, accessory-certification and host-attestation
+authority names among its 344 strings, and `R1FW`'s third member is a 67-byte version record
+reading `9.0.348.0`, dated 17 August 2026, for `chip_revision_c0`. A tempting reading - that
+`R1FW` is the release build and `FTAB` the debug one - is **wrong**: both copies of `rkos` and
+`sbd1` carry `RTKit_release`, and the only debug build in the whole container is `phyb`.
 
 - **Within those 47 the link is named in four**: `acib`, `rkof`, `sbd1` and `ctab` - the last
   being the compressed copy of the whole table, so it holds the others' strings by
@@ -424,19 +432,29 @@ was wrong twice over: it is about half the payload bytes, and 46 less one plus o
   pretend otherwise. `phyb` is separately accounted for in [protocol.md](protocol.md) 7.4, and
   `aopf` says what it is in its own strings: `AppleAOPVoiceTriggerController v600.14` at
   `aopf` 0x6f50c, though the same payload is also the power-management firmware.
-- **But the name does occur outside those payloads**, in one of the records this survey did not
-  read: the third `TMAP` record is an `NSKeyedArchiver` property list and names the link eight
-  times, as `ulla_time_mode_both_off`, `_anc`, `_trcy`, `_auto_anc`, `_hearing_test`, `_pse`,
-  `_ssl` and `_pse_plus`. Those are user-facing mode names rather than protocol material, but
-  "named in three payloads and nowhere else" was not true of the build and is withdrawn.
+- **The name does occur in two more places, neither of them code.** The third `TMAP` record is
+  an `NSKeyedArchiver` property list and names the link eight times, as
+  `ulla_time_mode_both_off`, `_anc`, `_trcy`, `_auto_anc`, `_hearing_test`, `_pse`, `_ssl` and
+  `_pse_plus` - user-facing mode names rather than protocol material. And the two containers
+  `FTAB` and `CTAB` name it because they *hold* the payloads that do. So "named in three
+  payloads and nowhere else" was not true of the build and is withdrawn; what is true is that
+  **no code payload outside `acib`, `rkof` and `sbd1` names it**, including the two `R1FW`
+  images, `STFC` with its 1,417 strings and `STFW` with its 1,394.
 - **The packet-type table's signature appears in two of the 47**, `acib` and `ctab`, and the
   `ctab` copies are the same table byte-packed rather than a byte-for-byte duplicate of
   `acib`'s. In `acib` the three maxima are adjacent halfwords in the two array regions 5.13
   documents. A null model of random triples drawn from the same numeric range satisfies the
   256-byte rule about one time in a hundred, so the signature is specific; it is not unique.
 - **Every occurrence of `hdr` read in context is the word "header"**, in strings like `rx hdr`,
-  `raw length %u < hdr` and `Clog hdr len`. The mixed-case occurrences in `acib`, `aopf`,
-  `rkof` and `rtpf` are not strings at all but Thumb instruction bytes.
+  `raw length %u < hdr` and `Clog hdr len`. Every **upper**-case `HDR` anywhere in the
+  container, the `R1FW` images and `STFC` included, is not a string at all: none is
+  NUL-delimited, and the bytes disassemble as instructions - `R1FW`'s `rkos` at 0x229b2 reads
+  `add r0, sb` followed by `mov r2, sl`.
+- **One standout the survey flagged, and what it was.** `0xFD02` occurs 61 times in the third
+  `TMAP` record, above that record's own 99th percentile. `TMAP` is a binary property list and
+  every occurrence sits in its packed data rather than in code, so it is a byte coincidence in
+  a file that holds no instructions. The tool flagging it and this paragraph answering it is
+  how that check is meant to work.
 
 **One method note, because this check twice produced the opposite answer.** Counting
 occurrences of a vendor opcode as a two-byte pattern says nothing in this firmware, and the
