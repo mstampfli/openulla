@@ -1,6 +1,8 @@
 """List radio-related parameter names in the AirPods RF tuning map.
 
 The TMAP payload is an NSKeyedArchiver plist, so its key names are readable directly.
+
+    python3 tmap_keys.py firmware.uarp
 """
 import plistlib
 import struct
@@ -8,6 +10,10 @@ import sys
 
 TERMS = ("hdr", "bdr", "le2m", "le1m", "unii", "nb_", "ulla", "5g", "6g", "band",
          "link_", "tx_power", "cca", "ant", "hop")
+
+if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
+    print(__doc__)
+    raise SystemExit(2)
 
 b = open(sys.argv[1], "rb").read()
 phoff, phlen = struct.unpack_from(">2I", b, 36)

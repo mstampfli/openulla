@@ -7,6 +7,7 @@ file builds record by record.
 """
 import pathlib
 import struct
+import subprocess
 import sys
 
 import capture_decode
@@ -123,3 +124,18 @@ def test_a_payload_that_is_not_in_the_container_is_refused(tmp_path, monkeypatch
     monkeypatch.setattr("sys.argv", ["ftab.py", str(path), "payload", "NOPE", str(tmp_path / "x")])
     with pytest.raises(KeyError):
         ftab.main(sys.argv)
+
+
+def test_every_tool_answers_help_instead_of_a_traceback(tmp_path):
+    """The first thing a reader types. A traceback here is a bug in the tool, not in them."""
+    tools = pathlib.Path(__file__).resolve().parent.parent / "tools"
+    for script in sorted(tools.glob("*.py")):
+        run = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            capture_output=True,
+            text=True,
+            cwd=tmp_path,
+        )
+        printed = run.stdout + run.stderr
+        assert "Traceback" not in printed, f"{script.name}: {printed[:300]}"
+        assert printed.strip(), f"{script.name} said nothing at all"
