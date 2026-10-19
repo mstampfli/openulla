@@ -81,33 +81,56 @@ def describe_capabilities(capabilities: tuple[avdtp.Capability, ...]) -> list[st
     return lines
 
 
-def alterations(capability: bytes, first: int) -> list[tuple[int, bytes]]:
-    """One alteration per byte from `first` on: flip its low bit, the smallest real change.
+def alterations(capability: bytes, first: int) -> list[tuple[str, bytes]]:
+    """Two alterations per byte, and they are deliberately opposite experiments.
 
     The whole capability is offered, not just the part being altered. A vendor codec's
     codec-specific field is the four vendor bytes, then the two codec-id bytes, then the eight
     in question, and a configuration carrying only the last eight would be refused for being
     malformed rather than for the byte that changed, which would make every answer worthless.
 
-    A smallest change is the right probe. A byte that is a bitfield may accept a large change in
-    an unused bit and refuse a small one in a used bit, so the low bit is the least likely to be
-    mistaken for "the device does not care about this byte at all".
+    **Which bit is changed decides what the answer means**, and an earlier version of this
+    function got that wrong: it flipped the low bit of every byte, which *sets* an undeclared
+    bit where that bit was clear and *clears* a declared one where it was set. In this device's
+    own capability seven of the eight bytes would have taken the first reading and one the
+    second, in one table, under one label. So each byte now gets both, named:
+
+    - **set**, the lowest bit the device left clear. This claims a capability it never offered,
+      and a sink that checks its fields has to refuse it. Accepted means not validated.
+    - **cleared**, the lowest bit the device had set. This asks for a subset of what it offered,
+      which is what AVDTP configuration normally is, so a sink that checks its fields should
+      **accept** it. This is the control: if even these are refused, the refusals are not field
+      validation and no conclusion about individual fields can be drawn from either group.
+
+    A byte of 0xFF has no bit to set and a byte of 0x00 none to clear, so those cases are
+    skipped rather than faked.
     """
-    out: list[tuple[int, bytes]] = []
+    out: list[tuple[str, bytes]] = []
     for index in range(first, len(capability)):
-        altered = bytearray(capability)
-        altered[index] ^= 0x01
-        out.append((index - first, bytes(altered)))
+        value = capability[index]
+        position = index - first
+        for bit in range(8):
+            if not value & (1 << bit):
+                altered = bytearray(capability)
+                altered[index] = value | (1 << bit)
+                out.append((f"byte {position} bit {bit} set", bytes(altered)))
+                break
+        for bit in range(8):
+            if value & (1 << bit):
+                altered = bytearray(capability)
+                altered[index] = value & ~(1 << bit)
+                out.append((f"byte {position} bit {bit} cleared", bytes(altered)))
+                break
     return out
 
 
 def probe(link: L2capTransport | Simulated | None, seid: int, codec: int, capability: bytes,
           first: int, timeout: float) -> int:
-    """Offer the whole capability unaltered, then with each byte from `first` on flipped."""
+    """Offer the whole capability unaltered, then each alteration `alterations` describes."""
     refused = 0
+    answers: dict[str, bool] = {}
     offers: list[tuple[str, bytes]] = [("unaltered", capability)]
-    offers += [(f"byte {index} low bit flipped", altered)
-               for index, altered in alterations(capability, first)]
+    offers += alterations(capability, first)
     for what, specific in offers:
         message = avdtp.set_configuration(
             acp_seid=seid,
@@ -120,12 +143,59 @@ def probe(link: L2capTransport | Simulated | None, seid: int, codec: int, capabi
             continue
         reply = exchange(link, message, timeout)
         reject = avdtp.parse_set_configuration_response(reply)
+        answers[what] = reject is None
         if reject is None:
             print(f"  {what:<28} ACCEPTED")
         else:
             refused += 1
             print(f"  {what:<28} refused: {reject}")
+    if link is not None:
+        print()
+        for line in read_answers(answers):
+            print(line)
     return refused
+
+
+def read_answers(answers: dict[str, bool]) -> list[str]:
+    """Say what the two groups together mean, which neither says alone.
+
+    The "cleared" group is the control. Asking for a subset of what a sink declared is ordinary
+    AVDTP configuration, so a sink that validates its fields accepts those; if it refuses them
+    too, its refusals are not per-field validation and nothing about individual fields can be
+    read out of the "set" group either.
+    """
+    out = []
+    accepted_base = answers.get("unaltered")
+    if accepted_base is False:
+        return ["The unaltered capability was refused, so this sink is not configurable this "
+                "way at all and no row below means anything. Nothing about the fields follows."]
+    subset = {k: v for k, v in answers.items() if k.endswith("cleared")}
+    claimed = {k: v for k, v in answers.items() if k.endswith("set")}
+    if subset and not any(subset.values()):
+        out.append(
+            f"Control failed: all {len(subset)} subset offers were refused as well. A sink that "
+            "checks its fields accepts a subset of what it declared, so these refusals are "
+            "something else - an exact-match check, or a state the sink is in - and the "
+            "refusals above do NOT identify fields."
+        )
+        return out
+    if claimed and all(claimed.values()):
+        out.append(
+            f"All {len(claimed)} offers claiming an undeclared bit were accepted, so these "
+            "bytes are not validated, which is itself the answer."
+        )
+    elif claimed:
+        refused_bits = [k for k, ok in claimed.items() if not ok]
+        out.append(
+            f"{len(refused_bits)} of {len(claimed)} offers claiming an undeclared bit were "
+            "refused, and those name real fields: "
+            + ", ".join(refused_bits)
+        )
+    if subset:
+        kept = [k for k, ok in subset.items() if ok]
+        out.append(f"Control: {len(kept)} of {len(subset)} subset offers were accepted.")
+    out.append("Report these lines, and the exact capability, in the issue.")
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -197,11 +267,12 @@ def main(argv: list[str] | None = None) -> int:
         if target is None:
             print("\nno vendor endpoint was reported, so there is nothing to probe")
             return 1
-        print(f"\noffering configurations to SEID {target}, one byte altered at a time:")
+        offered = 1 + len(alterations(vendor[1], first_probed))
+        print(f"\noffering configurations to SEID {target}, two bits per byte "
+              f"({offered} offers in all, counting the unaltered one):")
         refused = probe(link, target, 0xFF, vendor[1], first_probed, args.timeout)
-        print(f"\n{refused} of nine offers refused.")
-        print("Every offer accepted means these bytes are not validated, which is a result;"
-              " a mixed answer names the fields.")
+        print(f"\n{refused} of {offered} offers refused. The reading is the block above, which "
+              "weighs the two groups against each other.")
     finally:
         link.close()
     return 0

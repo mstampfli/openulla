@@ -98,13 +98,60 @@ def test_the_probe_alters_only_the_eight_bytes_and_offers_the_whole_capability()
     first = len(whole) - len(a2dp.vendor_specific(whole))
     assert first == 6
     altered = a2dp_probe.alterations(whole, first)
-    assert len(altered) == 8
-    for index, candidate in altered:
+    specific = a2dp.vendor_specific(whole)
+    # Two offers per byte, minus the ones a byte cannot take: nothing to clear in a 0x00 byte,
+    # nothing to set in a 0xFF one.
+    expected = sum(1 for b in specific if b != 0xFF) + sum(1 for b in specific if b != 0x00)
+    assert len(altered) == expected
+    for label, candidate in altered:
         assert len(candidate) == len(whole)
         # Exactly one byte differs, and it is inside the eight.
         differing = [i for i in range(len(whole)) if whole[i] != candidate[i]]
-        assert differing == [first + index]
+        assert len(differing) == 1, label
+        index = differing[0] - first
+        assert 0 <= index < len(specific), label
         assert candidate[:first] == whole[:first]
+        # And exactly one bit of that byte differs, in the direction the label claims.
+        before, after = whole[differing[0]], candidate[differing[0]]
+        assert bin(before ^ after).count("1") == 1, label
+        if label.endswith("set"):
+            assert after > before, f"{label} must add a bit the device did not declare"
+        else:
+            assert after < before, f"{label} must remove a bit the device did declare"
+        assert f"byte {index} " in label
+
+
+def test_the_probe_reads_its_two_groups_against_each_other():
+    """The control is the point: a sink refusing even a subset is not validating fields.
+
+    An earlier version of the probe flipped the low bit of every byte, which sets an undeclared
+    bit where that bit was clear and clears a declared one where it was set - two opposite
+    experiments reported under one label. These are the four readings the two groups can give.
+    """
+    import a2dp_probe
+
+    base_refused = a2dp_probe.read_answers({"unaltered": False, "byte 0 bit 0 set": True})
+    assert "no row below means anything" in " ".join(base_refused)
+
+    all_accepted = a2dp_probe.read_answers(
+        {"unaltered": True, "byte 0 bit 0 set": True, "byte 1 bit 1 set": True,
+         "byte 0 bit 3 cleared": True}
+    )
+    assert "not validated" in " ".join(all_accepted)
+
+    control_failed = a2dp_probe.read_answers(
+        {"unaltered": True, "byte 0 bit 0 set": False, "byte 0 bit 3 cleared": False}
+    )
+    assert "Control failed" in " ".join(control_failed)
+    assert "do NOT identify fields" in " ".join(control_failed)
+
+    informative = a2dp_probe.read_answers(
+        {"unaltered": True, "byte 0 bit 0 set": False, "byte 1 bit 0 set": True,
+         "byte 0 bit 3 cleared": True}
+    )
+    joined = " ".join(informative)
+    assert "name real fields" in joined and "byte 0 bit 0 set" in joined
+    assert "Control: 1 of 1" in joined
 
 
 def test_the_simulated_sink_answers_from_the_firmware_s_own_table():
