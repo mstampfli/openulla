@@ -261,7 +261,15 @@ Read from the Ghidra decompile and checked by hand. Addresses are offsets into
 - State 5 (0x6886c): event 2 sets bit 0x10 of the flag byte at ctx+0x23;
   event 6 calls 0x5ef34. The handler moves to state 7 when bits 0x04, 0x08 and
   0x10 of that byte are all set, and otherwise stays in 5.
-- 0x68504 holds the string "ULLA_TRANS: ERROR- lm_ulla_trans_source_ulla_teardown_init_handle_lmp_not_accepted".
+- 0x68504 is an assert that logs the string "ULLA_TRANS: ERROR-
+  lm_ulla_trans_source_ulla_teardown_init_handle_lmp_not_accepted". That name is where the
+  firmware's own words for these machines come from: a *transaction*, the role *source*, and a
+  phase *ulla_teardown_init*. Two more strings name the third role *sec*.
+- The whole of that machine, the sink's eight-state and the sec role's seven-state versions of
+  it, the events with their posting sites, both entry points of each, the module's phase and
+  which result reaches the host where, are in
+  [protocol.md 5.9 and 5.10](protocol.md). This section is the first reading; that one is the
+  finished map, and `openulla/procedure.py` is the same tables as code.
 - Raw PDU send 0x3ad7c (42 callers): writes the transaction id to byte 0 and
   the opcode to byte 1 of its record, and an extended opcode at byte 0xc only
   when the opcode is above 0x7a. 0x73 and 0x74 are sent without an extended
@@ -360,9 +368,10 @@ The setup protocol is recovered in full and documented separately, because it is
 what an independent implementation actually needs:
 
 - [docs/protocol.md](protocol.md): the host interface, the session state
-  machine, the earbud-to-earbud messages, the link-manager PDUs and the
-  controller's vendor command, each item citing the firmware address it was
-  read from.
+  machine, the earbud-to-earbud messages, the link-manager PDUs, the three
+  procedures the controllers run to drive them, the eleven vendor commands that
+  reach an ULLA session and the two that enable the features the rest are gated
+  on, each item citing the firmware address it was read from.
 - [docs/measurements.md](measurements.md): what was observed on a Linux host,
   including a session started from an ordinary laptop with no Apple
   authentication of any kind.
