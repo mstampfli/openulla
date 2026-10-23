@@ -2,7 +2,7 @@
 
 Most of what the AirPods' own firmware can answer has been answered: the setup protocol is
 documented field by field in [protocol.md](protocol.md), an implementation of it is in
-`openulla/`, and `tools/verify_claims.py` re-derives thirty-four groups of claims from the
+`openulla/`, and `tools/verify_claims.py` re-derives thirty-five groups of claims from the
 firmware image itself. Some firmware questions are still open and protocol.md marks each one
 `[open]` where it arises. What is left beyond those needs hardware this project does not have.
 
@@ -24,14 +24,19 @@ a success.
 
 **The question.** Does any host other than a Vision Pro drive this link, and is the "HRB" mode
 macOS logs the same thing as ULLA? Two contributors have narrowed this without settling it
-(ulla.md section 8): an Apple N1 Mac sends Apple's HDR packets to these earbuds and asks for
-the 5 GHz mode repeatedly without ever getting it, while an older Broadcom Mac shows **none** of
-the eighteen vendor opcodes documented here in an established session.
+(ulla.md section 8, with the records in [evidence/](../evidence/README.md)): an Apple N1 Mac
+sends Apple's HDR packets to these earbuds and asks for the 5 GHz mode repeatedly without ever
+getting it, while an older Broadcom Mac shows **no command of the link's own interface at
+all**: no 0xFE50, no session command and no band command, neither in an established session nor
+across a reconnection.
 
-**What to do.** Capture HCI traffic **across a connection setup or a provoked band switch**,
+**What to do.** Capture HCI traffic **across a first connection or a provoked band switch**,
 not during a steady stream. That is the one piece of method that matters: the command which
 starts a mode change is sent once, at the change, so a capture of an already-running session can
-hold tens of thousands of records and none of them. Start the capture, then connect the earbuds.
+hold tens of thousands of records and none of them. Two cases are already done on a Broadcom Mac
+and hold no 0xFE50: an established session, and a reconnection with the radio left on. What is
+left there is a first connection after a controller reset or a fresh pairing. Start the capture,
+then connect the earbuds.
 
 - On macOS, Apple's PacketLogger writes `.pklg`; Wireshark converts it to btsnoop, which
   `tools/capture_decode.py` reads directly and prints this protocol's frames out of.

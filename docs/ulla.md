@@ -565,11 +565,14 @@ Not recovered, and not to be filled in until it is:
 
 ## 8. Observed on Apple hosts, by contributors
 
-Neither of these is our own measurement. Both were reported publicly in
+None of this is our own measurement. All of it was reported publicly in
 [issue #3](https://github.com/mstampfli/openulla/issues/3) by the people who
-made them, with their own limits stated; they are recorded here because they
-bear directly on the question section 2.4 leaves open, what a Mac's software
-does with a radio that has the modes. Raw captures stayed with their authors.
+made it, with their own limits stated; it is recorded here because it bears
+directly on the question section 2.4 leaves open, what a Mac's software does
+with a radio that has the modes. Raw captures stayed with their authors. The
+sanitized records of the two Broadcom runs - setup versions, full record and
+opcode counts, selected fields and their timing - are in
+[evidence/](../evidence/README.md), contributed by the person who made them.
 
 **An Apple N1 Mac, reported by NuiceT** (MacBook Pro Mac17,9, macOS 27.0.1,
 these earbuds on 9A348, read-only observation of logs and binaries):
@@ -604,7 +607,7 @@ BCM_4378, same earbud firmware):
   it was the wrong table to ask. Put through the earbuds' **own** command table,
   **seven of their twelve are implemented there**, with handlers: 0xFD02,
   0xFD4B, 0xFD4D, 0xFDC1, 0xFDDD, 0xFDE4 and 0xFE2D. The other five are absent.
-  One of the seven ties this capture to the radio: **0xFD02 configures the
+  One of the seven ties this run to the radio: **0xFD02 configures the
   controller's maximum packet size, and its mode 1 selects 2586 bytes**, the
   payload maximum of the five-slot packet only Apple's third packet-type table
   can reach, against 339 for the basic-rate one. [protocol.md](protocol.md)
@@ -616,11 +619,52 @@ BCM_4378, same earbud firmware):
 - The microphone path is ordinary: an eSCO link set up with the standard
   Synchronous Connection command, with the AirPods input at 24 kHz.
 
-What the pair establishes and what it does not. On a Broadcom-era Mac, in steady
-state, **none of the host interface this project documents is in use** - which is
-a real negative result, and the strongest reading of that capture. It does not
-close the N1 question: a different controller, and the one command that would
-appear is sent at a mode change rather than in steady state, so a capture
-spanning connection setup or a deliberate band switch is where it would show. It
-also does not establish that HRB is ULLA; Apple's own patent language argues
-against reading "HRB TDD" that way (2.6).
+**A second capture from the same host, spanning a reconnection**, 23,767 records
+over 316 seconds, with a filtered `bluetoothd` stream running beside it:
+
+- The earbuds were disconnected and reconnected from their device controls while
+  the capture ran, with the radio left on, no re-pairing and no controller
+  reset. The trace holds the successful Connection Complete, status 0x00, link
+  type ACL, matched locally to the earbuds. So this run has the shape the first
+  one lacked: it **spans a connection setup**.
+- It still contains **no 0xFE50**, and no 0xFDEE, 0xFD7C, 0xFD7D or 0xFD5F
+  either, and the counts for the other band commands asked about are zero too.
+  Its inventory is `FC1C FC57 FCE2 FCE9 FD02 FD4A FD4B FD4D FD4E FDDD FDE4
+  FE2D`: twelve again, but with **0xFD4E in place of 0xFDC1**, so thirteen
+  opcodes across the two runs.
+- **0xFD4E is in the earbuds' own table as well**, which is our measurement and
+  not theirs: it reads one number and answers twelve bytes of it, by the same
+  reply route 0xFE2D's twenty-four leave through
+  ([protocol.md](protocol.md) section 6.8 has the handler and every
+  instruction). So **eight of the thirteen** are implemented in the earbuds'
+  controller, and the same five are absent.
+- `0xFD02` occurs once here too, five parameter bytes, **first byte 0x00**,
+  answered 2 ms later with status 0x00, arriving 10.7 seconds **after**
+  Connection Complete; the nearest `0xFD4B` is 142 ms **before** it. In the
+  earbuds' handler a mode byte of 1 is what selects the five-slot size and
+  anything else selects 339 bytes (6.8) - but that is the earbuds' handler, and
+  nothing here establishes what the Mac's own controller means by the byte.
+- Of 532 parsed log events, 526 are `Server.Audio` link-quality reports and six
+  are `Server.BandSwitchManager`, all six `EnableHRB 1, forceSupportHRB 0`. No
+  allowed-bands change, no band mask, no evaluation dump and **no ULLA message
+  of any kind** appeared in that window.
+- Neither run holds LMP records or Wireshark-dissected LMP packets, so the
+  packet-type negotiation of 5.13 was not observed either way. A capture taken
+  over HCI cannot rule out what the two controllers exchanged on air.
+
+What these runs establish and what they do not. On a Broadcom-era Mac, neither
+in steady state nor across a reconnection does **any command of the link's own
+interface appear** - no 0xFE50, no session command of 6.6, no feature-bit
+command of 5.8, no band command of 6.1 - which is a real negative
+result and the strongest reading of these captures. What the two runs do contain
+is a different set of thirteen, eight of which the earbuds implement, and 6.8
+says what each of those eight does.
+
+The reconnection narrows the question rather than closing it. The capture across
+a connection setup that this project asked for has now been taken on that host,
+and the command that would prove a Mac drives the link still did not appear.
+What remains untested there is a **first** connection after a controller reset
+or a fresh pairing, and a deliberately provoked band switch. The N1 question is
+untouched: that is a different controller, and no HCI capture from an N1 host
+exists here at all. None of this establishes that HRB is ULLA either; Apple's
+own patent language argues against reading "HRB TDD" that way (2.6).

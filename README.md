@@ -382,17 +382,24 @@ band, or that a non-Apple controller could form these modulations. Those are the
 open questions, and they are the cheap ones to answer.
 
 **Two contributors have since narrowed the first of them**, both reported in
-[issue #3](https://github.com/mstampfli/openulla/issues/3) and recorded with
-their limits in [docs/ulla.md](docs/ulla.md) section 8. On a Mac with Apple's N1
-controller, every transmitted packet in the system's own link-quality reports for
-these earbuds was HDR4 or HDR8, and a band-switch manager asked for the 5 GHz
-mode 73 times in an afternoon and never got it. On an older Broadcom Mac, a
-capture of an established session, 18,623 records, contains **none of the
-eighteen vendor opcodes this project documents** - so in steady state that host
-uses no part of the interface described here. Neither settles whether a Mac ever
-drives the link: the one command that would prove it is sent at a mode change,
-not in steady state, so the decisive capture is one spanning connection setup or
-a deliberate band switch.
+[issue #3](https://github.com/mstampfli/openulla/issues/3), recorded with their
+limits in [docs/ulla.md](docs/ulla.md) section 8 and preserved in
+[evidence/](evidence/README.md). On a Mac with Apple's N1 controller, every
+transmitted packet in the system's own link-quality reports for these earbuds was
+HDR4 or HDR8, and a band-switch manager asked for the 5 GHz mode 73 times in an
+afternoon and never got it. On an older Broadcom Mac, two captures - one of an
+established session, one spanning a reconnection, 42,390 records between them -
+contain **no command of the link's own interface**: no 0xFE50, no session
+command, no feature-bit command, no band command, not even across the connection
+setup. What they do contain is thirteen other vendor opcodes, eight of which the
+earbuds themselves implement; [docs/protocol.md](docs/protocol.md) section 6.8
+says what each of those eight does.
+
+Neither contributor settles whether a Mac ever drives the link. On that Broadcom
+host the untested cases left are narrow ones - a **first** connection after a
+controller reset or a fresh pairing, or a deliberately provoked band switch - and
+the N1 host, the one whose own logs count every packet as HDR, has never been
+captured over HCI at all.
 
 ## How you can help
 
@@ -403,7 +410,7 @@ settle, what to run, and what each outcome would mean. The short version:
 
 | if you have | the one thing to do |
 |---|---|
-| an Apple host that drives the link (Vision Pro, possibly a Mac) | capture HCI **across a connection setup**, not a steady stream, and look for a seven-byte 0xFE50 |
+| an Apple host that drives the link (Vision Pro, possibly a Mac) | capture HCI across a **first** connection or a provoked band switch, and look for a seven-byte 0xFE50. A steady stream and a reconnection have both been done on a Broadcom Mac and hold none (evidence/) |
 | a Nexus 5 or a CYW920735Q60EVB-01, the two parts that can inject these opcodes | `sudo python3 tools/ulla_probe.py` first, then drive the setup exchange of section 5 and report what the earbuds answer |
 | a software radio with 20 MHz of bandwidth | capture a slice, not the whole band: one packet in four lands in it whole, HDR is in the 2.4 GHz band too, and a decoder now has the TYPE codes, the payload maxima and the twelve-bit length field to match against |
 | no hardware at all | implement a layer against [interop/](interop/) and report a mismatch |
@@ -414,7 +421,8 @@ hard way here:
 - **Capture across a change, not a stream.** The command that starts a mode
   change is sent once, at the change. A capture of an established session can
   hold tens of thousands of records and none of them, which is exactly what
-  happened to one contributor (docs/ulla.md section 8).
+  happened to one contributor, twice: the second capture holds a connection setup
+  and still none of them (docs/ulla.md section 8).
 - **0x0C proves nothing on its own.** An Intel AX211 answers it to every
   unimplemented vendor opcode, and it is also the code the firmware uses for a
   session command whose gate fails. The discriminators are the event and
