@@ -432,6 +432,9 @@ link keys and other people's device addresses.
 
 ## Repository layout
 
+- `evidence/`: sanitized contributor observations, with per-run reports, counts,
+  selected command fields and source references. Raw traces and recordings stay
+  with their contributors; see [evidence/README.md](evidence/README.md).
 - `openulla/`: the implementation. Pure Python, no dependencies, every constant
   citing the firmware address or the measurement that proves it. See
   [docs/implementation.md](docs/implementation.md).
