@@ -70,7 +70,7 @@ firmware from us.
   - [6.5 The second band PDU: escape 0x7B, extended opcode 0x1C](#65-the-second-band-pdu-escape-0x7b-extended-opcode-0x1c)
   - [6.6 The other vendor commands that reach the ULLA session](#66-the-other-vendor-commands-that-reach-the-ulla-session)
   - [6.7 Two commands that read the procedure's own request block](#67-two-commands-that-read-the-procedures-own-request-block)
-  - [6.8 Seven commands an Apple host was seen sending, in the earbuds' own table](#68-seven-commands-an-apple-host-was-seen-sending-in-the-earbuds-own-table)
+  - [6.8 Eight commands an Apple host was seen sending, in the earbuds' own table](#68-eight-commands-an-apple-host-was-seen-sending-in-the-earbuds-own-table)
   - [6.9 One command puts a link into Apple's packet-type table](#69-one-command-puts-a-link-into-apples-packet-type-table)
 - [7. The audio layer, and what is not known](#7-the-audio-layer-and-what-is-not-known)
   - [7.1 The stream's control path, which is not open any more](#71-the-streams-control-path-which-is-not-open-any-more)
@@ -2450,19 +2450,22 @@ So the block's +0x48 is a kind field with two values, +0x6C is a byte a host can
 onwards is a structure a host can dump. What those bytes mean is not established, and this
 document does not guess; what is established is that they leave the controller.
 
-### 6.8 Seven commands an Apple host was seen sending, in the earbuds' own table
+### 6.8 Eight commands an Apple host was seen sending, in the earbuds' own table
 
-A contributor captured an established session between a Broadcom Mac and these earbuds and
-reported the Mac's whole vendor-command inventory, twelve opcodes [ulla.md section 8]. None of
-them is one of the eighteen this document had mapped, which is what ulla.md section 8 said. Put
-through
-the earbuds' **own** command table instead, **seven of the twelve are there**:
+A contributor captured two sessions between a Broadcom Mac and these earbuds and reported the
+Mac's whole vendor-command inventory for each: twelve opcodes in an established session and
+twelve in a capture spanning a reconnection, **thirteen between them**, since each run holds one
+the other does not [ulla.md section 8; the records are in `evidence/`]. **None of the thirteen
+is a command of the link's own interface**: not 0xFE50, not a session command of 6.6, not a
+feature-bit command of 5.8, not a band command of 6.1, which is what ulla.md section 8 says.
+Put through the earbuds' **own** command table instead, **eight of the thirteen are there**:
 
 | opcode | handler | what its handler does |
 |---|---|---|
 | 0xFD02 | acib 0x160cc | configures a maximum packet size, below |
 | 0xFD4B | acib 0x163d4 | waits on a status bit at a register block, writes 3 to it, then passes the same 2600 that 0xFD02's mode 1 sets |
 | 0xFD4D | acib 0x1ee4c | passes one byte from its request onward and returns nothing of its own |
+| 0xFD4E | acib 0x1ee52 | asks for the number 0x213 and answers twelve bytes of what comes back, below |
 | 0xFDC1 | acib 0x1a9fc | stores a halfword and two bytes from its request into a global block |
 | 0xFDDD | acib 0x1adf0 | reads that same global block back and answers from it, so the two are a setter and a getter |
 | 0xFDE4 | acib 0x168d8 | divides its parameter by 100 and passes the result on |
@@ -2472,6 +2475,19 @@ The other five, 0xFC1C, 0xFC57, 0xFCE2, 0xFCE9 and 0xFD4A, have no key in this t
 lookup is the published one: a key table searched under a fourteen-bit mask [the key table and
 its mask are in 6.1], so these are matches rather than aliases, and 0xFF75's known alias is not
 among them.
+
+**0xFD4E is the one the second capture added**, and it is a read-back and nothing else. Its
+handler sits six bytes past 0xFD4D's, so the two are neighbours in the image as well as in the
+table. It puts **0x213** in r0 and a stack buffer's address in r1 and calls acib 0x79510
+[fw acib 0x1ee5a the number, 0x1ee5e the buffer, 0x1ee60 the call], which moves that buffer to
+r2, zeroes the input and tail-calls the property call [fw acib 0x79510 to 0x79516]. 0x79510 is
+one of the wrappers that carry a **table id** rather than a property id, so 0x213 is not a
+property here [6.6]. Then it answers **twelve bytes** of the same buffer it just filled, under
+its own opcode and a zero status [fw acib 0x1ee64 the length, 0x1ee66 the opcode, 0x1ee6a the
+status, 0x1ee6c the buffer again, 0x1ee6e the call]. The reply leaves through **acib 0x1fd56**,
+which is where 0xFE2D's twenty-four bytes leave too [fw acib 0x1efa2 and 0x1d394], so the two
+answer by the same route and differ only in how much they return. What those twelve bytes
+contain is not established, and this document does not guess.
 
 **0xFD02 is the one that matters here**, because it joins the packet-type table of 5.13 to a
 command a host can send. Its handler reads a mode byte at its request's +0xB and gates on a

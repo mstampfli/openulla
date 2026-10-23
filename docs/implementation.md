@@ -286,7 +286,7 @@ python3 tools/payload_survey.py --payloads payloads
   PASS  the packet-type table            18 entries over four arrays with the slot counts agreeing, all twelve specified payloads present, 6 more at mask bits 16 to 21, Apple's request bounded to 2, 0xFDEE writes 0x3f0000, and three more arrays: payloads and slot classes in rate-class order, both groups slower first
   PASS  each table's legal entries       three constants 0xffc0ccf9 0xffc033ef 0xffff00e9 reproduce all 54 membership answers, and only table 2's permits bits 16 to 21
   PASS  the permission partition         four immediates: Apple's two partition the six exactly, the standard branch's two are the EDR rate pairs, and the bit-4 gate keeps 1021 bytes there against 1288 here, so the shape inverts
-  PASS  shared host commands             7 of their twelve present and 5 absent, 0xFD02 mode 1 -> 2586 bytes, otherwise 339, landing at 0x1000b494+0x718 whose default is 2586, over 9 records of 0xc4
+  PASS  shared host commands             8 of their thirteen present and 5 absent, 0xFD02 mode 1 -> 2586 bytes, otherwise 339, landing at 0x1000b494+0x718 whose default is 2586, over 9 records of 0xc4, 0xfd4e answering 12 bytes of 0x213 through 0xfe2d's own reply
   PASS  payload header width             ten-bit length at bit 3 under mask 0xe007, twelve-bit under 0x8007, the wide builder tests table 2 and mask 0x3f0000
   PASS  the five paired procedures       5 senders choose between the two forms on bits [2, 5], the three power answers are one two-bit code five times, 9 pair immediates hold, 10 sequence gates, the TLV reply opens with type 0 carrying 0x5b
   PASS  prose-only citations             48 prose citations hold their instruction

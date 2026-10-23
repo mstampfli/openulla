@@ -191,18 +191,40 @@ TABLE_SENDER_ARMS = (
     (0x29E60, 0x217B, 0x29E54, 0x220D),  # movs r1, #0x7b / movs r2, #0xd
 )
 TABLE_SENDER_VALUE = 0x29E1A  # ldrb.w r1, [r4, #0x17f], the value it sends
-# The seven commands a contributor saw an Apple host send that this controller implements, and
-# the five it does not. [6.8]
+# The eight commands a contributor saw an Apple host send, over two captures, that this
+# controller implements, and the five it does not. [6.8]
 SHARED_HOST_COMMANDS = {
     0xFD02: 0x160CC,
     0xFD4B: 0x163D4,
     0xFD4D: 0x1EE4C,
+    0xFD4E: 0x1EE52,
     0xFDC1: 0x1A9FC,
     0xFDDD: 0x1ADF0,
     0xFDE4: 0x168D8,
     0xFE2D: 0x1C8CE,
 }
 ABSENT_HOST_COMMANDS = (0xFC1C, 0xFC57, 0xFCE2, 0xFCE9, 0xFD4A)
+# 0xFD4E is the one the second capture added, and it is a read-back: one number in, twelve bytes
+# of it out. Instruction addresses only, so no pool word is ever read as an instruction. [6.8]
+READBACK_COMMAND = 0xFD4E
+READBACK_NUMBER = 0x213
+READBACK_NUMBER_AT = 0x1EE5A  # movw r0, #0x213
+READBACK_OUT_AT = 0x1EE5E  # mov r1, r5, the buffer it reads into
+READBACK_WRAPPER = 0x79510
+READBACK_WRAPPER_AT = 0x1EE60  # bl 0x79510
+READBACK_PACKER = 0x79454
+READBACK_PACKER_AT = 0x79516  # b.w 0x79454, the wrapper's own tail call
+READBACK_LENGTH = 0xC
+READBACK_LENGTH_AT = 0x1EE64  # movs r0, #0xc
+READBACK_ECHO_AT = 0x1EE66  # movw r1, #0xfd4e, the opcode it answers under
+READBACK_STATUS_AT = 0x1EE6A  # movs r2, #0
+READBACK_DATA_AT = 0x1EE6C  # mov r3, r5, the same buffer it answers from
+READBACK_REPLY = 0x1EF9E
+READBACK_REPLY_AT = 0x1EE6E  # bl 0x1ef9e
+# Both replies leave through one function, which is what lets "answers" be the same word for
+# 0xFD4E's twelve bytes as for the twenty-four this document already gives 0xFE2D. [6.8]
+REPLY_ENDPOINT = 0x1FD56
+REPLY_TAIL_CALLS = ((0x1EFA2, 0xFD4E), (0x1D394, 0xFE2D))
 SIZE_COMMAND_BRANCH = 0x160E6  # cmp r6, #1, on the mode byte at the request's +0xB
 SIZE_COMMAND_HDR = 0x160F0  # movw r0, #0xa1a, the five-slot payload of Apple's table
 SIZE_COMMAND_HDR_BUFFER = 0x160FA  # movw r1, #0xa28
@@ -682,17 +704,27 @@ def u32(img, off):
     return struct.unpack_from("<I", img, off)[0]
 
 
-def movw(img, off):
-    """The 16-bit immediate of a Thumb-2 MOVW, decoded from its two halfwords (imm4:i:imm3:imm8)."""
+def movw_parts(img, off):
+    """Which register a Thumb-2 MOVW loads and with what (imm4:i:imm3:imm8).
+
+    `movw` returns the immediate alone. Here the register is half the evidence: a number is
+    only an argument to the next call because it is in r0.
+    """
     first, second = u16(img, off), u16(img, off + 2)
     if first & 0xFBF0 != 0xF240:
         return None
-    return (
+    return (second >> 8) & 0xF, (
         ((first & 0xF) << 12)
         | (((first >> 10) & 1) << 11)
         | (((second >> 12) & 7) << 8)
         | (second & 0xFF)
     )
+
+
+def movw(img, off):
+    """The 16-bit immediate of a Thumb-2 MOVW, with no claim about where it lands."""
+    parts = movw_parts(img, off)
+    return None if parts is None else parts[1]
 
 
 def thumb_expand(value):
@@ -1823,7 +1855,7 @@ def check_permission_partition(acib, rkof, ctab, sbd1, phyb):
 
 
 def check_shared_host_commands(acib, rkof, ctab, sbd1, phyb):
-    """The seven captured host commands this controller implements, and 0xFD02's two sizes. [6.8]
+    """The eight captured host commands this controller implements, and 0xFD02's two sizes. [6.8]
 
     The two sizes are read against `openulla/packets.py` rather than written out again, so the
     claim that 0xFD02's mode 1 selects the five-slot payload of Apple's own table is checked
@@ -1841,6 +1873,35 @@ def check_shared_host_commands(acib, rkof, ctab, sbd1, phyb):
     for opcode in ABSENT_HOST_COMMANDS:
         if any(m == (opcode & HCI_KEY_MASK) for m in masked):
             return False, f"0x{opcode:04x} is in the table after all"
+
+    # What 0xFD4E's handler does: ask for one number through the wrapper that carries a table id
+    # in r0, then answer a fixed twelve bytes of the buffer it just filled.
+    if movw_parts(acib, READBACK_NUMBER_AT) != (0, READBACK_NUMBER):
+        return False, f"0x{READBACK_NUMBER_AT:x} no longer asks for 0x{READBACK_NUMBER:x} in r0"
+    out, data = mov_reg(acib, READBACK_OUT_AT), mov_reg(acib, READBACK_DATA_AT)
+    if out is None or data is None or (out[0], data[0]) != (1, 3) or out[1] != data[1]:
+        return False, (
+            f"0x{READBACK_OUT_AT:x} and 0x{READBACK_DATA_AT:x} no longer read into and answer "
+            f"from one buffer: {out} and {data}"
+        )
+    calls = ((READBACK_WRAPPER_AT, READBACK_WRAPPER), (READBACK_REPLY_AT, READBACK_REPLY))
+    for at, callee in calls:
+        if wide_branch(acib, at) != callee:
+            return False, f"0x{at:x} no longer calls 0x{callee:x}"
+    if wide_branch(acib, READBACK_PACKER_AT, link=False) != READBACK_PACKER:
+        return False, f"0x{READBACK_WRAPPER:x} no longer tail-calls 0x{READBACK_PACKER:x}"
+    if movs_imm(acib, READBACK_LENGTH_AT) != (0, READBACK_LENGTH):
+        return False, f"0x{READBACK_LENGTH_AT:x} no longer answers {READBACK_LENGTH} bytes in r0"
+    if movw_parts(acib, READBACK_ECHO_AT) != (1, READBACK_COMMAND):
+        return False, f"0x{READBACK_ECHO_AT:x} no longer names 0x{READBACK_COMMAND:04x} in r1"
+    if movs_imm(acib, READBACK_STATUS_AT) != (2, 0):
+        return False, f"0x{READBACK_STATUS_AT:x} no longer passes a zero status in r2"
+    for at, opcode in REPLY_TAIL_CALLS:
+        if wide_branch(acib, at, link=False) != REPLY_ENDPOINT:
+            return False, (
+                f"0x{opcode:04x}'s reply at 0x{at:x} no longer leaves through "
+                f"0x{REPLY_ENDPOINT:x}"
+            )
 
     if u16(acib, SIZE_COMMAND_BRANCH) != 0x2E01:  # cmp r6, #1
         return False, f"0x{SIZE_COMMAND_BRANCH:x} no longer branches on mode 1"
@@ -1876,10 +1937,12 @@ def check_shared_host_commands(acib, rkof, ctab, sbd1, phyb):
         covered = -start / CONFIG_RECORD_STRIDE
         return False, f"the walk covers {covered} records, not {CONFIG_RECORDS}"
     return True, (
-        f"{len(SHARED_HOST_COMMANDS)} of their twelve present and "
+        f"{len(SHARED_HOST_COMMANDS)} of their thirteen present and "
         f"{len(ABSENT_HOST_COMMANDS)} absent, 0xFD02 mode 1 -> {five_slot} bytes, "
         f"otherwise {basic}, landing at 0x{CONFIG_BLOCK:x}+0x{SIZE_FIELD:x} whose default is "
-        f"{five_slot}, over {CONFIG_RECORDS} records of 0x{CONFIG_RECORD_STRIDE:x}"
+        f"{five_slot}, over {CONFIG_RECORDS} records of 0x{CONFIG_RECORD_STRIDE:x}, "
+        f"0x{READBACK_COMMAND:04x} answering {READBACK_LENGTH} bytes of 0x{READBACK_NUMBER:x} "
+        f"through 0x{REPLY_TAIL_CALLS[1][1]:04x}'s own reply"
     )
 
 
