@@ -593,6 +593,11 @@ to 7 [fw acib 0x3a634].
 
 ### 5.1 Opcode 0x73, the setup request
 
+For the Vision Pro M5 transmitter (24M372), a separate replay traced the four bytes at
+offset 1 to a software generator and followed them into a 48-bit controller template on
+AirPods 5 (9B47). See the [build-specific replay, inputs and test vectors](airpods5-classic-replay.md).
+The original firmware references below apply to the image investigated in this document.
+
 Total 9 bytes [fw acib 0x3aa6e]:
 
 | offset | size | meaning |
