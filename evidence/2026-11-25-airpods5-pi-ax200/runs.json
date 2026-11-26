@@ -1,0 +1,212 @@
+{
+  "earbuds": "AirPods 5, product ID 0x2030, one pair",
+  "time_unit": "microseconds from first btsnoop record",
+  "frame_origin": 1,
+  "upstream_revision": "454cc316c838a43389d43379668556fcb0730634",
+  "runs": [
+    {
+      "condition": "Pi 4B initial start",
+      "sha256": "24d461e472b9958466c5b5f046e82f12629d63e15b6de81d15b9716332bfb834",
+      "bytes": 19034,
+      "records": 371,
+      "start": {
+        "frame": 356,
+        "t_us": 94663610
+      },
+      "ack_status_zero": {
+        "frame": 358,
+        "t_us": 94895003
+      },
+      "host_l2cap_close": {
+        "frame": 359,
+        "t_us": 98668218
+      }
+    },
+    {
+      "condition": "WSL 2 AX200 initial start",
+      "sha256": "427c47aafc11e4ebda40cd10ac7a7fcfa01241e5a3c9a572938fb1acd890f0f4",
+      "bytes": 30723,
+      "records": 578,
+      "authenticated_payload_timeout": {
+        "frame": 573,
+        "t_us": 384849565
+      },
+      "start": {
+        "frame": 570,
+        "t_us": 354709952
+      },
+      "ack_status_zero": {
+        "frame": 572,
+        "t_us": 354857226
+      },
+      "acl_disconnect_reason_0x08": {
+        "frame": 574,
+        "t_us": 386296564
+      }
+    },
+    {
+      "condition": "Pi 4B standard LMP reconnect control",
+      "sha256": "19c17c1914c85f11d6cb258cbf07329f175ec1049f7e2c846c1c75448ef26834",
+      "bytes": 7279,
+      "records": 121,
+      "standard_request": {
+        "frame": 68,
+        "t_us": 33994622
+      },
+      "matched_accept": {
+        "frame": 69,
+        "t_us": 34020076
+      }
+    },
+    {
+      "condition": "AAP start with clock-offset query",
+      "sha256": "c963bf2fb289ee8ecc9f1f1ed87b6c435780b231bea9c78a20ee8fd240e43477",
+      "bytes": 8909,
+      "records": 151,
+      "service_open_reply": {
+        "frame": 129,
+        "t_us": 628377
+      },
+      "start": {
+        "frame": 134,
+        "t_us": 2330969
+      },
+      "ack_status_zero": {
+        "frame": 136,
+        "t_us": 2568407
+      },
+      "clock_offset_query": {
+        "frame": 143,
+        "t_us": 22418104
+      },
+      "acl_disconnect_reason_0x08": {
+        "frame": 148,
+        "t_us": 33958490
+      },
+      "controller_diagnostics": {
+        "broadcom_lmp_diagnostics": 52,
+        "attributed_by_direction": {
+          "local_tx": 21,
+          "peer_rx_at_local": 16
+        },
+        "coverage_notes": {
+          "unattributed_suffix": 15
+        },
+        "attributed_0x73": 0,
+        "attributed_responses_to_0x73": 0,
+        "after_status_tx": 6,
+        "after_status_rx": 1
+      }
+    },
+    {
+      "condition": "Open service 4, hold 60 s without start",
+      "sha256": "ecc45f9e885aef99a099c44a3d1e10d9d7ea30badd88d7fefdef0ff17b173879",
+      "bytes": 12532,
+      "records": 201,
+      "service_open_reply": {
+        "frame": 129,
+        "t_us": 1853674
+      },
+      "host_l2cap_close": {
+        "frame": 194,
+        "t_us": 63686789
+      },
+      "unsniff_request": {
+        "frame": 197,
+        "t_us": 63885250
+      },
+      "matched_accept": {
+        "frame": 199,
+        "t_us": 63893847
+      },
+      "controller_diagnostics": {
+        "broadcom_lmp_diagnostics": 65,
+        "attributed_by_direction": {
+          "local_tx": 27,
+          "peer_rx_at_local": 23
+        },
+        "coverage_notes": {
+          "unattributed_suffix": 15
+        },
+        "attributed_0x73": 0,
+        "attributed_responses_to_0x73": 0
+      }
+    },
+    {
+      "condition": "AAP start, listen only",
+      "sha256": "8c95ba524b0521bf3e37cd02c12e55424d118740ca71bc15b428cf6f033ce923",
+      "bytes": 9636,
+      "records": 162,
+      "service_open_reply": {
+        "frame": 127,
+        "t_us": 463852
+      },
+      "start": {
+        "frame": 135,
+        "t_us": 2305286
+      },
+      "ack_status_zero": {
+        "frame": 138,
+        "t_us": 2717618
+      },
+      "acl_disconnect_reason_0x08": {
+        "frame": 159,
+        "t_us": 34187409
+      },
+      "controller_diagnostics": {
+        "broadcom_lmp_diagnostics": 53,
+        "attributed_by_direction": {
+          "local_tx": 21,
+          "peer_rx_at_local": 17
+        },
+        "coverage_notes": {
+          "unattributed_suffix": 15
+        },
+        "attributed_0x73": 0,
+        "attributed_responses_to_0x73": 0,
+        "after_status_tx": 6,
+        "after_status_rx": 1
+      }
+    },
+    {
+      "condition": "AAP start, then request stream on success",
+      "sha256": "4d7ef2def58ebb7a4b8263491b07a413e053b1c1c94704460d7292544eebc47c",
+      "bytes": 8706,
+      "records": 148,
+      "service_open_reply": {
+        "frame": 129,
+        "t_us": 912309
+      },
+      "start": {
+        "frame": 134,
+        "t_us": 2736606
+      },
+      "ack_status_zero": {
+        "frame": 137,
+        "t_us": 3144816
+      },
+      "stream_request": {
+        "frame": 138,
+        "t_us": 3145152
+      },
+      "acl_disconnect_reason_0x08": {
+        "frame": 145,
+        "t_us": 34294243
+      },
+      "controller_diagnostics": {
+        "broadcom_lmp_diagnostics": 50,
+        "attributed_by_direction": {
+          "local_tx": 19,
+          "peer_rx_at_local": 16
+        },
+        "coverage_notes": {
+          "unattributed_suffix": 15
+        },
+        "attributed_0x73": 0,
+        "attributed_responses_to_0x73": 0,
+        "after_status_tx": 4,
+        "after_status_rx": 1
+      }
+    }
+  ]
+}
