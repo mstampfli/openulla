@@ -8,8 +8,9 @@ was observed; a missing command does not establish that a host lacks ULLA suppor
 | --- | --- | --- | --- |
 | 2026-10-18, M1 / Broadcom | Microphone transitions within an established AirPods connection | 18,623 | [Report](2026-10-18-m1-airpods-established-session/README.md) |
 | 2026-10-19, M1 / Broadcom | Normal AirPods reconnection and playback | 23,767 | [Report](2026-10-19-m1-airpods-reconnection/README.md) |
+| 2026-11-25 and 26, Pi 4B and Intel AX200 | AAP start on AirPods 5, with a Pi open-only control and bidirectional LMP diagnostics | Seven BlueZ files | [Report and frame index](2026-11-25-airpods5-pi-ax200/README.md) |
 
-## What is preserved
+## What is preserved in the M1 captures
 
 The summaries include hardware/software versions, complete record-type and vendor
 opcode counts, selected command lengths, the first `0xFD02` parameter, its response
